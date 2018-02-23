@@ -129,6 +129,8 @@ int track_fix_offsets(const satdata_mag *data, track_workspace *w);
 /* track_synth.c */
 int track_synth_int(satdata_mag *data, msynth_workspace *msynth_core_p, msynth_workspace *msynth_crust_p);
 int track_synth_QD(satdata_mag *data);
+int track_synth_MLT(satdata_mag *data);
+int track_synth_tilt(satdata_mag *data);
 int track_synth_pomme(satdata_mag *data);
 
 #endif /* INCLUDED_track_h */

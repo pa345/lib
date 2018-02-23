@@ -707,7 +707,8 @@ mfield_data_add_noise(const double sigma, const double bias, mfield_data_workspa
 
       for (j = 0; j < mptr->n; ++j)
         {
-          double wt = fmod(omega * mptr->t[j], 2.0 * M_PI);
+          /*double wt = fmod(omega * mptr->t[j], 2.0 * M_PI);*/
+          double wt = 0.0;
           double coswt = cos(wt);
 
           if (MAGDATA_Discarded(mptr->flags[j]))

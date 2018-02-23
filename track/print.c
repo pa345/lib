@@ -262,7 +262,6 @@ main(int argc, char *argv[])
 {
   char *data_file = "track_data.dat";
   char *stats_file = "track_stats.dat";
-  char *output_file = NULL;
   satdata_mag *data = NULL;
   satdata_lp *lp_data = NULL;
   struct timeval tv0, tv1;
@@ -377,7 +376,7 @@ main(int argc, char *argv[])
             break;
 
           case 'o':
-            output_file = optarg;
+            data_file = optarg;
             break;
 
           case 'j':
@@ -455,6 +454,21 @@ main(int argc, char *argv[])
       satdata_mag_fill_ne(data, lp_data);
       fprintf(stderr, "done\n");
     }
+
+  /*XXX*/
+  {
+    fprintf(stderr, "main: computing dipole tilt along track...");
+    gettimeofday(&tv0, NULL);
+    track_synth_tilt(data);
+    gettimeofday(&tv1, NULL);
+    fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+    fprintf(stderr, "main: computing MLT along track...");
+    gettimeofday(&tv0, NULL);
+    track_synth_MLT(data);
+    gettimeofday(&tv1, NULL);
+    fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+  }
 
   track_p = preprocess_data(&params, data);
 

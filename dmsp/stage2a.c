@@ -416,6 +416,88 @@ stage2_vfm2nec(satdata_mag *data)
 }
 
 int
+preclean_proc(FILE *fp_spike, const size_t start_idx, const size_t end_idx, size_t nspikes[3],
+              double min_spike[3], double max_spike[3], satdata_mag * data)
+{
+  int s = 0;
+  const size_t nsamp = end_idx - start_idx + 1;
+  const size_t spike_K = 11;                    /* window size for spike Hampel filter */
+  const size_t min_samp = GSL_MAX(10, spike_K); /* minimum samples needed for spike/jump processing */
+  const double nsigma[3] = { 8.0, 8.0, 5.0 };   /* tuning parameters for Hampel filter in each component */
+
+  if (nsamp < min_samp)
+    {
+      /* insufficient number of samples for processing */
+      return -1;
+    }
+
+  stage2_correct_spikes(0, fp_spike, spike_K, nsigma, start_idx, end_idx, nspikes, min_spike, max_spike, data);
+
+  return s;
+}
+
+/*
+preclean()
+  Clean data prior to scalar calibration by detecting and
+removing spikes and jumps. Also check for data gaps and
+feed only continuous data streams into the spike/jump correction
+routines
+*/
+
+int
+preclean(const char *spike_file, satdata_mag * data)
+{
+  int s = 0;
+  const time_t max_gap = 2;   /* maximum allowed gap in seconds */
+  FILE *fp_spike = NULL;
+  time_t tcur = satdata_epoch2timet(data->t[0]);
+  size_t nspikes[3] = { 0, 0, 0 };
+  double min_spike[3] = { 1.0e6, 1.0e6, 1.0e6 };
+  double max_spike[3] = { -1.0e6, -1.0e6, -1.0e6 };
+  size_t start_idx = 0;
+  size_t i;
+
+  fprintf(stderr, "\n");
+
+  if (spike_file)
+    {
+      fp_spike = fopen(spike_file, "w");
+      stage2_correct_spikes(1, fp_spike, 0, NULL, 0, 0, NULL, NULL, NULL, NULL);
+    }
+
+  for (i = 0; i < data->n - 1; ++i)
+    {
+      time_t tnext = satdata_epoch2timet(data->t[i + 1]);
+      time_t tdiff = tnext - tcur;
+
+      if (tdiff > max_gap)
+        {
+          preclean_proc(fp_spike, start_idx, i, nspikes, min_spike, max_spike, data);
+          start_idx = i + 1;
+        }
+
+      tcur = tnext;
+    }
+
+  /* process end of data */
+  preclean_proc(fp_spike, start_idx, data->n - 1, nspikes, min_spike, max_spike, data);
+
+  fprintf(stderr, "\t preclean: minimum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
+          min_spike[0], min_spike[1], min_spike[2]);
+
+  fprintf(stderr, "\t preclean: maximum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
+          max_spike[0], max_spike[1], max_spike[2]);
+
+  fprintf(stderr, "\t preclean: total spikes found: %zu (X), %zu (Y), %zu (Z)\n",
+          nspikes[0], nspikes[1], nspikes[2]);
+
+  if (fp_spike)
+    fclose(fp_spike);
+
+  return s;
+}
+
+int
 main(int argc, char *argv[])
 {
   const char *track_file = "track_data.dat";
@@ -549,18 +631,11 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  /* detect and fix single-event spikes in each B_VFM component */
-  {
-    size_t nspikes[3];
-
-    fprintf(stderr, "main: fixing track spikes...");
-    stage2_correct_spikes(spike_file, 3, nspikes, data);
-    fprintf(stderr, "done (data written to %s, %zu X spikes, %zu Y spikes, %zu Z spikes)\n",
-            spike_file,
-            nspikes[0],
-            nspikes[1],
-            nspikes[2]);
-  }
+  fprintf(stderr, "main: precleaning data for spikes and jumps...");
+  gettimeofday(&tv0, NULL);
+  preclean(spike_file, data);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
   fprintf(stderr, "main: fixing track jumps...");
   stage2_correct_jumps(jump_file, data);

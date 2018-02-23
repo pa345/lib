@@ -617,13 +617,14 @@ track_print_track(const int header, FILE *fp, const track_data *tptr,
     {
       j = 1;
       fprintf(fp, "# Field %zu: timestamp (UT seconds since 1970-01-01 00:00:00 UTC)\n", j++);
-      fprintf(fp, "# Field %zu: UT (hours)\n", j++);
       fprintf(fp, "# Field %zu: local time (hours)\n", j++);
       fprintf(fp, "# Field %zu: local time at equator crossing (hours)\n", j++);
       fprintf(fp, "# Field %zu: season (doy)\n", j++);
       fprintf(fp, "# Field %zu: radius (km)\n", j++);
       fprintf(fp, "# Field %zu: longitude (degrees)\n", j++);
       fprintf(fp, "# Field %zu: geocentric latitude (degrees)\n", j++);
+      fprintf(fp, "# Field %zu: Magnetic local time (hours)\n", j++);
+      fprintf(fp, "# Field %zu: Dipole tilt angle (degrees)\n", j++);
       fprintf(fp, "# Field %zu: QD latitude (degrees)\n", j++);
       fprintf(fp, "# Field %zu: NEC X residual (nT)\n", j++);
       fprintf(fp, "# Field %zu: NEC Y residual (nT)\n", j++);
@@ -647,15 +648,16 @@ track_print_track(const int header, FILE *fp, const track_data *tptr,
       if (data->flags[didx])
         continue;
 
-      fprintf(fp, "%ld %7.4f %7.4f %7.4f %5.1f %7.2f %.3f %.3f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %.5e\n",
+      fprintf(fp, "%ld %7.4f %7.4f %5.1f %7.2f %7.3f %7.3f %7.4f %7.3f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %.5e\n",
               unix_time,
-              ut,
               lt,
               tptr->lt_eq,
               get_season(unix_time),
-              data->altitude[didx] + data->R,
+              data->r[didx],
               data->longitude[didx],
               data->latitude[didx],
+              data->MLT[didx],
+              data->tilt[didx] * 180.0 / M_PI,
               data->qdlat[didx],
               tptr->Bx[j],
               tptr->By[j],

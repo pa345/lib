@@ -18,6 +18,7 @@
 
 #include <apex/apex.h>
 #include <common/common.h>
+#include <magcoord/magcoord.h>
 #include <msynth/msynth.h>
 
 #include "pomme.h"
@@ -120,6 +121,73 @@ track_synth_QD(satdata_mag *data)
     }
 
   apex_free(apex_p);
+
+  return s;
+}
+
+/*
+track_synth_MLT()
+  Compute magnetic local time (MLT) along track
+
+Inputs: data - (input/output) satellite data output
+*/
+
+int
+track_synth_MLT(satdata_mag *data)
+{
+  int s = 0;
+  size_t i;
+  magcoord_workspace *magcoord_p = magcoord_alloc();
+
+  /* compute MLT (apex_transform is not thread safe so we can't parallelize this loop) */
+  for (i = 0; i < data->n; ++i)
+    {
+      time_t unix_time = satdata_epoch2timet(data->t[i]);
+      double r = data->r[i];
+      double theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
+      double phi = data->longitude[i] * M_PI / 180.0;
+
+      /* compute MLT (this routine is based on apex code and is not thread-safe) */
+      data->MLT[i] = magcoord_MLT(unix_time, r, theta, phi, magcoord_p);
+    }
+
+  magcoord_free(magcoord_p);
+
+  return s;
+}
+
+/*
+track_synth_tilt()
+  Compute dipole tilt angle along track
+
+Inputs: data - (input/output) satellite data output
+*/
+
+int
+track_synth_tilt(satdata_mag *data)
+{
+  int s = 0;
+  const size_t max_threads = (size_t) omp_get_max_threads();
+  magcoord_workspace **magcoord_p = malloc(max_threads * sizeof(magcoord_workspace *));
+  size_t i;
+
+  for (i = 0; i < max_threads; ++i)
+    magcoord_p[i] = magcoord_alloc();
+
+#pragma omp parallel for private(i)
+  for (i = 0; i < data->n; ++i)
+    {
+      int thread_id = omp_get_thread_num();
+      time_t unix_time = satdata_epoch2timet(data->t[i]);
+
+      /* compute dipole tilt */
+      data->tilt[i] = magcoord_tilt(unix_time, magcoord_p[thread_id]);
+    }
+
+  for (i = 0; i < max_threads; ++i)
+    magcoord_free(magcoord_p[i]);
+
+  free(magcoord_p);
 
   return s;
 }
