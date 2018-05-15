@@ -218,15 +218,6 @@ tiegcm3d_read(const char *filename, tiegcm3d_data *data)
                 data->Jt[idx2] /= 2.0 * delta;
                 data->Jp[idx2] /= 2.0 * delta;
               }
-
-              /* convert to uA/m^2 */
-              for (l = 0; l < nr; ++l)
-                {
-                  size_t idx = TIEGCM3D_IDX(i, l, j, k, data);
-                  data->Jr[idx] *= 1.0e6;
-                  data->Jt[idx] *= 1.0e6;
-                  data->Jp[idx] *= 1.0e6;
-                }
             }
         }
     }

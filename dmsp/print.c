@@ -26,6 +26,7 @@
 
 #include <common/common.h>
 #include <common/ellipsoid.h>
+#include <common/quat.h>
 
 #include "pomme.h"
 
@@ -82,33 +83,32 @@ print_data(const int down_sample, const satdata_mag *data)
   printf("# Field %zu: altitude (km)\n", i++);
   printf("# Field %zu: QD latitude (degrees)\n", i++);
   printf("# Field %zu: satellite direction\n", i++);
+  printf("# Field %zu: X VFM (nT)\n", i++);
+  printf("# Field %zu: Y VFM (nT)\n", i++);
+  printf("# Field %zu: Z VFM (nT)\n", i++);
   printf("# Field %zu: scalar field (nT)\n", i++);
+  printf("# Field %zu: X model rotated to S/C fixed (nT)\n", i++);
+  printf("# Field %zu: Y model rotated to S/C fixed (nT)\n", i++);
+  printf("# Field %zu: Z model rotated to S/C fixed (nT)\n", i++);
   printf("# Field %zu: modeled scalar field (nT)\n", i++);
-  printf("# Field %zu: VFM B_3 (nT)\n", i++);
-  printf("# Field %zu: modeled B_z (nT)\n", i++);
-  printf("# Field %zu: modeled geodetic B_z (nT)\n", i++);
 
   for (i = 0; i < data->n; i += down_sample)
     {
       double year = satdata_epoch2year(data->t[i]);
       time_t unix_time = satdata_epoch2timet(data->t[i]);
+      double *q = &(data->q[4 * i]);
+      double *B_VFM = &(data->B_VFM[3 * i]);
       double theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
       double phi = data->longitude[i] * M_PI / 180.0;
       double lt = get_localtime(unix_time, phi);
-      double B_model[4];
+      double B_model[4], B_model_VFM[3];
 
-      B_model[0] = SATDATA_VEC_X(data->B_main, i) +
-                   SATDATA_VEC_X(data->B_crust, i) +
-                   SATDATA_VEC_X(data->B_ext, i);
-      B_model[1] = SATDATA_VEC_Y(data->B_main, i) +
-                   SATDATA_VEC_Y(data->B_crust, i) +
-                   SATDATA_VEC_Y(data->B_ext, i);
-      B_model[2] = SATDATA_VEC_Z(data->B_main, i) +
-                   SATDATA_VEC_Z(data->B_crust, i) +
-                   SATDATA_VEC_Z(data->B_ext, i);
-      B_model[3] = gsl_hypot3(B_model[0], B_model[1], B_model[2]);
+      satdata_mag_model(i, B_model, data);
 
-      printf("%ld %f %6.2f %10.4f %10.4f %10.4f %10.4f %2d %10.4f %10.4f %10.4f %10.4f %10.4f\n",
+      /* rotate B_model into VFM frame */
+      quat_apply_inverse(q, B_model, B_model_VFM);
+
+      printf("%ld %f %6.2f %10.4f %10.4f %10.4f %10.4f %2d %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\n",
              satdata_epoch2timet(data->t[i]),
              year,
              lt,
@@ -117,11 +117,14 @@ print_data(const int down_sample, const satdata_mag *data)
              data->r[i] - data->R,
              data->qdlat[i],
              satdata_mag_satdir(i, data),
+             B_VFM[0],
+             B_VFM[1],
+             B_VFM[2],
              data->F[i],
-             B_model[3],
-             SATDATA_VEC_Z(data->B_VFM, i),
-             B_model[2],
-             calc_mu3(data->r[i], theta, phi, B_model));
+             B_model_VFM[0],
+             B_model_VFM[1],
+             B_model_VFM[2],
+             B_model[3]);
     }
 
   return s;

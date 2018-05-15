@@ -5,34 +5,31 @@
 #ifndef INCLUDED_peak_h
 #define INCLUDED_peak_h
 
+#include <gsl/gsl_math.h>
+#include <gsl/gsl_vector.h>
+#include <gsl/gsl_movstat.h>
+#include <gsl/gsl_filter.h>
+
 typedef struct
 {
-  gsl_vector *deriv;  /* first derivative of input data */
-  gsl_vector *sderiv; /* smoothed first derivative of input data */
-  size_t n;           /* number of data points to process */
-  size_t p;           /* number of model parameters for gaussian fit */
-  size_t pidx;        /* index into data arrays of center of current peak */
-  size_t idx;         /* index into data arrays of current search location */
-
-  gsl_vector *c;      /* parameters of gaussian fit */
-  size_t idx0;        /* starting index of data for gaussian fit */
-  size_t idx1;        /* ending index of data for gaussian fit */
+  gsl_vector *deriv;        /* first derivative of input data */
+  gsl_vector *median;       /* median of window */
+  gsl_vector *sigma;        /* dispersion of window */
+  gsl_vector *work;         /* workspace, size n */
+  gsl_vector_int *ioutlier; /* outlier detected */
+  size_t n;                 /* number of data points to process */
+  gsl_filter_gaussian_workspace *gaussian_workspace_p;
+  gsl_movstat_workspace *movstat_workspace_p;
+  gsl_filter_impulse_workspace *impulse_workspace_p;
 } peak_workspace;
 
 /*
  * Prototypes
  */
 
-peak_workspace *peak_alloc(const size_t n);
+peak_workspace *peak_alloc(const size_t n, const size_t K_gauss, const size_t K_scale);
 void peak_free(peak_workspace *w);
-int peak_init(const size_t smooth_window, const gsl_vector *x,
-              const gsl_vector *y, peak_workspace *w);
-int peak_find(const int minmax, const double minslope, const double minheight,
-              const gsl_vector *x, const gsl_vector *y, peak_workspace *w);
-int peak_gaussian(const size_t fit_width, const gsl_vector *x,
-                  const gsl_vector *y, peak_workspace *w);
-double peak_eval(const gsl_vector *c, const double x);
-double peak_deriv(const size_t i, const peak_workspace *w);
-double peak_sderiv(const size_t i, const peak_workspace *w);
+int peak_find(const double minheight, const double nsigma, const gsl_vector * x, size_t * npeak,
+              gsl_vector_int * ipeak, peak_workspace *w);
 
 #endif /* INCLUDED_peak_h */

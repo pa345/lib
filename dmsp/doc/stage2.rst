@@ -67,7 +67,7 @@ Spike removal
 .. figure:: /images/spikes.png
    :scale: 60%
 
-   Left: Residuals in VFM frame after removing field models (blue) with Hampel filtered signal (green).
+   Left: F-15 residuals in VFM frame after removing field models (blue) with Hampel filtered signal (green).
    Right: Difference between VFM components before and after correcting for spikes. The figures
    show clearly visible single-sample spikes in all components.
 

@@ -28,9 +28,9 @@ typedef struct
   double *glon; /* geodetic longitude (degrees), size nlon */
   double *glat; /* geodetic latitude (degrees), size nlat */
 
-  double *Jr;   /* J_r grid, nt-by-nr-by-nlon-by-nlat (uA/m^2) */
-  double *Jt;   /* J_t grid, nt-by-nr-by-nlon-by-nlat (uA/m^2) */
-  double *Jp;   /* J_p grid, nt-by-nr-by-nlon-by-nlat (uA/m^2) */
+  double *Jr;   /* J_r grid, nt-by-nr-by-nlon-by-nlat (A/m^2) */
+  double *Jt;   /* J_t grid, nt-by-nr-by-nlon-by-nlat (A/m^2) */
+  double *Jp;   /* J_p grid, nt-by-nr-by-nlon-by-nlat (A/m^2) */
 
   double *work; /* temporary grid, nt-by-nr-nlon-by-nlat */
 
@@ -43,6 +43,7 @@ typedef struct
   size_t ntot;  /* total data allocated */
 } tiegcm3d_data;
 
+/* FFT data based on J grids */
 typedef struct
 {
   size_t nt;       /* number of time steps */

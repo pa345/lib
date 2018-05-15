@@ -15,14 +15,17 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_complex.h>
 
+#include <magfield/magfield.h>
+
 #include "io.h"
+#include "pca3d.h"
 #include "tiegcm3d.h"
 
 static int matlab_dlmwrite_complex(FILE * fp, const gsl_matrix_complex * A);
 
 /*
 pca3d_write_fft_data()
-  Write FFT data to file
+  Write FFT data to file (based on J grids)
 
 Inputs: filename - output file
         data     - data to write
@@ -140,53 +143,185 @@ pca3d_read_fft_data(const char *filename)
 }
 
 int
-pca_write_data(const char *filename, const size_t nmax, const size_t mmax, const tiegcm3d_data *data)
+pca3d_write_data(const char *filename, const pca3d_data * data)
 {
   FILE *fp;
 
   fp = fopen(filename, "w");
   if (!fp)
     {
-      fprintf(stderr, "pca_write_data: unable to open %s: %s\n",
+      fprintf(stderr, "pca3d_write_data: unable to open %s: %s\n",
               filename, strerror(errno));
       return -1;
     }
 
-  fwrite(&nmax, sizeof(size_t), 1, fp);
-  fwrite(&mmax, sizeof(size_t), 1, fp);
   fwrite(&(data->nt), sizeof(size_t), 1, fp);
-  fwrite(data->ut, sizeof(double), data->nt, fp);
+  fwrite(data->t, sizeof(time_t), data->nt, fp);
+  fwrite(&(data->w->params), sizeof(magfield_params), 1, fp);
 
   fclose(fp);
 
   return 0;
 }
 
-int
-pca_read_data(const char *filename, size_t *nmax, size_t *mmax, size_t *nt, double *ut)
+pca3d_data
+pca3d_read_data(const char *filename)
 {
   FILE *fp;
+  pca3d_data data;
+  magfield_params params;
 
   fp = fopen(filename, "r");
   if (!fp)
     {
-      fprintf(stderr, "pca_read_data: unable to open %s: %s\n",
+      fprintf(stderr, "pca3d_read_data: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return data;
+    }
+
+  fread(&(data.nt), sizeof(size_t), 1, fp);
+
+  data.t = malloc(data.nt * sizeof(time_t));
+  fread(data.t, sizeof(time_t), data.nt, fp);
+
+  fread(&params, sizeof(magfield_params), 1, fp);
+
+  data.w = magfield_alloc(&params);
+  if (!data.w)
+    {
+      fprintf(stderr, "pca3d_read_data: magfield workspace allocation failed\n");
+      fclose(fp);
+      return data;
+    }
+
+  fclose(fp);
+
+  return data;
+}
+
+/*
+pca3d_write_fft_data2()
+  Write FFT data to file (based on Mie decomposition of J grids)
+
+Inputs: filename - output file
+        data     - data to write
+        light    - if 1, only metadata (grid positions, sizes etc) are written,
+                   not the current or FFT grids themselves; if 0, everything is written
+*/
+
+int
+pca3d_write_fft_data2(const char *filename, const pca3d_fft_data *data, const int light)
+{
+  FILE *fp;
+
+  fp = fopen(filename, "w");
+  if (!fp)
+    {
+      fprintf(stderr, "pca3d_write_fft_data2: unable to open %s: %s\n",
               filename, strerror(errno));
       return -1;
     }
 
-  fread(nmax, sizeof(size_t), 1, fp);
-  fread(mmax, sizeof(size_t), 1, fp);
+  fwrite(&light, sizeof(int), 1, fp);
+  fwrite(&(data->nt), sizeof(size_t), 1, fp);
+  fwrite(&(data->nfreq), sizeof(size_t), 1, fp);
+  fwrite(&(data->nr), sizeof(size_t), 1, fp);
+  fwrite(&(data->lmin), sizeof(size_t), 1, fp);
+  fwrite(&(data->lmax), sizeof(size_t), 1, fp);
+  fwrite(&(data->mmax), sizeof(size_t), 1, fp);
+  fwrite(&(data->nlm), sizeof(size_t), 1, fp);
+  fwrite(&(data->T), sizeof(size_t), 1, fp);
+  fwrite(&(data->fs), sizeof(double), 1, fp);
+  fwrite(&(data->window_size), sizeof(double), 1, fp);
+  fwrite(&(data->window_shift), sizeof(double), 1, fp);
+  fwrite(&(data->nwindow), sizeof(size_t), 1, fp);
+  fwrite(data->t, sizeof(time_t), data->nt, fp);
+  fwrite(data->r, sizeof(double), data->nr, fp);
+  gsl_vector_fwrite(fp, data->window);
 
-  if (nt && ut)
+  if (!light)
     {
-      fread(nt, sizeof(size_t), 1, fp);
-      fread(ut, sizeof(double), *nt, fp);
+      fwrite(data->grid_q, sizeof(gsl_complex), data->nt * data->nr * data->nlm, fp);
+      fwrite(data->grid_qt, sizeof(gsl_complex), data->nt * data->nr * data->nlm, fp);
+      fwrite(data->grid_p, sizeof(gsl_complex), data->nt * data->nr * data->nlm, fp);
+
+      fwrite(data->Qq, sizeof(gsl_complex), data->T * data->nfreq * data->nr * data->nlm, fp);
+      fwrite(data->Qqt, sizeof(gsl_complex), data->T * data->nfreq * data->nr * data->nlm, fp);
+      fwrite(data->Qp, sizeof(gsl_complex), data->T * data->nfreq * data->nr * data->nlm, fp);
     }
 
   fclose(fp);
 
   return 0;
+}
+
+/*
+pca3d_read_fft_data2()
+  Read FFT data from file (based on Mie decomposition of J grids)
+
+Inputs: filename - output file
+*/
+
+pca3d_fft_data
+pca3d_read_fft_data2(const char *filename)
+{
+  FILE *fp;
+  int light;
+  pca3d_fft_data data;
+
+  fp = fopen(filename, "r");
+  if (!fp)
+    {
+      fprintf(stderr, "pca3d_read_fft_data2: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return data;
+    }
+
+  fread(&light, sizeof(int), 1, fp);
+  fread(&(data.nt), sizeof(size_t), 1, fp);
+  fread(&(data.nfreq), sizeof(size_t), 1, fp);
+  fread(&(data.nr), sizeof(size_t), 1, fp);
+  fread(&(data.lmin), sizeof(size_t), 1, fp);
+  fread(&(data.lmax), sizeof(size_t), 1, fp);
+  fread(&(data.mmax), sizeof(size_t), 1, fp);
+  fread(&(data.nlm), sizeof(size_t), 1, fp);
+  fread(&(data.T), sizeof(size_t), 1, fp);
+  fread(&(data.fs), sizeof(double), 1, fp);
+  fread(&(data.window_size), sizeof(double), 1, fp);
+  fread(&(data.window_shift), sizeof(double), 1, fp);
+  fread(&(data.nwindow), sizeof(size_t), 1, fp);
+
+  /* allocate vectors */
+  data.t = malloc(data.nt * sizeof(time_t));
+  data.r = malloc(data.nr * sizeof(double));
+  data.window = gsl_vector_alloc(data.nwindow);
+
+  fread(data.t, sizeof(time_t), data.nt, fp);
+  fread(data.r, sizeof(double), data.nr, fp);
+  gsl_vector_fread(fp, data.window);
+
+  if (!light)
+    {
+      data.grid_q = malloc(data.nt * data.nr * data.nlm * sizeof(gsl_complex));
+      data.grid_qt = malloc(data.nt * data.nr * data.nlm * sizeof(gsl_complex));
+      data.grid_p = malloc(data.nt * data.nr * data.nlm * sizeof(gsl_complex));
+
+      data.Qq = malloc(data.T * data.nfreq * data.nr * data.nlm * sizeof(gsl_complex));
+      data.Qqt = malloc(data.T * data.nfreq * data.nr * data.nlm * sizeof(gsl_complex));
+      data.Qp = malloc(data.T * data.nfreq * data.nr * data.nlm * sizeof(gsl_complex));
+
+      fread(data.grid_q, sizeof(gsl_complex), data.nt * data.nr * data.nlm, fp);
+      fread(data.grid_qt, sizeof(gsl_complex), data.nt * data.nr * data.nlm, fp);
+      fread(data.grid_p, sizeof(gsl_complex), data.nt * data.nr * data.nlm, fp);
+
+      fread(data.Qq, sizeof(gsl_complex), data.T * data.nfreq * data.nr * data.nlm, fp);
+      fread(data.Qqt, sizeof(gsl_complex), data.T * data.nfreq * data.nr * data.nlm, fp);
+      fread(data.Qp, sizeof(gsl_complex), data.T * data.nfreq * data.nr * data.nlm, fp);
+    }
+
+  fclose(fp);
+
+  return data;
 }
 
 int

@@ -478,7 +478,7 @@ time t
 
 static int
 euler_calc_sph_basis(const size_t idx, double rhat[3], double that[3],
-                   double phat[3], const magdata *data)
+                     double phat[3], const magdata *data)
 {
   int s = 0;
   double theta = data->theta[idx];
@@ -522,7 +522,7 @@ Inputs: idx    - index specifying satellite position
 
 static int
 euler_calc_basis(const size_t idx, double s1_hat[3], double s2_hat[3],
-               double s3_hat[3], const magdata *data)
+                 double s3_hat[3], const magdata *data)
 {
   int s = 0;
   double V[3],     /* velocity vector in ECI */
@@ -609,8 +609,7 @@ Inputs: idx  - index specifying satellite position
 */
 
 static int
-euler_calc_Rs(const size_t idx, gsl_matrix *Rs,
-            const magdata *data)
+euler_calc_Rs(const size_t idx, gsl_matrix *Rs, const magdata *data)
 {
   double s1_hat[3], s2_hat[3], s3_hat[3];
   double rhat_ecef[3], that_ecef[3], phat_ecef[3];

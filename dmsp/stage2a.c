@@ -23,7 +23,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_blas.h>
-#include <gsl/gsl_deriv.h>
+#include <gsl/gsl_filter.h>
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_multifit.h>
@@ -36,12 +36,15 @@
 #include <common/quat.h>
 #include <msynth/msynth.h>
 
+#include "attitude.h"
 #include "eph.h"
+#include "jump.h"
 #include "magcal.h"
 #include "track.h"
 
+#include "stage2_calibrate.c"
+#include "stage2_euler.c"
 #include "stage2_filter.c"
-#include "stage2_jumps.c"
 #include "stage2_quaternions.c"
 #include "stage2_spikes.c"
 
@@ -415,15 +418,65 @@ stage2_vfm2nec(satdata_mag *data)
   return 0;
 }
 
+/*
+precalibrate()
+  Perform initial scalar calibration and determination of
+Euler angles
+
+Inputs: scal_file  - output file for scalar calibration residuals
+        euler_file - output file for Euler angle residuals
+        data       - satellite data
+        track_p    - track data
+        coef       - (output) scalar calibration parameters
+        rms        - (output) scalar calibration rms
+
+Return: pointer to new satdata_mag structure which has been scalar calibrated;
+original 'data' not modified
+*/
+
+static satdata_mag *
+precalibrate(const char * scal_file, const char * euler_file, const satdata_mag * data, const track_workspace * track_p,
+             gsl_vector * coef, double * rms)
+{
+  satdata_mag * data_cal;
+  struct timeval tv0, tv1;
+
+  fprintf(stderr, "\n");
+
+  data_cal = satdata_copy(data);
+
+  fprintf(stderr, "\t precalibrate: computing initial scalar calibration for dataset...");
+  gettimeofday(&tv0, NULL);
+  stage2_calibrate(scal_file, data_cal, track_p, coef, rms);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  fprintf(stderr, "\t precalibrate: applying initial scalar calibration to dataset...");
+  gettimeofday(&tv0, NULL);
+  fluxcal_apply(coef, data_cal);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  fprintf(stderr, "\t precalibrate: computing initial Euler angles for dataset...");
+  gettimeofday(&tv0, NULL);
+  stage2_euler(euler_file, data_cal, track_p);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  exit(1);
+
+  return data_cal;
+}
+
 int
-preclean_proc(FILE *fp_spike, const size_t start_idx, const size_t end_idx, size_t nspikes[3],
-              double min_spike[3], double max_spike[3], satdata_mag * data)
+preclean_proc(FILE *fp_spike, FILE *fp_jump, const size_t start_idx, const size_t end_idx, size_t njump[3], size_t nspikes[3],
+              double min_spike[3], double max_spike[3], jump_workspace * jump_p, satdata_mag * data)
 {
   int s = 0;
   const size_t nsamp = end_idx - start_idx + 1;
-  const size_t spike_K = 11;                    /* window size for spike Hampel filter */
-  const size_t min_samp = GSL_MAX(10, spike_K); /* minimum samples needed for spike/jump processing */
-  const double nsigma[3] = { 8.0, 8.0, 5.0 };   /* tuning parameters for Hampel filter in each component */
+  const size_t impulse_K = 15;                    /* window size for impulse detection filter */
+  const size_t min_samp = GSL_MAX(10, impulse_K); /* minimum samples needed for spike/jump processing */
+  const double nsigma[3] = { 1.0e6, 1.0e6, 8.0 };     /* tuning parameters for Hampel filter in each component */
 
   if (nsamp < min_samp)
     {
@@ -431,7 +484,13 @@ preclean_proc(FILE *fp_spike, const size_t start_idx, const size_t end_idx, size
       return -1;
     }
 
-  stage2_correct_spikes(0, fp_spike, spike_K, nsigma, start_idx, end_idx, nspikes, min_spike, max_spike, data);
+#if 0
+  stage2_correct_spikes(0, fp_spike, impulse_K, nsigma, start_idx, end_idx, nspikes, min_spike, max_spike, data);
+#endif
+
+#if 1 /*XXX*/
+  jump_proc(0, fp_jump, start_idx, end_idx, njump, data, jump_p);
+#endif
 
   return s;
 }
@@ -445,16 +504,26 @@ routines
 */
 
 int
-preclean(const char *spike_file, satdata_mag * data)
+preclean(const char *spike_file, const char *jump_file, satdata_mag * data)
 {
   int s = 0;
-  const time_t max_gap = 2;   /* maximum allowed gap in seconds */
+  const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
+#if 1
+  const size_t jump_hampel_K = 11; /* Hampel filter window size for jump detection */
+#else
+  const size_t jump_hampel_K = 61; /* impulse detecting filter window size */
+#endif
   FILE *fp_spike = NULL;
+  FILE *fp_jump = NULL;
   time_t tcur = satdata_epoch2timet(data->t[0]);
+  size_t njump[3] = { 0, 0, 0 };
   size_t nspikes[3] = { 0, 0, 0 };
   double min_spike[3] = { 1.0e6, 1.0e6, 1.0e6 };
   double max_spike[3] = { -1.0e6, -1.0e6, -1.0e6 };
+  jump_workspace *jump_p = jump_alloc(86400 * 5, jump_hampel_K);
   size_t start_idx = 0;
+  size_t ngap = 0;            /* number of data gaps larger than gap_threshold */
+  time_t max_gap = 0;         /* maximum data gap found */
   size_t i;
 
   fprintf(stderr, "\n");
@@ -465,23 +534,39 @@ preclean(const char *spike_file, satdata_mag * data)
       stage2_correct_spikes(1, fp_spike, 0, NULL, 0, 0, NULL, NULL, NULL, NULL);
     }
 
+  if (jump_file)
+    {
+      fp_jump = fopen(jump_file, "w");
+      jump_proc(1, fp_jump, 0, 0, NULL, NULL, NULL);
+    }
+
   for (i = 0; i < data->n - 1; ++i)
     {
       time_t tnext = satdata_epoch2timet(data->t[i + 1]);
       time_t tdiff = tnext - tcur;
 
-      if (tdiff > max_gap)
+      if (tdiff > gap_threshold)
         {
-          preclean_proc(fp_spike, start_idx, i, nspikes, min_spike, max_spike, data);
+          preclean_proc(fp_spike, fp_jump, start_idx, i, njump, nspikes, min_spike, max_spike, jump_p, data);
           start_idx = i + 1;
+
+          ++ngap;
+          if (tdiff > max_gap)
+            max_gap = tdiff;
         }
 
       tcur = tnext;
     }
 
   /* process end of data */
-  preclean_proc(fp_spike, start_idx, data->n - 1, nspikes, min_spike, max_spike, data);
+  preclean_proc(fp_spike, fp_jump, start_idx, data->n - 1, njump, nspikes, min_spike, max_spike, jump_p, data);
 
+  fprintf(stderr, "\t preclean: total data gaps found: %zu (maximum gap: %ld [sec])\n", ngap, max_gap);
+
+  fprintf(stderr, "\t preclean: total jumps found and corrected: %zu (X), %zu (Y), %zu (Z)\n",
+          njump[0], njump[1], njump[2]);
+
+#if 0
   fprintf(stderr, "\t preclean: minimum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
           min_spike[0], min_spike[1], min_spike[2]);
 
@@ -490,9 +575,15 @@ preclean(const char *spike_file, satdata_mag * data)
 
   fprintf(stderr, "\t preclean: total spikes found: %zu (X), %zu (Y), %zu (Z)\n",
           nspikes[0], nspikes[1], nspikes[2]);
+#endif
 
   if (fp_spike)
     fclose(fp_spike);
+
+  if (fp_jump)
+    fclose(fp_jump);
+
+  jump_free(jump_p);
 
   return s;
 }
@@ -502,12 +593,15 @@ main(int argc, char *argv[])
 {
   const char *track_file = "track_data.dat";
   const char *quat_file = "stage2_quat.dat";
+  const char *attitude_file = "stage2_attitude.dat";
 #if WRITE_JUMP_DATA
   const char *scal_file = "stage2_scal.dat";
+  const char *euler_file = "stage2_euler.dat";
   const char *spike_file = "stage2_spikes.dat";
   const char *jump_file = "stage2_jumps.dat";
 #else
   const char *scal_file = NULL;
+  const char *euler_file = NULL;
   const char *spike_file = NULL;
   const char *jump_file = NULL;
 #endif
@@ -516,6 +610,7 @@ main(int argc, char *argv[])
   char *res_file = NULL;
   char *data_file = NULL;
   satdata_mag *data = NULL;
+  satdata_mag *data2 = NULL;
   eph_data *eph = NULL;
   double period = -1.0; /* period in days for fitting scalar calibration parameters */
   double period_ms = -1.0; /* period in ms for fitting scalar calibration parameters */
@@ -631,15 +726,32 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  fprintf(stderr, "main: precleaning data for spikes and jumps...");
+  fprintf(stderr, "main: computing initial attitude correction to dataset...");
   gettimeofday(&tv0, NULL);
-  preclean(spike_file, data);
+  attitude_correct(attitude_file, data, track_p);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
+#if 0
+  fprintf(stderr, "main: applying initial scalar calibration and Euler angles to dataset...");
+  gettimeofday(&tv0, NULL);
+  data2 = precalibrate(scal_file, euler_file, data, track_p, coef, &rms);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+#endif
+
+  fprintf(stderr, "main: precleaning data for spikes and jumps...");
+  gettimeofday(&tv0, NULL);
+  preclean(spike_file, jump_file, data);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+  exit(1);
+
+#if 0
   fprintf(stderr, "main: fixing track jumps...");
   stage2_correct_jumps(jump_file, data);
   fprintf(stderr, "done\n");
+#endif
 
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
@@ -738,6 +850,9 @@ main(int argc, char *argv[])
   satdata_mag_free(data);
   eph_data_free(eph);
   free(t);
+
+  if (data2)
+    satdata_mag_free(data2);
 
   if (fp_param)
     fclose(fp_param);

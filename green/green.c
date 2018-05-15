@@ -488,7 +488,11 @@ green_nnm(const green_workspace *w)
 /*
 green_calc_nnm()
   Compute total number of spherical harmonic coefficients
-for a given nmax and mmax
+for a given nmax and mmax.
+
+nnm = mmax * (mmax + 2) + (nmax - mmax) * (2*mmax + 1)
+
+this formula starts at n = 1 (does not count n = 0 term)
 
 Inputs: nmax - maximum SH degree
         mmax - maximum SH order

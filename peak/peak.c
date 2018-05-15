@@ -17,18 +17,22 @@
 
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
+#include <gsl/gsl_movstat.h>
+#include <gsl/gsl_filter.h>
 
-#include "gaussfit.h"
 #include "peak.h"
 
-static int deriv_calc(const gsl_vector *x, gsl_vector *d);
-static int peak_smooth(const size_t window, const size_t n,
-                       const double *x, double *smooth_x);
-static int fit_gaussian(const size_t fit_width, const size_t i, const gsl_vector *x,
-                        const gsl_vector *y, peak_workspace *w);
+/*
+peak_alloc()
+  Allocate peak workspace
+
+Inputs: n       - maximum length of input vector
+        K_gauss - size of window for Gaussian filter
+        K_scale - size of window for scale estimate
+*/
 
 peak_workspace *
-peak_alloc(const size_t n)
+peak_alloc(const size_t n, const size_t K_gauss, const size_t K_scale)
 {
   peak_workspace *w;
 
@@ -36,15 +40,16 @@ peak_alloc(const size_t n)
   if (!w)
     return 0;
 
-  w->deriv = gsl_vector_alloc(n);
-  w->sderiv = gsl_vector_alloc(n);
-
   w->n = n;
-  w->p = 3;
-  w->idx = 0;
-  w->pidx = 0;
 
-  w->c = gsl_vector_alloc(w->p);
+  w->deriv = gsl_vector_alloc(n);
+  w->median = gsl_vector_alloc(n);
+  w->sigma = gsl_vector_alloc(n);
+  w->work = gsl_vector_alloc(n);
+  w->ioutlier = gsl_vector_int_alloc(n);
+  w->gaussian_workspace_p = gsl_filter_gaussian_alloc(K_gauss);
+  w->movstat_workspace_p = gsl_movstat_alloc(K_scale);
+  w->impulse_workspace_p = gsl_filter_impulse_alloc(K_scale);
 
   return w;
 }
@@ -55,310 +60,117 @@ peak_free(peak_workspace *w)
   if (w->deriv)
     gsl_vector_free(w->deriv);
 
-  if (w->sderiv)
-    gsl_vector_free(w->sderiv);
+  if (w->median)
+    gsl_vector_free(w->median);
 
-  if (w->c)
-    gsl_vector_free(w->c);
+  if (w->sigma)
+    gsl_vector_free(w->sigma);
+
+  if (w->work)
+    gsl_vector_free(w->work);
+
+  if (w->ioutlier)
+    gsl_vector_int_free(w->ioutlier);
+
+  if (w->gaussian_workspace_p)
+    gsl_filter_gaussian_free(w->gaussian_workspace_p);
+
+  if (w->impulse_workspace_p)
+    gsl_filter_impulse_free(w->impulse_workspace_p);
+
+  if (w->movstat_workspace_p)
+    gsl_movstat_free(w->movstat_workspace_p);
 
   free(w);
 }
 
 /*
-peak_init()
-  Initialize peak finding algorithm for given (x,y) data. This
-involves computing the first derivative of y and smoothing that
-first derivative
-
-Inputs: smooth_window - window size for smoothing (number of samples)
-        x             - x data
-        y             - y data
-        w             - workspace
-
-Return: success/error
-
-Notes:
-1) On output, w->deriv contains the first derivative of y, computed
-as central differences
-
-2) On output, w->sderiv contains the smoothed first derivative of y
-using smooth_window
-*/
-
-int
-peak_init(const size_t smooth_window, const gsl_vector *x,
-          const gsl_vector *y, peak_workspace *w)
-{
-  if (x->size != w->n)
-    {
-      GSL_ERROR("x vector does not match workspace", GSL_EBADLEN);
-    }
-  else if (y->size != w->n)
-    {
-      GSL_ERROR("y vector does not match workspace", GSL_EBADLEN);
-    }
-  else
-    {
-      int s;
-
-      w->idx = 0;
-
-      /* compute first derivative of y */
-      s = deriv_calc(y, w->deriv);
-      if (s)
-        return s;
-
-      /* smooth first derivative of y */
-      s = peak_smooth(smooth_window, w->n, w->deriv->data, w->sderiv->data);
-      if (s)
-        return s;
-
-      return s;
-    }
-}
-
-/*
 peak_find()
 
-Inputs: minmax       - +1 to search for maximum (peaks)
-                       -1 to search for minimum (valleys)
-                        0 to search for both
-        minslope     - minimum slope of first derivative needed
-        minheight    - minimum height needed to detect peak; set to
-                       0.0 to disable this test
-        x            - x data
-        y            - y data
-        w            - workspace
+Inputs: minheight - minimum height needed to detect peak; set to
+                    0.0 to disable this test
+        nsigma    - number of standard deviations a peak must be from its
+                    local median
+        x         - input data
+        npeak     - (output) number of peaks found
+        ipeak     - (output) boolean vector of peak locations
+                    ipeak[j] = -1 if minimum peak found at location j
+                             =  0 if no peak found at location j
+                             = +1 if maximum peak found at location j
+        w         - workspace
 
 Return:
-GSL_CONTINUE if peak found
-GSL_SUCCESS if no more peaks found
-
-Notes:
-1) When a peak is found, w->pidx stores the index into x/y of peak location
 */
 
 int
-peak_find(const int minmax, const double minslope, const double minheight,
-          const gsl_vector *x, const gsl_vector *y, peak_workspace *w)
+peak_find(const double minheight, const double nsigma, const gsl_vector * x, size_t * npeak, gsl_vector_int * ipeak, peak_workspace *w)
 {
-  const size_t n = w->n;
-
-  if (x->size != n)
-    {
-      GSL_ERROR("x vector does not match workspace", GSL_EBADLEN);
-    }
-  else if (y->size != n)
-    {
-      GSL_ERROR("y vector does not match workspace", GSL_EBADLEN);
-    }
-  else
-    {
-      int s = GSL_SUCCESS;
-
-      if (w->idx >= n)
-        return s; /* no more data to search */
-
-      for ( ; w->idx < n - 1; ++(w->idx))
-        {
-          double di = gsl_vector_get(w->sderiv, w->idx);
-          double dip1 = gsl_vector_get(w->sderiv, w->idx + 1);
-          double yi, yip1;
-
-          /* look for zero crossing of first derivative */
-          if (di * dip1 > 0.0)
-            continue;
-
-          /*
-           * for peaks, derivative changes from positive to negative and
-           * vice versa for valleys
-           */
-          if (minmax == 1 && !(di >= 0.0 && dip1 < 0.0))
-            continue;
-
-          if (minmax == -1 && !(di <= 0.0 && dip1 > 0.0))
-            continue;
-
-          yi = gsl_vector_get(y, w->idx);
-          yip1 = gsl_vector_get(y, w->idx + 1);
-
-          /*
-           * check if slope of derivative is less than minslope; this
-           * test eliminates broad features as peaks
-           */
-          if (fabs(di - dip1) < minslope * yi)
-            continue;
-
-          /* check if peak height exceeds minimum threshold */
-          if (minheight != 0.0 && yi < minheight && yip1 < minheight)
-            continue;
-
-          /* store peak location */
-          w->pidx = w->idx;
-
-          /* update idx for next call */
-          ++(w->idx);
-
-          s = GSL_CONTINUE;
-          break;
-        }
-
-      /* found peak or done searching data */
-      return s;
-    }
-} /* peak_find() */
-
-/*
-peak_gaussian()
-  Fit a gaussian to time series around a located peak
-
-Inputs: fit_width    - size of window for gaussian fitting
-        x            - x data
-        y            - y data
-        w            - workspace
-
-Return: success/error
-
-Notes:
-1) peak_find() must first be called to locate a peak and set w->pidx
-to peak location
-*/
-
-int
-peak_gaussian(const size_t fit_width, const gsl_vector *x, const gsl_vector *y, peak_workspace *w)
-{
-  const size_t n = w->n;
-
-  if (x->size != n)
-    {
-      GSL_ERROR("x vector does not match workspace", GSL_EBADLEN);
-    }
-  else if (y->size != n)
-    {
-      GSL_ERROR("y vector does not match workspace", GSL_EBADLEN);
-    }
-  else
-    {
-      int s;
-      double xi = gsl_vector_get(x, w->pidx);
-      double yi = gsl_vector_get(y, w->pidx);
-
-      /* initial guess vector */
-      gsl_vector_set(w->c, 0, yi);  /* height */
-      gsl_vector_set(w->c, 1, xi);  /* position */
-      gsl_vector_set(w->c, 2, 5.0); /* stddev */
-
-      /* fit gaussian */
-      s = fit_gaussian(fit_width, w->pidx, x, y, w);
-
-      return s;
-    }
-}
-
-double
-peak_eval(const gsl_vector *c, const double x)
-{
-  return gaussfit_eval(c, x);
-}
-
-double
-peak_deriv(const size_t i, const peak_workspace *w)
-{
-  return gsl_vector_get(w->deriv, i);
-}
-
-double
-peak_sderiv(const size_t i, const peak_workspace *w)
-{
-  return gsl_vector_get(w->sderiv, i);
-}
-
-static int
-deriv_calc(const gsl_vector *x, gsl_vector *d)
-{
-  size_t i;
   const size_t n = x->size;
 
-  gsl_vector_set(d, 0, gsl_vector_get(x, 1) - gsl_vector_get(x, 0));
-  gsl_vector_set(d, n - 1, gsl_vector_get(x, n - 1) - gsl_vector_get(x, n - 2));
-
-  for (i = 1; i < n - 1; ++i)
+  if (n > w->n)
     {
-      double xm1 = gsl_vector_get(x, i - 1);
-      double xp1 = gsl_vector_get(x, i + 1);
-      
-      gsl_vector_set(d, i, 0.5 * (xp1 - xm1));
+      GSL_ERROR("x vector does not match workspace", GSL_EBADLEN);
     }
-
-  return GSL_SUCCESS;
-} /* deriv_calc() */
-
-static int
-peak_smooth(const size_t window, const size_t n, const double *x, double *smooth_x)
-{
-  const size_t half_window = window / 2;
-  gsl_vector_view sv = gsl_vector_view_array(smooth_x, n);
-  double sum = 0.0;
-  size_t i;
-
-  gsl_vector_set_zero(&sv.vector);
-
-  for (i = 0; i < window; ++i)
-    sum += x[i];
-
-  for (i = 0; i < n - window; ++i)
+  else if (ipeak->size != n)
     {
-      smooth_x[i + half_window - 1] = sum;
-      sum = (sum + x[i + window]) - x[i];
+      GSL_ERROR("ipeak vector does not match x size", GSL_EBADLEN);
     }
-
-  for (i = n - window; i < n; ++i)
-    smooth_x[n - half_window - 1] += x[i];
-
-  gsl_vector_scale(&sv.vector, 1.0 / (double) window);
-
-  return GSL_SUCCESS;
-} /* peak_smooth() */
-
-static int
-fit_gaussian(const size_t fit_width, const size_t i, const gsl_vector *x,
-             const gsl_vector *y, peak_workspace *w)
-{
-  int s = GSL_SUCCESS;
-  const size_t half_width = fit_width / 2;
-  size_t idx0, idx1, n;
-
-  if (i < half_width)
-    idx0 = 0;
   else
-    idx0 = i - half_width;
+    {
+      const double sigma = 0.25;
+      gsl_vector_view d = gsl_vector_subvector(w->deriv, 0, n);
+      gsl_vector_view med = gsl_vector_subvector(w->median, 0, n);
+      gsl_vector_view scale = gsl_vector_subvector(w->sigma, 0, n);
+      gsl_vector_int_view iout = gsl_vector_int_subvector(w->ioutlier, 0, n);
+      gsl_vector_view y = gsl_vector_subvector(w->work, 0, n);
+      size_t nimpulse;
+      size_t i;
 
-  if (i + half_width >= x->size)
-    idx1 = x->size - 1;
-  else
-    idx1 = i + half_width;
+      /* initialize */
+      gsl_vector_int_set_zero(ipeak);
+      *npeak = 0;
 
-  n = idx1 - idx0 + 1;
+      /* apply smoothing (Gaussian) filter to input and differentiate at same time */
+      gsl_filter_gaussian(sigma, 1, x, &d.vector, w->gaussian_workspace_p);
 
-  {
-    gsl_vector_const_view xv = gsl_vector_const_subvector(x, idx0, n);
-    gsl_vector_const_view yv = gsl_vector_const_subvector(y, idx0, n);
-    gaussfit_workspace *gauss_p = gaussfit_alloc(n, w->p);
+      /* apply impulse detection filter to signal to identify candidate peaks */
+      gsl_filter_impulse(GSL_FILTER_END_PADVALUE, GSL_FILTER_SCALE_MAD, nsigma, x, &y.vector,
+                         &med.vector, &scale.vector, &nimpulse, &iout.vector, w->impulse_workspace_p);
 
-    /* initial guess */
-    gaussfit_init(w->c, gauss_p);
+      for (i = 0; i < n - 1; ++i)
+        {
+          double di = gsl_vector_get(&d.vector, i);
+          double dip1 = gsl_vector_get(&d.vector, i + 1);
+          int iouti = gsl_vector_int_get(&iout.vector, i);
 
-    /* fit gaussian */
-    s = gaussfit(xv.vector.data, yv.vector.data, gauss_p);
-    
-    /* save parameters */
-    gsl_vector_memcpy(w->c, gauss_p->c);
+          /* look for an outlier (sample is nsigma stddevs above surrounding noise) and also
+           * a zero crossing of first derivative indicating a maxima/minima */
+          if (iouti && di * dip1 < 0.0)
+            {
+              double xi = gsl_vector_get(x, i);
+              double xip1 = gsl_vector_get(x, i + 1);
 
-    gaussfit_free(gauss_p);
-  }
+              /* ensure peak height is above minimum threshold */
+              if (fabs(xi) < minheight || fabs(xip1) < minheight)
+                continue;
 
-  w->idx0 = idx0;
-  w->idx1 = idx1;
+              if (di > 0.0)
+                gsl_vector_int_set(ipeak, i, 1);  /* peak */
+              else
+                gsl_vector_int_set(ipeak, i, -1); /* valley */
 
-  return s;
-} /* fit_gaussian() */
+              ++(*npeak);
+            }
+
+          printf("%zu %.12e %.12e %.12e %.12e %d\n",
+                 i,
+                 gsl_vector_get(x, i),
+                 di,
+                 gsl_vector_get(&med.vector, i),
+                 gsl_vector_get(&scale.vector, i),
+                 gsl_vector_int_get(ipeak, i));
+        }
+
+      return GSL_SUCCESS;
+    }
+}

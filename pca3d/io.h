@@ -9,6 +9,7 @@
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_matrix.h>
 
+#include "pca3d.h"
 #include "tiegcm3d.h"
 
 /*
@@ -18,8 +19,11 @@
 int pca3d_write_fft_data(const char *filename, const tiegcm3d_fft_data *data, const int light);
 tiegcm3d_fft_data pca3d_read_fft_data(const char *filename);
 
-int pca_write_data(const char *filename, const size_t nmax, const size_t mmax, const tiegcm3d_data *data);
-int pca_read_data(const char *filename, size_t *nmax, size_t *mmax, size_t *nt, double *ut);
+int pca3d_write_data(const char *filename, const pca3d_data * data);
+pca3d_data pca3d_read_data(const char *filename);
+int pca3d_write_fft_data2(const char *filename, const pca3d_fft_data *data, const int light);
+pca3d_fft_data pca3d_read_fft_data2(const char *filename);
+
 int pca_write_vector(const char *filename, const gsl_vector *v);
 gsl_vector *pca_read_vector(const char *filename);
 int pca_write_matrix(const char *filename, const gsl_matrix *m);

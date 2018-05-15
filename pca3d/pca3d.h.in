@@ -8,7 +8,8 @@
 #define INCLUDED_pca3d_h
 
 #include <gsl/gsl_math.h>
-#include <gsl/gsl_matrix.h>
+
+#include <magfield/magfield.h>
 
 /* stage2a: FFT data file */
 #define PCA3D_STAGE2A_FFT_DATA         "@abs_top_builddir@/pca3d/data/stage2a_fft.dat"
@@ -17,6 +18,51 @@
 /* stage3a data files */
 #define PCA3D_STAGE3A_SVAL_TXT         "@abs_top_builddir@/pca3d/data/stage3a_sval_txt"
 #define PCA3D_STAGE3A_U                "@abs_top_builddir@/pca3d/data/stage3a_U"
+
+/* stage1b: output files */
+#define PCA3D_STAGE1B_DATA             "@abs_top_builddir@/pca3d/data/stage1b/stage1b.dat"
+#define PCA3D_STAGE1B_SH_PREFIX        "@abs_top_builddir@/pca3d/data/stage1b/stage1b_SH"
+
+/* stage2b: FFT data file */
+#define PCA3D_STAGE2B_FFT_DATA         "@abs_top_builddir@/pca3d/data/stage2b_fft.dat"
+#define PCA3D_STAGE2B_FFT_DATA_LIGHT   "@abs_top_builddir@/pca3d/data/stage2b_fft_light.dat"
+
+/* stage3b data files */
+#define PCA3D_STAGE3B_SVAL_TXT         "@abs_top_builddir@/pca3d/data/stage3b/stage3b_sval_txt"
+#define PCA3D_STAGE3B_U                "@abs_top_builddir@/pca3d/data/stage3b/stage3b_U"
+
+typedef struct
+{
+  time_t *t;             /* timestamps, size nt */
+  size_t nt;             /* number of timestamps */
+  magfield_workspace *w; /* magfield workspace */
+} pca3d_data;
+
+/* FFT data based on SH (Mie) decomposition of J grids */
+typedef struct
+{
+  size_t nt;            /* number of time steps */
+  size_t nfreq;         /* number of frequencies */
+  size_t nr;            /* number of r grid points */
+  size_t lmin;          /* minimum SH degree */
+  size_t lmax;          /* maximum SH degree */
+  size_t mmax;          /* maximum SH order */
+  size_t nlm;           /* number of SH coefficients */
+  size_t T;             /* number of time window segments */
+  double fs;            /* sampling frequency (samples/day) */
+  double window_size;   /* window size in days */
+  double window_shift;  /* window shift in days */
+  size_t nwindow;       /* number of samples in each window */
+  gsl_vector *window;   /* window function, size nwindow */
+  time_t *t;            /* timestamps, size nt */
+  double *r;            /* radius (km), size nr */
+  gsl_complex *grid_q;  /* q_l^m(t,r) grid, nt-by-nr-by-nlm */
+  gsl_complex *grid_qt; /* q~_l^m(t,r) grid, nt-by-nr-by-nlm */
+  gsl_complex *grid_p;  /* p_l^m(t,r) grid, nt-by-nr-by-nlm */
+  gsl_complex *Qq;      /* q_l^m(t,r) transform grid, T-by-nfreq-by-nr-by-nlm */
+  gsl_complex *Qqt;     /* q~_l^m(t,r) transform grid, T-by-nfreq-by-nr-by-nlm */
+  gsl_complex *Qp;      /* p_l^m(t,r) transform grid, T-by-nfreq-by-nr-by-nlm */
+} pca3d_fft_data;
 
 /*
  * Prototypes

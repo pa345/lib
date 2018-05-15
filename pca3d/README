@@ -1,0 +1,9 @@
+There are two chains of programs:
+
+stage2a - read TIEGCM 3D current grids, compute FFTs of windowed time series at each grid point
+stage3a - use FFT results to build spectral density matrix for each frequency band, compute SVD
+          to get principal component vectors
+
+=====
+
+stage1b - read TIEGCM 3D current grids, perform Mie decomposition to represent them in spherical harmonic form
