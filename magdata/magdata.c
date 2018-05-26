@@ -16,11 +16,13 @@
 #include <assert.h>
 
 #include <satdata/satdata.h>
+#include <obsdata/obsdata.h>
 
 #include <gsl/gsl_math.h>
 
 #include <common/bsearch.h>
 #include <common/common.h>
+#include <common/interp.h>
 
 #include "magdata.h"
 #include "track.h"
@@ -96,6 +98,7 @@ magdata_realloc(const size_t n, const double R, magdata *data)
   data->theta = realloc(data->theta, n * sizeof(double));
   data->phi = realloc(data->phi, n * sizeof(double));
   data->qdlat = realloc(data->qdlat, n * sizeof(double));
+  data->MLT = realloc(data->MLT, n * sizeof(double));
 
   data->Bx_nec = realloc(data->Bx_nec, n * sizeof(double));
   data->By_nec = realloc(data->By_nec, n * sizeof(double));
@@ -107,6 +110,9 @@ magdata_realloc(const size_t n, const double R, magdata *data)
   data->By_model = realloc(data->By_model, n * sizeof(double));
   data->Bz_model = realloc(data->Bz_model, n * sizeof(double));
   data->F = realloc(data->F, n * sizeof(double));
+  data->dXdt_nec = realloc(data->dXdt_nec, n * sizeof(double));
+  data->dYdt_nec = realloc(data->dYdt_nec, n * sizeof(double));
+  data->dZdt_nec = realloc(data->dZdt_nec, n * sizeof(double));
   data->q = realloc(data->q, 4 * n * sizeof(double));
   data->lt = realloc(data->lt, n * sizeof(double));
   data->lt_eq = realloc(data->lt_eq, n * sizeof(double));
@@ -146,7 +152,7 @@ magdata_realloc(const size_t n, const double R, magdata *data)
       !data->Bx_nec_ns || !data->By_nec_ns || !data->Bz_nec_ns ||
       !data->Bx_vfm_ns || !data->By_vfm_ns || !data->Bz_vfm_ns ||
       !data->Bx_model_ns || !data->By_model_ns || !data->Bz_model_ns || !data->F_ns || !data->q_ns || !data->lt_eq_ns ||
-      !data->lt_ns)
+      !data->lt_ns || !data->dXdt_nec || !data->dYdt_nec || !data->dZdt_nec || !data->MLT)
     {
       magdata_free(data);
       fprintf(stderr, "magdata_realloc: error reallocating variables\n");
@@ -179,6 +185,9 @@ magdata_free(magdata *data)
   if (data->qdlat)
     free(data->qdlat);
 
+  if (data->MLT)
+    free(data->MLT);
+
   if (data->Bx_nec)
     free(data->Bx_nec);
 
@@ -205,6 +214,15 @@ magdata_free(magdata *data)
 
   if (data->Bz_model)
     free(data->Bz_model);
+
+  if (data->dXdt_nec)
+    free(data->dXdt_nec);
+
+  if (data->dYdt_nec)
+    free(data->dYdt_nec);
+
+  if (data->dZdt_nec)
+    free(data->dZdt_nec);
 
   if (data->ne)
     free(data->ne);
@@ -309,11 +327,13 @@ magdata_datum_init(magdata_datum *datum)
   int s = 0;
   size_t i;
 
+  datum->name[0] = '\0';
   datum->t = 0.0;
   datum->r = 0.0;
   datum->theta = 0.0;
   datum->phi = 0.0;
   datum->qdlat = 0.0;
+  datum->MLT = 0.0;
   datum->F = 0.0;
   datum->ne = 0.0;
   datum->satdir = 0;
@@ -332,6 +352,7 @@ magdata_datum_init(magdata_datum *datum)
       datum->B_nec[i] = 0.0;
       datum->B_vfm[i] = 0.0;
       datum->B_model[i] = 0.0;
+      datum->dBdt_nec[i] = 0.0;
       datum->B_nec_ns[i] = 0.0;
       datum->B_vfm_ns[i] = 0.0;
       datum->B_model_ns[i] = 0.0;
@@ -371,12 +392,14 @@ magdata_add(const magdata_datum *datum, magdata *data)
       return -1;
     }
 
+  strncpy(data->name, datum->name, MAGDATA_NAME_LENGTH);
   data->t[n] = datum->t;
   data->ts[n] = 0.0; /* filled in later */
   data->r[n] = datum->r;
   data->theta[n] = datum->theta;
   data->phi[n] = wrappi(datum->phi);
   data->qdlat[n] = datum->qdlat;
+  data->MLT[n] = datum->MLT;
   data->flags[n] = datum->flags;
   data->index[n] = 0; /* filled in later */
   data->Bx_nec[n] = datum->B_nec[0];
@@ -389,6 +412,9 @@ magdata_add(const magdata_datum *datum, magdata *data)
   data->By_model[n] = datum->B_model[1];
   data->Bz_model[n] = datum->B_model[2];
   data->F[n] = datum->F;
+  data->dXdt_nec[n] = datum->dBdt_nec[0];
+  data->dYdt_nec[n] = datum->dBdt_nec[1];
+  data->dZdt_nec[n] = datum->dBdt_nec[2];
   data->ne[n] = datum->ne;
   data->satdir[n] = datum->satdir;
   data->weights[n] = 1.0; /* computed in magdata_calc() */
@@ -1102,11 +1128,13 @@ magdata_write(const char *filename, magdata *data)
   fwrite(&(data->global_flags), sizeof(size_t), 1, fp);
   fwrite(&(data->euler_flags), sizeof(size_t), 1, fp);
 
+  fwrite(data->name, sizeof(char), MAGDATA_NAME_LENGTH, fp);
   fwrite(data->t, sizeof(double), data->n, fp);
   fwrite(data->r, sizeof(double), data->n, fp);
   fwrite(data->theta, sizeof(double), data->n, fp);
   fwrite(data->phi, sizeof(double), data->n, fp);
   fwrite(data->qdlat, sizeof(double), data->n, fp);
+  fwrite(data->MLT, sizeof(double), data->n, fp);
   fwrite(data->F, sizeof(double), data->n, fp);
   fwrite(data->F_ns, sizeof(double), data->n, fp);
 
@@ -1122,6 +1150,9 @@ magdata_write(const char *filename, magdata *data)
       fwrite(data->Bx_model, sizeof(double), data->n, fp);
       fwrite(data->By_model, sizeof(double), data->n, fp);
       fwrite(data->Bz_model, sizeof(double), data->n, fp);
+      fwrite(data->dXdt_nec, sizeof(double), data->n, fp);
+      fwrite(data->dYdt_nec, sizeof(double), data->n, fp);
+      fwrite(data->dZdt_nec, sizeof(double), data->n, fp);
       fwrite(data->q, sizeof(double), 4 * data->n, fp);
       fwrite(data->satdir, sizeof(int), data->n, fp);
       fwrite(data->lt, sizeof(double), data->n, fp);
@@ -1201,11 +1232,13 @@ magdata_read(const char *filename, magdata *data)
   fread(&(data->global_flags), sizeof(size_t), 1, fp);
   fread(&(data->euler_flags), sizeof(size_t), 1, fp);
 
+  fread(&(data->name[0]), sizeof(char), MAGDATA_NAME_LENGTH, fp);
   fread(&(data->t[data->n]), sizeof(double), n, fp);
   fread(&(data->r[data->n]), sizeof(double), n, fp);
   fread(&(data->theta[data->n]), sizeof(double), n, fp);
   fread(&(data->phi[data->n]), sizeof(double), n, fp);
   fread(&(data->qdlat[data->n]), sizeof(double), n, fp);
+  fread(&(data->MLT[data->n]), sizeof(double), n, fp);
   fread(&(data->F[data->n]), sizeof(double), n, fp);
   fread(&(data->F_ns[data->n]), sizeof(double), n, fp);
 
@@ -1220,6 +1253,9 @@ magdata_read(const char *filename, magdata *data)
       fread(&(data->Bx_model[data->n]), sizeof(double), n, fp);
       fread(&(data->By_model[data->n]), sizeof(double), n, fp);
       fread(&(data->Bz_model[data->n]), sizeof(double), n, fp);
+      fread(&(data->dXdt_nec[data->n]), sizeof(double), n, fp);
+      fread(&(data->dYdt_nec[data->n]), sizeof(double), n, fp);
+      fread(&(data->dZdt_nec[data->n]), sizeof(double), n, fp);
       fread(&(data->q[4 * data->n]), sizeof(double), 4 * n, fp);
       fread(&(data->satdir[data->n]), sizeof(int), n, fp);
       fread(&(data->lt[data->n]), sizeof(double), n, fp);
@@ -1520,6 +1556,7 @@ magdata_copy_track(const magdata_params *params, const size_t track_idx,
       datum.theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
       datum.phi = data->longitude[i] * M_PI / 180.0;
       datum.qdlat = data->qdlat[i];
+      datum.MLT = data->MLT[i];
       datum.ne = 0.0; /* filled in later */
       datum.satdir = satdata_mag_satdir(i, data);
       datum.flags = flags;
@@ -1761,6 +1798,7 @@ magdata_copy_track_EW(const magdata_params *params, const size_t track_idx,
       datum.theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
       datum.phi = data->longitude[i] * M_PI / 180.0;
       datum.qdlat = data->qdlat[i];
+      datum.MLT = data->MLT[i];
       datum.ne = 0.0; /* filled in later */
       datum.satdir = satdata_mag_satdir(i, data);
       datum.flags = flags;
@@ -1804,6 +1842,70 @@ magdata_copy_track_EW(const magdata_params *params, const size_t track_idx,
 }
 
 /*
+magdata_copy_station()
+  Copy a single observatory station into magdata structure, discarding
+bad data, and flagging when scalar/vector measurements are
+available.
+
+Inputs: params    - parameters
+        station   - observatory station data
+        mdata     - (output) where to store data
+        ntype     - (output) counts of different data stored in mdata
+                    ntype[0]   - number of scalar measurements
+                    ntype[1]   - number of vector measurements (both VFM and NEC)
+                    ntype[2]   - number of along-track scalar measurements
+                    ntype[3]   - number of along-track vector measurements (both VFM and NEC)
+                    ntype[4-5] - unused
+
+Return: success/error
+
+Notes:
+1) ntype should be initialized by the calling function
+*/
+
+int
+magdata_copy_station(const magdata_params *params, const obsdata_station * station,
+                     magdata *mdata, size_t ntype[6])
+{
+  magdata_datum datum;
+  size_t i;
+
+  /* initialize */
+  magdata_datum_init(&datum);
+
+  strncpy(datum.name, station->name, MAGDATA_NAME_LENGTH);
+
+  for (i = 0; i < station->n_sv; ++i)
+    {
+      int s;
+      size_t flags = MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT;
+      size_t idx;
+
+      datum.t = station->t_sv[i];
+      datum.r = station->radius;
+      datum.theta = M_PI / 2.0 - station->latitude * M_PI / 180.0;
+      datum.phi = station->longitude * M_PI / 180.0;
+      datum.flags = flags;
+      datum.lt = obsdata_localtime(datum.t, datum.phi);
+      datum.dBdt_nec[0] = station->X_sv[i];
+      datum.dBdt_nec[1] = station->Y_sv[i];
+      datum.dBdt_nec[2] = station->Z_sv[i];
+
+      idx = bsearch_double(station->t, datum.t, 0, station->n - 1);
+
+      datum.qdlat = interp1d(station->t[idx], station->t[idx + 1],
+                             station->qdlat[idx], station->qdlat[idx + 1],
+                             datum.t);
+
+      s = magdata_add(&datum, mdata);
+      if (s)
+        return s;
+    }
+
+  return 0;
+}
+
+/*
 magdata_mag2sat()
   Convert magdata to satdata struct
 
@@ -1834,6 +1936,7 @@ magdata_mag2sat(const magdata *mdata)
       data->latitude[idx] = 90.0 - mdata->theta[i] * 180.0 / M_PI;
       data->longitude[idx] = mdata->phi[i] * 180.0 / M_PI;
       data->qdlat[idx] = mdata->qdlat[i];
+      data->MLT[idx] = mdata->MLT[i];
       SATDATA_VEC_X(data->B, idx) = mdata->Bx_nec[i];
       SATDATA_VEC_Y(data->B, idx) = mdata->By_nec[i];
       SATDATA_VEC_Z(data->B, idx) = mdata->Bz_nec[i];

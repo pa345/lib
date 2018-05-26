@@ -34,6 +34,8 @@
 
 #include "magfit.h"
 
+#define NULL_VECTOR_VIEW {{0, 0, 0, 0, 0}}
+
 typedef struct
 {
   size_t n;         /* total number of measurements in system */
@@ -49,11 +51,15 @@ typedef struct
   size_t p_ext;     /* number of external coefficients */
   size_t ext_offset; /* offset of external coefficients in solution vector 'c' */
 
-  gsl_matrix *X;    /* LS matrix */
+  gsl_matrix *X;    /* LS matrix, nmax-by-p */
+  gsl_vector *XTy;  /* X^T y */
+  gsl_matrix *XTX;  /* X^T X, p-by-p */
   gsl_vector *rhs;  /* rhs vector */
   gsl_vector *wts;  /* weight vector */
   gsl_matrix *cov;  /* covariance matrix */
   gsl_vector *c;    /* solution vector c = [ c_int ; c_ext ] */
+
+  size_t flags;     /* fitting flags */
 
   gsl_multifit_linear_workspace *multifit_p;
   gsl_multilarge_linear_workspace *multilarge_p;
@@ -91,6 +97,7 @@ static void *
 gauss_alloc(const void * params)
 {
   const magfit_parameters *mparams = (const magfit_parameters *) params;
+  const size_t max_observations = 50000;
   gauss_state_t *state;
 
   state = calloc(1, sizeof(gauss_state_t));
@@ -101,7 +108,8 @@ gauss_alloc(const void * params)
   state->mmax_int = mparams->mmax_int;
   state->lmax_ext = mparams->nmax_ext;
   state->mmax_ext = mparams->mmax_ext;
-  state->nmax = 10000;
+  state->nmax = 3 * max_observations;
+  state->flags = mparams->flags;
   state->n = 0;
 
   if (state->lmax_int > 0)
@@ -125,11 +133,15 @@ gauss_alloc(const void * params)
   state->p = state->p_int + state->p_ext;
 
   state->X = gsl_matrix_alloc(state->nmax, state->p);
+  state->XTX = gsl_matrix_alloc(state->p, state->p);
+  state->XTy = gsl_vector_alloc(state->p);
   state->c = gsl_vector_alloc(state->p);
   state->rhs = gsl_vector_alloc(state->nmax);
   state->wts = gsl_vector_alloc(state->nmax);
   state->cov = gsl_matrix_alloc(state->p, state->p);
   state->multifit_p = gsl_multifit_linear_alloc(state->nmax, state->p);
+
+  state->multilarge_p = gsl_multilarge_linear_alloc(gsl_multilarge_linear_normal, state->p);
 
   return state;
 }
@@ -210,28 +222,48 @@ gauss_add_datum(const double t, const double r, const double theta, const double
   gauss_state_t *state = (gauss_state_t *) vstate;
   size_t rowidx = state->n;
   double wi = 1.0;
-  gsl_vector_view vx = gsl_matrix_row(state->X, rowidx);
-  gsl_vector_view vy = gsl_matrix_row(state->X, rowidx + 1);
-  gsl_vector_view vz = gsl_matrix_row(state->X, rowidx + 2);
+  gsl_vector_view vx = NULL_VECTOR_VIEW;
+  gsl_vector_view vy = NULL_VECTOR_VIEW;
+  gsl_vector_view vz = NULL_VECTOR_VIEW;
 
   (void) t;
   (void) qdlat;
 
-  /* set rhs vector */
-  gsl_vector_set(state->rhs, rowidx, B[0]);
-  gsl_vector_set(state->rhs, rowidx + 1, B[1]);
-  gsl_vector_set(state->rhs, rowidx + 2, B[2]);
+  if (state->flags & MAGFIT_FLG_FIT_X)
+    {
+      vx = gsl_matrix_row(state->X, rowidx);
+      gsl_vector_set(state->rhs, rowidx, B[0]);
+      gsl_vector_set(state->wts, rowidx, wi);
+      ++rowidx;
+    }
 
-  /* set weight vector */
-  gsl_vector_set(state->wts, rowidx, wi);
-  gsl_vector_set(state->wts, rowidx + 1, wi);
-  gsl_vector_set(state->wts, rowidx + 2, wi);
+  if (state->flags & MAGFIT_FLG_FIT_Y)
+    {
+      vy = gsl_matrix_row(state->X, rowidx);
+      gsl_vector_set(state->rhs, rowidx, B[1]);
+      gsl_vector_set(state->wts, rowidx, wi);
+      ++rowidx;
+    }
 
-  /* build 3 rows of the LS matrix */
+  if (state->flags & MAGFIT_FLG_FIT_Z)
+    {
+      vz = gsl_matrix_row(state->X, rowidx);
+      gsl_vector_set(state->rhs, rowidx, B[2]);
+      gsl_vector_set(state->wts, rowidx, wi);
+      ++rowidx;
+    }
+
+  /* build desired rows of the LS matrix */
   build_matrix_row(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, state);
-  rowidx += 3;
 
   state->n = rowidx;
+
+  if (state->n >= state->nmax)
+    {
+      /* fold observations into XTX and XTy */
+      gsl_multilarge_linear_accumulate(state->X, state->rhs, state->multilarge_p);
+      state->n = 0;
+    }
 
   return GSL_SUCCESS;
 }
@@ -262,16 +294,31 @@ gauss_fit(double * rnorm, double * snorm, void * vstate)
   if (state->n < state->p)
     return -1;
 
+  if (state->n > 0)
+    {
+      gsl_matrix_view Xv = gsl_matrix_submatrix(state->X, 0, 0, state->n, state->p);
+      gsl_vector_view yv = gsl_vector_subvector(state->rhs, 0, state->n);
+
+      /* fold observations into XTX and XTy */
+      gsl_multilarge_linear_accumulate(&Xv.matrix, &yv.vector, state->multilarge_p);
+
+      state->n = 0;
+    }
+
   fprintf(stderr, "\n");
-  fprintf(stderr, "\t n = %zu\n", state->n);
   fprintf(stderr, "\t p = %zu\n", state->p);
 
+#if 0
   /* solve system */
   gsl_multifit_wlinear(&A.matrix, &wts.vector, &b.vector, state->c, state->cov, &chisq, state->multifit_p);
 
   rcond = gsl_multifit_linear_rcond(state->multifit_p);
   *rnorm = sqrt(chisq);
   *snorm = gsl_blas_dnrm2(state->c);
+#else
+  gsl_multilarge_linear_solve(0.0, state->c, rnorm, snorm, state->multilarge_p);
+  gsl_multilarge_linear_rcond(&rcond, state->multilarge_p);
+#endif
 
   fprintf(stderr, "\t rnorm = %g\n", *rnorm);
   fprintf(stderr, "\t snorm = %g\n", *snorm);
@@ -382,9 +429,18 @@ build_matrix_row(const double r, const double theta, const double phi,
  
   if (state->p_int > 0)
     {
-      gsl_vector_view xv = gsl_vector_subvector(X, 0, state->p_int);
-      gsl_vector_view yv = gsl_vector_subvector(Y, 0, state->p_int);
-      gsl_vector_view zv = gsl_vector_subvector(Z, 0, state->p_int);
+      gsl_vector_view xv = NULL_VECTOR_VIEW;
+      gsl_vector_view yv = NULL_VECTOR_VIEW;
+      gsl_vector_view zv = NULL_VECTOR_VIEW;
+
+      if (X->data)
+        xv = gsl_vector_subvector(X, 0, state->p_int);
+
+      if (Y->data)
+        yv = gsl_vector_subvector(Y, 0, state->p_int);
+
+      if (Z->data)
+        zv = gsl_vector_subvector(Z, 0, state->p_int);
 
       s = green_calc_int(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_int_p);
       if (s)
@@ -393,9 +449,18 @@ build_matrix_row(const double r, const double theta, const double phi,
 
   if (state->p_ext > 0)
     {
-      gsl_vector_view xv = gsl_vector_subvector(X, state->ext_offset, state->p_ext);
-      gsl_vector_view yv = gsl_vector_subvector(Y, state->ext_offset, state->p_ext);
-      gsl_vector_view zv = gsl_vector_subvector(Z, state->ext_offset, state->p_ext);
+      gsl_vector_view xv = NULL_VECTOR_VIEW;
+      gsl_vector_view yv = NULL_VECTOR_VIEW;
+      gsl_vector_view zv = NULL_VECTOR_VIEW;
+
+      if (X->data)
+        xv = gsl_vector_subvector(X, state->ext_offset, state->p_ext);
+
+      if (Y->data)
+        yv = gsl_vector_subvector(Y, state->ext_offset, state->p_ext);
+
+      if (Z->data)
+        zv = gsl_vector_subvector(Z, state->ext_offset, state->p_ext);
 
       s = green_calc_ext(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_ext_p);
       if (s)

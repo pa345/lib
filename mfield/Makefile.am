@@ -1,8 +1,8 @@
-bin_PROGRAMS = mfield mfield_preproc
+bin_PROGRAMS = mfield mfield_preproc mfield_preproc_obs
 
 check_PROGRAMS = mfield_emag mfield_eval_main mfield_residuals mfield_compare mfield_plot
 
-common_libs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la -L/home/palken/usr/lib -lapex -lflow -lcommon -lmsynth -lm -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libptcblas.a ~/usr/lib/libptf77blas.a ~/usr/lib/libatlas.a -lpthread -lgfortran -lsatdata -lindices -lnetcdf
+common_libs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/estist/libestist_calc.la -L/home/palken/usr/lib -lobsdata -lapex -lflow -lcommon -lmsynth -lm -lcdf -lpomme -lsatdata -lindices ~/usr/lib/libgsl.a ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libptcblas.a ~/usr/lib/libptf77blas.a ~/usr/lib/libatlas.a -lpthread -lgfortran -lnetcdf
 
 mfield_SOURCES = mfield.c mfield_data.c mfield_green.c mfield_main.c mfield_synth.c
 mfield_CFLAGS = -fopenmp
@@ -16,6 +16,11 @@ mfield_preproc_SOURCES = mfield_preproc.c
 mfield_preproc_CFLAGS = -fopenmp
 mfield_preproc_LDFLAGS = -fopenmp
 mfield_preproc_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
+
+mfield_preproc_obs_SOURCES = mfield_preproc_obs.c
+mfield_preproc_obs_CFLAGS = -fopenmp
+mfield_preproc_obs_LDFLAGS = -fopenmp
+mfield_preproc_obs_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
 
 mfield_compare_SOURCES = mfield_compare.c
 mfield_compare_LDADD = $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la -lapex -lcommon -lmsynth -lm -lgsl -lptcblas -lptf77blas -latlas -lindices -lpthread -lgfortran -L/home/palken/usr/lib

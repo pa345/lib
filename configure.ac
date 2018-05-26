@@ -46,6 +46,7 @@ AC_CONFIG_FILES([            \
   mserv/Makefile             \
   msis/Makefile              \
   peak/Makefile              \
+  pej/Makefile               \
   poltor/Makefile            \
   pomme/Makefile             \
   superlu/Makefile           \

@@ -133,9 +133,9 @@ jump_detect(const double min_jump_threshold, const gsl_vector * x,
             medtest_stats_type * stats, gsl_vector_int * ijump, jump_workspace * w)
 {
   const int n = x->size;
-  const int H = 15;
+  const int H = 10;
   const double alpha = 1.0e-6;
-  const double nsigma = 20.0;
+  const double nsigma = 15.0;
   size_t njump = 0;
   double window1[100], window2[100];
   int i;

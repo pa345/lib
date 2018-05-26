@@ -30,6 +30,7 @@ SUBDIRS =         \
   invert_eej      \
   pca             \
   pca3d           \
+  pej             \
   swarm           \
   gd              \
   dmsp            \

@@ -54,6 +54,9 @@ magdata_print2(const char *filename, const magdata *data)
   msynth_p = msynth_read(MSYNTH_BOUMME_FILE);
   msynth_set(1, 15, msynth_p);
 
+  if (data->name[0] != '\0')
+    fprintf(fp, "# Name: %s\n", data->name);
+
   i = 1;
   fprintf(fp, "# Field %zu: timestamp (seconds since 01-01-1970 00:00:00 UTC\n", i++);
   fprintf(fp, "# Field %zu: geocentric radius (km)\n", i++);
@@ -65,6 +68,9 @@ magdata_print2(const char *filename, const magdata *data)
   fprintf(fp, "# Field %zu: B_x minus core field (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_y minus core field (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_z minus core field (nT)\n", i++);
+  fprintf(fp, "# Field %zu: d/dt B_x (nT/year)\n", i++);
+  fprintf(fp, "# Field %zu: d/dt B_y (nT/year)\n", i++);
+  fprintf(fp, "# Field %zu: d/dt B_z (nT/year)\n", i++);
 
   for (i = 0; i < data->n; ++i)
     {
@@ -77,8 +83,13 @@ magdata_print2(const char *filename, const magdata *data)
       if (!(data->flags[i] & MAGDATA_FLG_FIT_MF))
         continue;
 
+#if 0
       if (!(data->flags[i] & MAGDATA_FLG_Z))
         continue;
+#else
+      if (!(data->flags[i] & MAGDATA_FLG_DZDT))
+        continue;
+#endif
 
       /* subtract external POMME */
       magdata_residual(i, B, data);
@@ -88,7 +99,7 @@ magdata_print2(const char *filename, const magdata *data)
       if ((i > 0) && (data->flags[i] & MAGDATA_FLG_TRACK_START))
         fprintf(fp, "\n");
 
-      fprintf(fp, "%ld %.4f %.3f %.3f %.5e %.5e %.5e %.5e %.5e %.5e\n",
+      fprintf(fp, "%ld %.4f %.3f %.3f %.5e %.5e %.5e %.5e %.5e %.5e %.5e %.5e %.5e\n",
               unix_time,
               data->r[i],
               wrap180(data->phi[i] * 180.0 / M_PI),
@@ -98,7 +109,10 @@ magdata_print2(const char *filename, const magdata *data)
               data->Bz_nec[i],
               B[0] - B_core[0],
               B[1] - B_core[1],
-              B[2] - B_core[2]);
+              B[2] - B_core[2],
+              data->dXdt_nec[i],
+              data->dYdt_nec[i],
+              data->dZdt_nec[i]);
     }
 
   msynth_free(msynth_p);

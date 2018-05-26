@@ -108,6 +108,8 @@ w->Plm
 w->dPlm
 w->sinmphi
 w->cosmphi
+
+2) X,Y,Z can be set to NULL if not desired
 */
 
 int
@@ -151,16 +153,26 @@ green_calc_int(const double r, const double theta, const double phi,
           if (m < 0)
             {
               /* h_{nm} */
-              X[cidx] = term * w->sinmphi[mabs] * w->dPlm[aidx] * (-sint);
-              Y[cidx] = -term / sint * mabs * w->cosmphi[mabs] * w->Plm[aidx];
-              Z[cidx] = -(n + 1.0) * term * w->sinmphi[mabs] * w->Plm[aidx];
+              if (X)
+                X[cidx] = term * w->sinmphi[mabs] * w->dPlm[aidx] * (-sint);
+
+              if (Y)
+                Y[cidx] = -term / sint * mabs * w->cosmphi[mabs] * w->Plm[aidx];
+
+              if (Z)
+                Z[cidx] = -(n + 1.0) * term * w->sinmphi[mabs] * w->Plm[aidx];
             }
           else
             {
               /* g_{nm} */
-              X[cidx] = term * w->cosmphi[mabs] * w->dPlm[aidx] * (-sint);
-              Y[cidx] = term / sint * mabs * w->sinmphi[mabs] * w->Plm[aidx];
-              Z[cidx] = -(n + 1.0) * term * w->cosmphi[mabs] * w->Plm[aidx];
+              if (X)
+                X[cidx] = term * w->cosmphi[mabs] * w->dPlm[aidx] * (-sint);
+
+              if (Y)
+                Y[cidx] = term / sint * mabs * w->sinmphi[mabs] * w->Plm[aidx];
+
+              if (Z)
+                Z[cidx] = -(n + 1.0) * term * w->cosmphi[mabs] * w->Plm[aidx];
             }
         }
     }
@@ -188,6 +200,8 @@ w->Plm
 w->dPlm
 w->sinmphi
 w->cosmphi
+
+2) X,Y,Z can be set to NULL if not desired
 */
 
 int
@@ -228,16 +242,26 @@ green_calc_ext(const double r, const double theta, const double phi,
           if (m < 0)
             {
               /* k_{nm} */
-              X[cidx] = term * w->sinmphi[mabs] * w->dPlm[pidx];
-              Y[cidx] = -term / sint * mabs * w->cosmphi[mabs] * w->Plm[pidx];
-              Z[cidx] = (double) n * term * w->sinmphi[mabs] * w->Plm[pidx];
+              if (X)
+                X[cidx] = term * w->sinmphi[mabs] * w->dPlm[pidx];
+
+              if (Y)
+                Y[cidx] = -term / sint * mabs * w->cosmphi[mabs] * w->Plm[pidx];
+
+              if (Z)
+                Z[cidx] = (double) n * term * w->sinmphi[mabs] * w->Plm[pidx];
             }
           else
             {
               /* q_{nm} */
-              X[cidx] = term * w->cosmphi[mabs] * w->dPlm[pidx];
-              Y[cidx] = term / sint * mabs * w->sinmphi[mabs] * w->Plm[pidx];
-              Z[cidx] = (double) n * term * w->cosmphi[mabs] * w->Plm[pidx];
+              if (X)
+                X[cidx] = term * w->cosmphi[mabs] * w->dPlm[pidx];
+
+              if (Y)
+                Y[cidx] = term / sint * mabs * w->sinmphi[mabs] * w->Plm[pidx];
+
+              if (Z)
+                Z[cidx] = (double) n * term * w->cosmphi[mabs] * w->Plm[pidx];
             }
         }
 
