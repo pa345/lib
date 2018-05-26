@@ -205,7 +205,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
         } /* for (j = 0; j < mptr->n; ++j) */
     }
 
-  if (mparams->regularize && !mparams->synth_data)
+  if (f && mparams->regularize && !mparams->synth_data)
     {
       /* store L*x in bottom of f for regularization */
       gsl_vector_view v = gsl_vector_subvector(f, w->nres, w->p);
@@ -423,7 +423,7 @@ mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vec
                 b_model[k] = B_model[k] / B_model[3];
 
 #if 1
-              for (k = 0; k < w->nnm_mf; ++k)
+              for (k = 0; k < w->nnm_max; ++k)
                 {
                   double v_mf = mfield_get_mf(v, k, w);
                   double v_sv = mfield_get_sv(v, k, w);
@@ -439,7 +439,7 @@ mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vec
                   tmp[1] = term0 * b_model[1] + dYk;
                   tmp[2] = term0 * b_model[2] + dZk;
 
-                  for (kp = 0; kp < w->nnm_mf; ++kp)
+                  for (kp = 0; kp < w->nnm_max; ++kp)
                     {
                       double vp_mf = mfield_get_mf(v, kp, w);
                       double vp_sv = mfield_get_sv(v, kp, w);
@@ -774,7 +774,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               F = gsl_hypot3(X, Y, Z);
 
               /* compute (X dX + Y dY + Z dZ) */
-              for (k = 0; k < w->nnm_mf; ++k)
+              for (k = 0; k < w->nnm_max; ++k)
                 {
                   double dXk = gsl_vector_get(&vx.vector, k);
                   double dYk = gsl_vector_get(&vy.vector, k);
@@ -985,12 +985,15 @@ static double
 mfield_nonlinear_model_int(const double t, const gsl_vector *v,
                            const gsl_vector *g, const mfield_workspace *w)
 {
-  gsl_vector_const_view gmf = gsl_vector_const_subvector(g, 0, w->nnm_mf);
-  gsl_vector_const_view vmf = gsl_vector_const_subvector(v, 0, w->nnm_mf);
-  double mf, sv = 0.0, sa = 0.0, val;
+  double mf = 0.0, sv = 0.0, sa = 0.0, val;
 
-  /* compute v . x_mf */
-  gsl_blas_ddot(&vmf.vector, &gmf.vector, &mf);
+  if (w->nnm_mf > 0)
+    {
+      /* compute v . x_mf */
+      gsl_vector_const_view gmf = gsl_vector_const_subvector(g, 0, w->nnm_mf);
+      gsl_vector_const_view vmf = gsl_vector_const_subvector(v, 0, w->nnm_mf);
+      gsl_blas_ddot(&vmf.vector, &gmf.vector, &mf);
+    }
 
   if (w->nnm_sv > 0)
     {
@@ -1022,7 +1025,7 @@ J(row,:) = [ dB, t * dB, 1/2 t^2 dB ]
 accounting for differences in spherical harmonic degrees for MF, SV, and SA
 
 Inputs: t  - scaled time of measurement
-        dB - Green's functions for desired component (X,Y,Z), size nnm_mf
+        dB - Green's functions for desired component (X,Y,Z), size nnm_max
         J  - (output) Jacobian row; columns 1 - w->p_int will be filled in, size p_int
         w  - workspace
 */
@@ -1034,17 +1037,19 @@ jacobian_row_int(const double t, const gsl_vector * dB, gsl_vector * J, mfield_w
   const double fac_sa = 0.5 * t * t;
   size_t i;
 
-  for (i = 0; i < w->nnm_mf; ++i)
+  for (i = 0; i < w->nnm_max; ++i)
     {
       double dBi = gsl_vector_get(dB, i);
 
       /* main field portion */
-      gsl_vector_set(J, i, dBi);
+      if (i < w->nnm_mf)
+        gsl_vector_set(J, i, dBi);
 
       /* secular variation portion */
       if (i < w->nnm_sv)
         gsl_vector_set(J, w->sv_offset + i, t * dBi);
 
+      /* secular acceleration portion */
       if (i < w->nnm_sa)
         gsl_vector_set(J, w->sa_offset + i, fac_sa * dBi);
     }
@@ -1063,8 +1068,8 @@ accounting for differences in spherical harmonic degrees for MF, SV, and SA
 
 Inputs: t   - scaled time of measurement
         t2  - scaled time of gradient measurement
-        dB  - Green's functions for desired component (X,Y,Z), size nnm_mf
-        dB2 - Green's functions for desired component (X,Y,Z) of gradient point (N/S or E/W), size nnm_mf
+        dB  - Green's functions for desired component (X,Y,Z), size nnm_max
+        dB2 - Green's functions for desired component (X,Y,Z) of gradient point (N/S or E/W), size nnm_max
         J   - (output) Jacobian row; columns 1 - w->p_int will be filled in, size p_int
         w   - workspace
 */
@@ -1078,13 +1083,14 @@ jacobian_row_int_grad(const double t, const double t2, const gsl_vector * dB, co
   const double fac2 = 0.5 * t2 * t2;
   size_t i;
 
-  for (i = 0; i < w->nnm_mf; ++i)
+  for (i = 0; i < w->nnm_max; ++i)
     {
       double dBi = gsl_vector_get(dB, i);
       double dB2i = gsl_vector_get(dB2, i);
 
       /* main field portion */
-      gsl_vector_set(J, i, dB2i - dBi);
+      if (i < w->nnm_mf)
+        gsl_vector_set(J, i, dB2i - dBi);
 
       /* secular variation portion */
       if (i < w->nnm_sv)

@@ -165,7 +165,7 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
 
   {
     msynth_workspace *msynth_p = msynth_igrf_read(MSYNTH_IGRF_FILE);
-    const size_t nmax = GSL_MIN(w->nmax_mf, msynth_p->nmax);
+    const size_t nmax = GSL_MIN(w->nmax_max, msynth_p->nmax);
     const double t = w->epoch;                       /* desired epoch */
     const double t0 = msynth_get_epoch(t, msynth_p); /* IGRF epoch */
     const double dt = t - t0;
@@ -217,7 +217,7 @@ print_spectrum(const char *filename, mfield_workspace *w)
   fprintf(fp, "# Field %zu: SA power R_n at CMB\n", n++);
 
   fprintf(stderr, "print_spectrum: writing spectrum to %s...", filename);
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       double gn = mfield_spectrum(n, w);
       double dgn = mfield_spectrum_sv(n, w);
@@ -1200,6 +1200,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
       data_params->qdlat_fit_cutoff = fval;
       mfield_params->qdlat_fit_cutoff = fval;
     }
+  if (config_lookup_int(&cfg, "fit_mf", &ival))
+    mfield_params->fit_mf = ival;
   if (config_lookup_int(&cfg, "fit_sv", &ival))
     mfield_params->fit_sv = ival;
   if (config_lookup_int(&cfg, "fit_sa", &ival))
@@ -1229,6 +1231,12 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->weight_Z = fval;
   if (config_lookup_float(&cfg, "weight_F", &fval))
     mfield_params->weight_F = fval;
+  if (config_lookup_float(&cfg, "weight_DXDT", &fval))
+    mfield_params->weight_DXDT = fval;
+  if (config_lookup_float(&cfg, "weight_DYDT", &fval))
+    mfield_params->weight_DYDT = fval;
+  if (config_lookup_float(&cfg, "weight_DZDT", &fval))
+    mfield_params->weight_DZDT = fval;
   if (config_lookup_float(&cfg, "weight_DX", &fval))
     mfield_params->weight_DX = fval;
   if (config_lookup_float(&cfg, "weight_DY", &fval))
@@ -1469,7 +1477,9 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: epoch = %.2f\n", mfield_params.epoch);
   fprintf(stderr, "main: radius = %g [km]\n", mfield_params.R);
-  fprintf(stderr, "main: MF nmax = %zu\n", mfield_params.nmax_mf);
+
+  if (mfield_params.fit_mf)
+    fprintf(stderr, "main: MF nmax = %zu\n", mfield_params.nmax_mf);
 
   if (mfield_params.fit_sv)
     {
@@ -1568,6 +1578,11 @@ main(int argc, char *argv[])
 
   /* allocate mfield workspace */
   mfield_workspace_p = mfield_alloc(&mfield_params);
+  if (mfield_workspace_p == NULL)
+    {
+      fprintf(stderr, "main: mfield_alloc failed\n");
+      exit(1);
+    }
 
   if (mfield_params.synth_data)
     {
@@ -1752,7 +1767,7 @@ main(int argc, char *argv[])
       }
 
     fprintf(stderr, "main: printing internal coefficients up to degree 3\n");
-    for (n = 1; n <= GSL_MIN(3, mfield_params.nmax_mf); ++n)
+    for (n = 1; n <= GSL_MIN(3, mfield_workspace_p->nmax_max); ++n)
       {
         int ni = (int) n;
         for (m = -ni; m <= ni; ++m)

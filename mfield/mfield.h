@@ -63,6 +63,7 @@ typedef struct
   double euler_period;                  /* time period for Euler angles (decimal days) */
 
   size_t max_iter;                      /* number of robust iterations */
+  int fit_mf;                           /* fit MF coefficients */
   int fit_sv;                           /* fit SV coefficients */
   int fit_sa;                           /* fit SA coefficients */
   int fit_euler;                        /* fit Euler angles */
@@ -79,6 +80,9 @@ typedef struct
   double weight_Y;                      /* relative weighting for Y component */
   double weight_Z;                      /* relative weighting for Z component */
   double weight_F;                      /* relative weighting for F component */
+  double weight_DXDT;                   /* relative weighting for dX/dt component */
+  double weight_DYDT;                   /* relative weighting for dY/dt component */
+  double weight_DZDT;                   /* relative weighting for dZ/dt component */
   double weight_DX;                     /* relative weighting for DX component */
   double weight_DY;                     /* relative weighting for DY component */
   double weight_DZ;                     /* relative weighting for DZ component */
@@ -100,6 +104,7 @@ typedef struct
   size_t nmax_sv;   /* maximum internal spherical harmonic degree for SV */
   size_t nmax_sa;   /* maximum internal spherical harmonic degree for SA */
   size_t nmax_ext;  /* maximum external spherical harmonic degree */
+  size_t nmax_max;  /* MAX(nmax_mf, nmax_sv, nmax_sa) */
 
   mfield_parameters params;
 
@@ -108,6 +113,8 @@ typedef struct
   size_t nnm_sa;    /* number of (n,m) coefficients in model for SA */
   size_t neuler;    /* number of Euler angles in model */
   size_t next;      /* number of external coefficients in model */
+
+  size_t nnm_max;   /* MAX(nnm_mf, nnm_sv, nnm_sa) */
 
   size_t *nbins_euler;  /* number of Euler bins for each satellite */
   size_t *offset_euler; /* start index of each satellite's Euler angles in coefficient vector */
@@ -204,15 +211,15 @@ typedef struct
   gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
 
   size_t max_threads;      /* maximum number of threads/processors available */
-  gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_mf */
-  gsl_matrix *omp_dY;      /* dY/dg max_threads-by-nnm_mf */
-  gsl_matrix *omp_dZ;      /* dZ/dg max_threads-by-nnm_mf */
-  gsl_matrix *omp_dX_grad; /* gradient dX/dg max_threads-by-nnm_mf */
-  gsl_matrix *omp_dY_grad; /* gradient dY/dg max_threads-by-nnm_mf */
-  gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_mf */
+  gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dY;      /* dY/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dZ;      /* dZ/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dX_grad; /* gradient dX/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dY_grad; /* gradient dY/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */
   gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p_int */
   size_t *omp_rowidx;      /* row indices for omp_J */
-  gsl_matrix **omp_GTG;    /* max_threads matrices, each nnm_mf-by-nnm_mf */
+  gsl_matrix **omp_GTG;    /* max_threads matrices, each nnm_max-by-nnm_max */
   gsl_matrix **omp_JTJ;    /* max_threads matrices, each p_int-by-p_int */
   green_workspace **green_array_p; /* array of green workspaces, size max_threads */
 

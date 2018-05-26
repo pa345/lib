@@ -1,5 +1,5 @@
-#define OLD_FDF     0
-#define DEBUG       0
+#define OLD_FDF     1
+#define DEBUG       1
 
 typedef struct
 {
@@ -311,7 +311,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
         fprintf(fp, "# Field %zu: uncertainty in g(n,m) (dimensionless)\n", n++);
         fprintf(fp, "# Field %zu: g(n,m) (nT)\n", n++);
 
-        for (n = 1; n <= w->nmax_mf; ++n)
+        for (n = 1; n <= w->nmax_max; ++n)
           {
             int m, ni = (int) n;
 
@@ -424,6 +424,7 @@ mfield_init_nonlinear(mfield_workspace *w)
   size_t nres_B[4] = { 0, 0, 0, 0 };     /* number of (X,Y,Z,F) residuals */
   size_t nres_dB_ns[4] = { 0, 0, 0, 0 }; /* number of north-south gradient (X,Y,Z,F) residuals */
   size_t nres_dB_ew[4] = { 0, 0, 0, 0 }; /* number of east-west gradient (X,Y,Z,F) residuals */
+  size_t nres_dBdt[4] = { 0, 0, 0, 0 };  /* number of secular variation (X,Y,Z,F) residuals */
   size_t i, j, k;
 
   /* count total number of residuals */
@@ -441,7 +442,7 @@ mfield_init_nonlinear(mfield_workspace *w)
           mptr->index[j] = 0;
           for (k = 0; k < 4; ++k)
             {
-              mptr->index[j] += nres_B[k] + nres_dB_ns[k] + nres_dB_ew[k];
+              mptr->index[j] += nres_B[k] + nres_dB_ns[k] + nres_dB_ew[k] + nres_dBdt[k];
             }
 
           if (MAGDATA_ExistX(mptr->flags[j]))
@@ -455,6 +456,13 @@ mfield_init_nonlinear(mfield_workspace *w)
           if (MAGDATA_ExistScalar(mptr->flags[j]) &&
               MAGDATA_FitMF(mptr->flags[j]))
             ++nres_B[3];
+
+          if (MAGDATA_ExistDXDT(mptr->flags[j]))
+            ++nres_dBdt[0];
+          if (MAGDATA_ExistDYDT(mptr->flags[j]))
+            ++nres_dBdt[1];
+          if (MAGDATA_ExistDZDT(mptr->flags[j]))
+            ++nres_dBdt[2];
 
           if (MAGDATA_ExistDX_NS(mptr->flags[j]))
             ++nres_dB_ns[0];
@@ -486,9 +494,14 @@ mfield_init_nonlinear(mfield_workspace *w)
         }
     }
 
+  if (ndata == 0)
+    {
+      GSL_ERROR("no data to fit", GSL_FAILURE);
+    }
+
   for (k = 0; k < 4; ++k)
     {
-      nres += nres_B[k] + nres_dB_ns[k] + nres_dB_ew[k];
+      nres += nres_B[k] + nres_dB_ns[k] + nres_dB_ew[k] + nres_dBdt[k];
     }
 
   w->nres_vec = nres_B[0] + nres_B[1] + nres_B[2];
@@ -498,7 +511,7 @@ mfield_init_nonlinear(mfield_workspace *w)
   w->ndata = ndata;
 
   /* check if we can use a linear least squares approach */
-  if ((nres_B[3] + nres_dB_ns[3] + nres_dB_ew[3]) == 0 &&
+  if ((nres_B[3] + nres_dB_ns[3] + nres_dB_ew[3] + nres_dBdt[3]) == 0 &&
       params->fit_euler == 0)
     {
       w->lls_solution = 1;
@@ -518,6 +531,9 @@ mfield_init_nonlinear(mfield_workspace *w)
   fprintf(stderr, "mfield_init_nonlinear: %zu X residuals\n", nres_B[0]);
   fprintf(stderr, "mfield_init_nonlinear: %zu Y residuals\n", nres_B[1]);
   fprintf(stderr, "mfield_init_nonlinear: %zu Z residuals\n", nres_B[2]);
+  fprintf(stderr, "mfield_init_nonlinear: %zu d/dt X residuals\n", nres_dBdt[0]);
+  fprintf(stderr, "mfield_init_nonlinear: %zu d/dt Y residuals\n", nres_dBdt[1]);
+  fprintf(stderr, "mfield_init_nonlinear: %zu d/dt Z residuals\n", nres_dBdt[2]);
   fprintf(stderr, "mfield_init_nonlinear: %zu dX_ns residuals\n", nres_dB_ns[0]);
   fprintf(stderr, "mfield_init_nonlinear: %zu dY_ns residuals\n", nres_dB_ns[1]);
   fprintf(stderr, "mfield_init_nonlinear: %zu dZ_ns residuals\n", nres_dB_ns[2]);
@@ -602,6 +618,15 @@ mfield_init_nonlinear(mfield_workspace *w)
 
             if (MAGDATA_ExistScalar(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_F * wt);
+
+            if (MAGDATA_ExistDXDT(mptr->flags[j]))
+              gsl_vector_set(w->wts_spatial, idx++, params->weight_DXDT * wt);
+
+            if (MAGDATA_ExistDYDT(mptr->flags[j]))
+              gsl_vector_set(w->wts_spatial, idx++, params->weight_DYDT * wt);
+
+            if (MAGDATA_ExistDZDT(mptr->flags[j]))
+              gsl_vector_set(w->wts_spatial, idx++, params->weight_DZDT * wt);
 
             if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_DX * wt);
@@ -1035,7 +1060,7 @@ Inputs: t           - scaled timestamp
         u           - input vector u, size n
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
-                      internal SH expansion, nnm_mf-by-1
+                      internal SH expansion, nnm_max-by-1
         extidx      - index of external field coefficient in [0,next-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
@@ -1067,12 +1092,17 @@ mfield_jacobian_JTu(const double t, const size_t flags, const double weight,
   /* check if fitting MF to this data point */
   if (MAGDATA_FitMF(flags))
     {
-      gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
       gsl_vector_view v;
 
       /* update J^T y */
-      v = gsl_vector_subvector(JTu, 0, w->nnm_mf);
-      gsl_blas_daxpy(sWy, &g_mf.vector, &v.vector);
+
+      if (w->nnm_mf > 0)
+        {
+          gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
+
+          v = gsl_vector_subvector(JTu, 0, w->nnm_mf);
+          gsl_blas_daxpy(sWy, &g_mf.vector, &v.vector);
+        }
 
       if (w->nnm_sv > 0)
         {
@@ -1130,9 +1160,9 @@ Inputs: t           - scaled timestamp
         u           - input vector u, size n
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
-                      internal SH expansion, nnm_mf-by-1
+                      internal SH expansion, nnm_max-by-1
         dB_int_grad - Green's functions for desired vector gradient component of
-                      internal SH expansion, nnm_mf-by-1
+                      internal SH expansion, nnm_max-by-1
         JTu         - (output) J^T y vector
         w           - workspace
 */
@@ -1147,14 +1177,19 @@ mfield_jacobian_grad_JTu(const double t, const double t_grad, const size_t flags
     {
       const double y = gsl_vector_get(u, ridx);
       const double sWy = sqrt(weight) * y;
-      gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
-      gsl_vector_view dg_mf = gsl_vector_subvector(dB_int_grad, 0, w->nnm_mf);
       gsl_vector_view v;
 
       /* update J^T y */
-      v = gsl_vector_subvector(JTu, 0, w->nnm_mf);
-      gsl_blas_daxpy(sWy, &dg_mf.vector, &v.vector);
-      gsl_blas_daxpy(-sWy, &g_mf.vector, &v.vector);
+
+      if (w->nnm_mf > 0)
+        {
+          gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
+          gsl_vector_view dg_mf = gsl_vector_subvector(dB_int_grad, 0, w->nnm_mf);
+
+          v = gsl_vector_subvector(JTu, 0, w->nnm_mf);
+          gsl_blas_daxpy(sWy, &dg_mf.vector, &v.vector);
+          gsl_blas_daxpy(-sWy, &g_mf.vector, &v.vector);
+        }
 
       if (w->nnm_sv > 0)
         {
@@ -1197,7 +1232,7 @@ Inputs: t           - scaled timestamp
         u           - input vector u, size p
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
-                      internal SH expansion, nnm_mf-by-1
+                      internal SH expansion, nnm_max-by-1
         extidx      - index of external field coefficient in [0,next-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
@@ -1228,13 +1263,18 @@ mfield_jacobian_Ju(const double t, const size_t flags, const double weight,
   /* check if fitting MF to this data point */
   if (MAGDATA_FitMF(flags))
     {
-      gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
-      gsl_vector_const_view u_mf = gsl_vector_const_subvector(u, 0, w->nnm_mf);
       double tmp;
 
       /* update J u */
-      gsl_blas_ddot(&g_mf.vector, &u_mf.vector, &tmp);
-      *Ju_ptr = tmp;
+
+      if (w->nnm_mf > 0)
+        {
+          gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
+          gsl_vector_const_view u_mf = gsl_vector_const_subvector(u, 0, w->nnm_mf);
+
+          gsl_blas_ddot(&g_mf.vector, &u_mf.vector, &tmp);
+          *Ju_ptr = tmp;
+        }
 
       if (w->nnm_sv > 0)
         {
@@ -1297,7 +1337,7 @@ Inputs: t           - scaled timestamp
         u           - input vector u
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
-                      internal SH expansion, nnm_mf-by-1
+                      internal SH expansion, nnm_max-by-1
         extidx      - index of external field coefficient in [0,next-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
@@ -1316,8 +1356,7 @@ mfield_jacobian_JTJ(const double t, const size_t flags, const double weight,
                     const double B_nec_beta, const double B_nec_gamma,
                     gsl_matrix *JTJ, const mfield_workspace *w)
 {
-  gsl_vector_view g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
-  gsl_vector_view g_sv, g_sa;
+  gsl_vector_view g_mf, g_sv, g_sa;
 
   (void) extidx;
   (void) dB_ext;
@@ -1329,6 +1368,9 @@ mfield_jacobian_JTJ(const double t, const size_t flags, const double weight,
   /* check for quick return */
   if (JTJ == NULL)
     return GSL_SUCCESS;
+
+  if (w->nnm_mf > 0)
+    g_mf = gsl_vector_subvector(dB_int, 0, w->nnm_mf);
 
   if (w->nnm_sv > 0)
     g_sv = gsl_vector_subvector(dB_int, 0, w->nnm_sv);
@@ -1349,8 +1391,12 @@ mfield_jacobian_JTJ(const double t, const size_t flags, const double weight,
       *ptr33 += dB_ext * dB_ext * weight;
 
       /* update (J^T J)_31 = J_ext^T J_int */
-      v = gsl_matrix_subrow(JTJ, extidx, 0, w->nnm_mf);
-      gsl_blas_daxpy(dB_ext * weight, &g_mf.vector, &v.vector);
+
+      if (w->nnm_mf > 0)
+        {
+          v = gsl_matrix_subrow(JTJ, extidx, 0, w->nnm_mf);
+          gsl_blas_daxpy(dB_ext * weight, &g_mf.vector, &v.vector);
+        }
 
       if (w->nnm_sv > 0)
         {
@@ -1386,8 +1432,11 @@ mfield_jacobian_JTJ(const double t, const size_t flags, const double weight,
         {
           /* update (J^T J)_21 */
 
-          m = gsl_matrix_submatrix(JTJ, euler_idx, 0, 3, w->nnm_mf);
-          gsl_blas_dger(weight, &v.vector, &g_mf.vector, &m.matrix);
+          if (w->nnm_mf > 0)
+            {
+              m = gsl_matrix_submatrix(JTJ, euler_idx, 0, 3, w->nnm_mf);
+              gsl_blas_dger(weight, &v.vector, &g_mf.vector, &m.matrix);
+            }
 
           if (w->nnm_sv > 0)
             {
@@ -1473,7 +1522,7 @@ mfield_jacobian_row_F(CBLAS_TRANSPOSE_t TransJ, const double t, const double wei
     b[k] = B_model[k] / B_model[3];
 
   /* compute (X dX + Y dY + Z dZ) */
-  for (k = 0; k < w->nnm_mf; ++k)
+  for (k = 0; k < w->nnm_max; ++k)
     {
       double dXk = gsl_vector_get(dX, k);
       double dYk = gsl_vector_get(dY, k);
@@ -1748,7 +1797,7 @@ vector Green's functions
 
 Inputs: t      - scaled timestamp
         weight - weight for this measurement
-        g      - vector Green's functions J_mf, size nnm_mf
+        g      - vector Green's functions J_mf, size nnm_max
         G      - (output) combined vector G = sqrt(w) [ g ; t*g ; 0.5*t*t*g ],
                  size w->p_int
         w      - workspace
@@ -1762,7 +1811,7 @@ mfield_vector_green(const double t, const double weight, const gsl_vector *g,
   size_t i;
 
   /* form G */
-  for (i = 0; i < w->nnm_mf; ++i)
+  for (i = 0; i < w->nnm_max; ++i)
     {
       double gi = sqrt_weight * gsl_vector_get(g, i);
 
@@ -1782,8 +1831,8 @@ vector Green's functions for a point and a gradient point
 Inputs: t      - scaled timestamp
         t_grad - scaled timestamp of gradient point (N/S or E/W)
         weight - weight for this measurement
-        g      - vector Green's functions J_mf, size nnm_mf
-        g_grad - vector Green's functions of gradient point, size nnm_mf
+        g      - vector Green's functions J_mf, size nnm_max
+        g_grad - vector Green's functions of gradient point, size nnm_max
         G      - (output) combined vector G = sqrt(w) [ gj - gi ; tj*gj - ti*gi ; 0.5*tj*tj*gj - 0.5*ti*ti*gi ],
                  size w->p_int
         w      - workspace
@@ -1797,7 +1846,7 @@ mfield_vector_green_grad(const double t, const double t_grad, const double weigh
   size_t i;
 
   /* form G */
-  for (i = 0; i < w->nnm_mf; ++i)
+  for (i = 0; i < w->nnm_max; ++i)
     {
       double gi = sqrt_weight * gsl_vector_get(g, i);
       double gj = sqrt_weight * gsl_vector_get(g_grad, i);

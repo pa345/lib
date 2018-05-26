@@ -86,7 +86,8 @@ mfield_workspace *
 mfield_alloc(const mfield_parameters *params)
 {
   mfield_workspace *w;
-  const size_t plm_size = gsl_sf_legendre_array_n(params->nmax_mf);
+  const size_t nmax_max = GSL_MAX(params->nmax_mf, GSL_MAX(params->nmax_sv, params->nmax_sa));
+  const size_t plm_size = gsl_sf_legendre_array_n(nmax_max);
   const size_t ntheta = 100;
   const size_t nphi = 100;
 
@@ -100,6 +101,7 @@ mfield_alloc(const mfield_parameters *params)
   w->nmax_mf = params->nmax_mf;
   w->nmax_sv = params->nmax_sv;
   w->nmax_sa = params->nmax_sa;
+  w->nmax_max = nmax_max;
   w->data_workspace_p = params->mfield_data_p;
 
   w->params = *params;
@@ -126,6 +128,9 @@ mfield_alloc(const mfield_parameters *params)
   w->nnm_sv = (w->nmax_sv + 1) * (w->nmax_sv + 1) - 1;
   w->nnm_sa = (w->nmax_sa + 1) * (w->nmax_sa + 1) - 1;
 
+  if (!params->fit_mf)
+    w->nnm_mf = 0;
+
   if (!params->fit_sv)
     w->nnm_sv = 0;
 
@@ -134,7 +139,20 @@ mfield_alloc(const mfield_parameters *params)
 
   /* total (internal) model coefficients */
   w->p_int = w->nnm_mf + w->nnm_sv + w->nnm_sa;
+
+  if (w->p_int == 0)
+    {
+      mfield_free(w);
+      GSL_ERROR_NULL("no internal model parameters to fit", GSL_EINVAL);
+    }
+
   w->p = w->p_int;
+
+  /* compute max nnm */
+  w->nnm_max = 0;
+  w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_mf);
+  w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_sv);
+  w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_sa);
 
   if (params->fit_euler && w->data_workspace_p)
     {
@@ -241,13 +259,19 @@ mfield_alloc(const mfield_parameters *params)
 
   w->p += w->neuler + w->next;
 
+  if (w->p == 0)
+    {
+      mfield_free(w);
+      GSL_ERROR_NULL("no parameters to fit", GSL_EINVAL);
+    }
+
   w->sv_offset = w->nnm_mf;
   w->sa_offset = w->sv_offset + w->nnm_sv;
   w->euler_offset = w->sa_offset + w->nnm_sa;
   w->ext_offset = w->euler_offset + w->neuler;
 
-  w->cosmphi = malloc((w->nmax_mf + 1) * sizeof(double));
-  w->sinmphi = malloc((w->nmax_mf + 1) * sizeof(double));
+  w->cosmphi = malloc((w->nmax_max + 1) * sizeof(double));
+  w->sinmphi = malloc((w->nmax_max + 1) * sizeof(double));
 
   w->Plm = malloc(plm_size * sizeof(double));
   w->dPlm = malloc(plm_size * sizeof(double));
@@ -263,12 +287,12 @@ mfield_alloc(const mfield_parameters *params)
   /* covariance matrix of the internal field coefficients */
   w->covar = gsl_matrix_alloc(w->p_int, w->p_int);
 
-  w->dX = malloc(w->nnm_mf * sizeof(double));
-  w->dY = malloc(w->nnm_mf * sizeof(double));
-  w->dZ = malloc(w->nnm_mf * sizeof(double));
+  w->dX = malloc(w->nnm_max * sizeof(double));
+  w->dY = malloc(w->nnm_max * sizeof(double));
+  w->dZ = malloc(w->nnm_max * sizeof(double));
 
-  w->green_workspace_p = mfield_green_alloc(w->nmax_mf, w->R);
-  w->green_workspace_p2 = green_alloc(w->nmax_mf, w->nmax_mf, w->R);
+  w->green_workspace_p = mfield_green_alloc(w->nmax_max, w->R);
+  w->green_workspace_p2 = green_alloc(w->nmax_max, w->nmax_max, w->R);
 
   w->diag = gsl_vector_alloc(w->p_int);
 
@@ -298,12 +322,12 @@ mfield_alloc(const mfield_parameters *params)
   w->LTL = gsl_vector_calloc(w->p);
 
   w->max_threads = (size_t) omp_get_max_threads();
-  w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_mf);
-  w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_mf);
-  w->omp_dZ = gsl_matrix_alloc(w->max_threads, w->nnm_mf);
-  w->omp_dX_grad = gsl_matrix_alloc(w->max_threads, w->nnm_mf);
-  w->omp_dY_grad = gsl_matrix_alloc(w->max_threads, w->nnm_mf);
-  w->omp_dZ_grad = gsl_matrix_alloc(w->max_threads, w->nnm_mf);
+  w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_max);
+  w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_max);
+  w->omp_dZ = gsl_matrix_alloc(w->max_threads, w->nnm_max);
+  w->omp_dX_grad = gsl_matrix_alloc(w->max_threads, w->nnm_max);
+  w->omp_dY_grad = gsl_matrix_alloc(w->max_threads, w->nnm_max);
+  w->omp_dZ_grad = gsl_matrix_alloc(w->max_threads, w->nnm_max);
 
   /* initialize green workspaces and omp_J */
   {
@@ -328,9 +352,9 @@ mfield_alloc(const mfield_parameters *params)
 
     for (i = 0; i < w->max_threads; ++i)
       {
-        w->green_array_p[i] = green_alloc(w->nmax_mf, w->nmax_mf, w->R);
+        w->green_array_p[i] = green_alloc(w->nmax_max, w->nmax_max, w->R);
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
-        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_mf, w->nnm_mf);
+        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_max, w->nnm_max);
         w->omp_JTJ[i] = gsl_matrix_alloc(w->p_int, w->p_int);
       }
   }
@@ -482,6 +506,7 @@ mfield_init_params(mfield_parameters * params)
   params->nsat = 0;
   params->euler_period = 0.0;
   params->max_iter = 0;
+  params->fit_mf = 0;
   params->fit_sv = 0;
   params->fit_sa = 0;
   params->fit_euler = 0;
@@ -495,6 +520,9 @@ mfield_init_params(mfield_parameters * params)
   params->weight_Y = 0.0;
   params->weight_Z = 0.0;
   params->weight_F = 0.0;
+  params->weight_DXDT = 0.0;
+  params->weight_DYDT = 0.0;
+  params->weight_DZDT = 0.0;
   params->weight_DX = 0.0;
   params->weight_DY = 0.0;
   params->weight_DZ = 0.0;
@@ -786,7 +814,7 @@ mfield_coeffs(const int dir, const gsl_vector *gin, gsl_vector *gout,
   /* this will copy any external coefficients over */
   gsl_vector_memcpy(gout, gin);
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int ni = (int) n;
 
@@ -932,7 +960,7 @@ mfield_eval_g(const double t, const double r, const double theta, const double p
 
   B[0] = B[1] = B[2] = 0.0;
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int ni = (int) n;
 
@@ -991,7 +1019,7 @@ mfield_eval_dgdt(const double t, const double r, const double theta,
 
   dBdt[0] = dBdt[1] = dBdt[2] = 0.0;
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int ni = (int) n;
 
@@ -1191,7 +1219,7 @@ mfield_eval_static(const double r, const double theta, const double phi,
 
   B[0] = B[1] = B[2] = 0.0;
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int ni = (int) n;
 
@@ -1388,7 +1416,7 @@ mfield_write_ascii(const char *filename, const double epoch,
 
   /* print header information */
   fprintf(fp, "%% Magnetic field model coefficients\n");
-  fprintf(fp, "%% nmax:  %zu\n", w->nmax_mf);
+  fprintf(fp, "%% nmax:  %zu\n", w->nmax_max);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
   fprintf(fp, "%% lambda_sv: %.2f\n", params->lambda_sv);
@@ -1416,7 +1444,7 @@ mfield_write_ascii(const char *filename, const double epoch,
               "SA gnm (nT/year^2)");
     }
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int m, ni = (int) n;
 
@@ -1495,7 +1523,7 @@ mfield_new_epoch(const double new_epoch, mfield_workspace *w)
   /* convert coefficients to physical time units */
   mfield_coeffs(1, w->c, c, w);
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int m, ni = (int) n;
 
@@ -1554,17 +1582,17 @@ mfield_green(const double r, const double theta, const double phi, mfield_worksp
   double term = ratio * ratio;     /* (a/r)^{n+2} */
 
   /* precompute cos(m phi) and sin(m phi) */
-  for (n = 0; n <= w->nmax_mf; ++n)
+  for (n = 0; n <= w->nmax_max; ++n)
     {
       w->cosmphi[n] = cos(n * phi);
       w->sinmphi[n] = sin(n * phi);
     }
 
   /* compute associated legendres */
-  gsl_sf_legendre_deriv_alt_array(GSL_SF_LEGENDRE_SCHMIDT, w->nmax_mf, cost,
+  gsl_sf_legendre_deriv_alt_array(GSL_SF_LEGENDRE_SCHMIDT, w->nmax_max, cost,
                                   w->Plm, w->dPlm);
 
-  for (n = 1; n <= w->nmax_mf; ++n)
+  for (n = 1; n <= w->nmax_max; ++n)
     {
       int ni = (int) n;
 
@@ -1673,7 +1701,10 @@ inline double
 mfield_get_mf(const gsl_vector *c, const size_t idx,
               const mfield_workspace *w)
 {
-  return gsl_vector_get(c, idx);
+  if (idx < w->nnm_mf)
+    return gsl_vector_get(c, idx);
+  else
+    return 0.0;
 }
 
 inline double
@@ -1700,7 +1731,9 @@ inline int
 mfield_set_mf(gsl_vector *c, const size_t idx,
               const double x, const mfield_workspace *w)
 {
-  gsl_vector_set(c, idx, x);
+  if (idx < w->nnm_mf)
+    gsl_vector_set(c, idx, x);
+
   return GSL_SUCCESS;
 }
 
@@ -1708,7 +1741,6 @@ inline int
 mfield_set_sv(gsl_vector *c, const size_t idx,
               const double x, const mfield_workspace *w)
 {
-  /* check idx in case nmax_sv is less than nmax_mf */
   if (idx < w->nnm_sv)
     gsl_vector_set(c, idx + w->sv_offset, x);
 
@@ -1719,7 +1751,6 @@ inline int
 mfield_set_sa(gsl_vector *c, const size_t idx,
               const double x, const mfield_workspace *w)
 {
-  /* check idx in case nmax_sa is less than nmax_mf */
   if (idx < w->nnm_sa)
     gsl_vector_set(c, idx + w->sa_offset, x);
 

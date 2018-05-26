@@ -4,7 +4,7 @@ libpoltor_la_SOURCES = poltor.c poltor_nonlinear.c poltor_shell.c poltor_synth.c
 
 bin_PROGRAMS = invert plot preproc poltor_preproc
 
-commonlibs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -L/home/palken/usr/lib -lflow -lcommon -lapex -lmsynth -lm -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -llapacke -llapack -lptcblas -lptf77blas -latlas -lpthread -lgfortran
+commonlibs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -L/home/palken/usr/lib -lflow -lobsdata -lpomme -lapex -lcommon -lmsynth -lm -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -llapacke -llapack -lptcblas -lptf77blas -latlas -lpthread -lgfortran
 
 invert_SOURCES = invert_main.c
 invert_LDADD = libpoltor.la $(top_builddir)/magdata/libmagdata.la $(top_builddir)/lls/liblls.la -lm -lconfig ${commonlibs}

@@ -42,7 +42,6 @@
 #include <common/solarpos.h>
 #include <msynth/msynth.h>
 
-#include "euler.h"
 #include "magdata.h"
 #include "magfit.h"
 #include "track.h"
@@ -55,16 +54,8 @@ typedef struct
   size_t downsample;      /* downsampling factor */
   double min_LT;          /* minimum local time for field modeling */
   double max_LT;          /* maximum local time for field modeling */
-  double euler_min_LT;    /* minimum local time for Euler angles */
-  double euler_max_LT;    /* maximum local time for Euler angles */
-  double rms_thresh[4];   /* rms thresholds (X,Y,Z,F) (nT) */
   double qdlat_preproc_cutoff; /* QD latitude cutoff for high-latitudes */
   double min_zenith;      /* minimum zenith angle for high-latitude data selection */
-  int fit_track_RC;       /* fit track-by-track RC field */
-
-  double gradew_dphi_max; /* maximum longitude distance for east-west gradients (degrees) */
-  double gradew_dlat_max; /* maximum latitude distance for east-west gradients (degrees) */
-  double gradew_dt_max;   /* maximum time difference for east-west gradients (seconds) */
 
   int subtract_B_main;    /* subtract a-priori main field from data */
   int subtract_B_crust;   /* subtract a-priori crustal field from data */
@@ -72,10 +63,6 @@ typedef struct
 
   double max_kp;          /* maximum kp */
   double max_dRC;         /* maximum dRC/dt (nT/hour) */
-
-  int pb_flag;            /* flag tracks with plasma bubble signatures */
-  double pb_qdmax;        /* QD latitude range for PB search */
-  double pb_thresh[4];    /* threshold values for N/S gradients (X,Y,Z,F) (nT) */
 } preprocess_parameters;
 
 static int mfield_check_LT(const double lt, const double lt_min, const double lt_max);
@@ -140,18 +127,6 @@ check_parameters(preprocess_parameters * params)
       ++s;
     }
 
-  if (params->euler_min_LT < 0.0)
-    {
-      fprintf(stderr, "check_parameters: euler_min_LT must be > 0\n");
-      ++s;
-    }
-
-  if (params->euler_max_LT < 0.0)
-    {
-      fprintf(stderr, "check_parameters: euler_max_LT must be > 0\n");
-      ++s;
-    }
-
   if (params->qdlat_preproc_cutoff < 0.0)
     {
       fprintf(stderr, "check_parameters: qdlat_preproc_cutoff must be > 0\n");
@@ -161,24 +136,6 @@ check_parameters(preprocess_parameters * params)
   if (params->min_zenith < 0.0)
     {
       fprintf(stderr, "check_parameters: min_zenith must be > 0\n");
-      ++s;
-    }
-
-  if (params->gradew_dphi_max <= 0.0)
-    {
-      fprintf(stderr, "check_parameters: gradient_ew_dphi_max must be > 0\n");
-      ++s;
-    }
-
-  if (params->gradew_dlat_max <= 0.0)
-    {
-      fprintf(stderr, "check_parameters: gradient_ew_dlat_max must be > 0\n");
-      ++s;
-    }
-
-  if (params->gradew_dt_max <= 0.0)
-    {
-      fprintf(stderr, "check_parameters: gradient_ew_dt_max must be > 0\n");
       ++s;
     }
 
@@ -745,138 +702,6 @@ subtract_RC(const char *filename, satdata_mag *data, track_workspace *w)
   return s;
 }
 
-/*
-mfield_fill_polar_gap()
-  Fill polar gap with random points
-
-Inputs: polar_gap - size of polar gap in degrees
-        params    - parameters
-*/
-
-static magdata *
-mfield_fill_polar_gap(const double polar_gap, preprocess_parameters * params)
-{
-  const size_t N = 20000;
-  const double inclination = (90.0 - polar_gap) * M_PI / 180.0;
-  const double epoch = 2012.5;
-  const time_t unix_time = 1338508800; /* Jun 1 2012 00:00:00 UTC */
-  magdata *mdata = magdata_alloc(2 * N, R_EARTH_KM);
-  size_t i, j;
-  magdata_datum datum;
-  gsl_rng *rng_p = gsl_rng_alloc(gsl_rng_default);
-  msynth_workspace *core_p = msynth_swarm_read(MSYNTH_CHAOS_FILE);
-  msynth_workspace *crust_p = msynth_mf7_read(MSYNTH_MF7_FILE);
-  apex_workspace *apex_p = apex_alloc();
-
-  magdata_datum_init(&datum);
-  msynth_set(1, 15, core_p);
-  msynth_set(16, 133, crust_p);
-
-  datum.t = satdata_timet2epoch(unix_time);
-  datum.t_ns = satdata_timet2epoch(unix_time);
-  datum.r = R_EARTH_KM + 450.0;
-  datum.r_ns = R_EARTH_KM + 450.0;
-  datum.satdir = 1;
-  datum.flags = MAGDATA_FLG_F | MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z;
-  datum.flags |= MAGDATA_FLG_DF_EW | MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW;
-  datum.flags |= MAGDATA_FLG_FIT_MF;
-
-  for (i = 0; i < N; ++i)
-    {
-      double B_main[4], B_crust[4];
-      double B_main_grad[4], B_crust_grad[4];
-      double alon, alat;
-
-      for (j = 0; j < 4; ++j)
-        {
-          B_main[j] = B_crust[j] = 0.0;
-          B_main_grad[j] = B_crust_grad[j] = 0.0;
-        }
-
-      /* compute random point at north pole */
-
-      datum.theta = gsl_rng_uniform(rng_p) * (M_PI / 2.0 - inclination);
-      datum.phi = M_PI * (2.0*gsl_rng_uniform(rng_p) - 1.0);
-      datum.theta_ns = gsl_rng_uniform(rng_p) * (M_PI / 2.0 - inclination);
-      datum.phi_ns = M_PI * (2.0*gsl_rng_uniform(rng_p) - 1.0);
-
-      if (params->subtract_B_main == 0)
-        {
-          msynth_eval(epoch, datum.r, datum.theta, datum.phi, B_main, core_p);
-          msynth_eval(epoch, datum.r_ns, datum.theta_ns, datum.phi_ns, B_main_grad, core_p);
-        }
-
-      if (params->subtract_B_crust == 0)
-        {
-          msynth_eval(epoch, datum.r, datum.theta, datum.phi, B_crust, crust_p);
-          msynth_eval(epoch, datum.r_ns, datum.theta_ns, datum.phi_ns, B_crust_grad, crust_p);
-        }
-
-      for (j = 0; j < 3; ++j)
-        {
-          datum.B_nec[j] = B_main[j] + B_crust[j];
-          datum.B_nec_ns[j] = B_main_grad[j] + B_crust_grad[j];
-        }
-
-      datum.F = gsl_hypot3(datum.B_nec[0], datum.B_nec[1], datum.B_nec[2]);
-      datum.F_ns = gsl_hypot3(datum.B_nec_ns[0], datum.B_nec_ns[1], datum.B_nec_ns[2]);
-
-      apex_transform(epoch, datum.theta, datum.phi, datum.r, &alon, &alat,
-                     &(datum.qdlat), NULL, NULL, NULL, apex_p);
-      apex_transform(epoch, datum.theta_ns, datum.phi_ns, datum.r_ns, &alon, &alat,
-                     &(datum.qdlat_ns), NULL, NULL, NULL, apex_p);
-
-      magdata_add(&datum, mdata);
-
-      for (j = 0; j < 4; ++j)
-        {
-          B_main[j] = B_crust[j] = 0.0;
-          B_main_grad[j] = B_crust_grad[j] = 0.0;
-        }
-
-      /* compute random point at south pole */
-      datum.theta = M_PI - gsl_rng_uniform(rng_p) * (M_PI / 2.0 - inclination);
-      datum.phi = M_PI * (2.0*gsl_rng_uniform(rng_p) - 1.0);
-      datum.theta_ns = M_PI - gsl_rng_uniform(rng_p) * (M_PI / 2.0 - inclination);
-      datum.phi_ns = M_PI * (2.0*gsl_rng_uniform(rng_p) - 1.0);
-
-      if (params->subtract_B_main == 0)
-        {
-          msynth_eval(epoch, datum.r, datum.theta, datum.phi, B_main, core_p);
-          msynth_eval(epoch, datum.r_ns, datum.theta_ns, datum.phi_ns, B_main_grad, core_p);
-        }
-
-      if (params->subtract_B_crust == 0)
-        {
-          msynth_eval(epoch, datum.r, datum.theta, datum.phi, B_crust, crust_p);
-          msynth_eval(epoch, datum.r_ns, datum.theta_ns, datum.phi_ns, B_crust_grad, crust_p);
-        }
-
-      for (j = 0; j < 3; ++j)
-        {
-          datum.B_nec[j] = B_main[j] + B_crust[j];
-          datum.B_nec_ns[j] = B_main_grad[j] + B_crust_grad[j];
-        }
-
-      datum.F = gsl_hypot3(datum.B_nec[0], datum.B_nec[1], datum.B_nec[2]);
-      datum.F_ns = gsl_hypot3(datum.B_nec_ns[0], datum.B_nec_ns[1], datum.B_nec_ns[2]);
-
-      apex_transform(epoch, datum.theta, datum.phi, datum.r, &alon, &alat,
-                     &(datum.qdlat), NULL, NULL, NULL, apex_p);
-      apex_transform(epoch, datum.theta_ns, datum.phi_ns, datum.r_ns, &alon, &alat,
-                     &(datum.qdlat_ns), NULL, NULL, NULL, apex_p);
-
-      magdata_add(&datum, mdata);
-    }
-
-  apex_free(apex_p);
-  msynth_free(core_p);
-  msynth_free(crust_p);
-  gsl_rng_free(rng_p);
-
-  return mdata;
-}
-
 static int
 parse_config_file(const char *filename, preprocess_parameters *params)
 {
@@ -906,10 +731,6 @@ parse_config_file(const char *filename, preprocess_parameters *params)
     params->min_LT = fval;
   if (config_lookup_float(&cfg, "max_LT", &fval))
     params->max_LT = fval;
-  if (config_lookup_float(&cfg, "euler_min_LT", &fval))
-    params->euler_min_LT = fval;
-  if (config_lookup_float(&cfg, "euler_max_LT", &fval))
-    params->euler_max_LT = fval;
   if (config_lookup_float(&cfg, "qdlat_preproc_cutoff", &fval))
     params->qdlat_preproc_cutoff = fval;
   if (config_lookup_float(&cfg, "min_zenith", &fval))
@@ -917,8 +738,6 @@ parse_config_file(const char *filename, preprocess_parameters *params)
 
   if (config_lookup_int(&cfg, "downsample", &ival))
     params->downsample = (size_t) ival;
-  if (config_lookup_int(&cfg, "fit_track_RC", &ival))
-    params->fit_track_RC = (size_t) ival;
 
   if (config_lookup_int(&cfg, "subtract_B_main", &ival))
     params->subtract_B_main = (size_t) ival;
@@ -926,35 +745,6 @@ parse_config_file(const char *filename, preprocess_parameters *params)
     params->subtract_B_crust = (size_t) ival;
   if (config_lookup_int(&cfg, "subtract_B_ext", &ival))
     params->subtract_B_ext = (size_t) ival;
-
-  if (config_lookup_float(&cfg, "gradient_ew_dphi_max", &fval))
-    params->gradew_dphi_max = fval;
-  if (config_lookup_float(&cfg, "gradient_ew_dlat_max", &fval))
-    params->gradew_dlat_max = fval;
-  if (config_lookup_float(&cfg, "gradient_ew_dt_max", &fval))
-    params->gradew_dt_max = fval;
-
-  if (config_lookup_float(&cfg, "rms_threshold_X", &fval))
-    params->rms_thresh[0] = fval;
-  if (config_lookup_float(&cfg, "rms_threshold_Y", &fval))
-    params->rms_thresh[1] = fval;
-  if (config_lookup_float(&cfg, "rms_threshold_Z", &fval))
-    params->rms_thresh[2] = fval;
-  if (config_lookup_float(&cfg, "rms_threshold_F", &fval))
-    params->rms_thresh[3] = fval;
-
-  if (config_lookup_int(&cfg, "pb_flag", &ival))
-    params->pb_flag = ival;
-  if (config_lookup_float(&cfg, "pb_qdmax", &fval))
-    params->pb_qdmax = fval;
-  if (config_lookup_float(&cfg, "pb_threshold_dX", &fval))
-    params->pb_thresh[0] = fval;
-  if (config_lookup_float(&cfg, "pb_threshold_dY", &fval))
-    params->pb_thresh[1] = fval;
-  if (config_lookup_float(&cfg, "pb_threshold_dZ", &fval))
-    params->pb_thresh[2] = fval;
-  if (config_lookup_float(&cfg, "pb_threshold_dF", &fval))
-    params->pb_thresh[3] = fval;
 
   config_destroy(&cfg);
 
@@ -994,26 +784,11 @@ main(int argc, char *argv[])
   params.max_dRC = -1.0;
   params.min_LT = -1.0;
   params.max_LT = -1.0;
-  params.euler_min_LT = -1.0;
-  params.euler_max_LT = -1.0;
   params.qdlat_preproc_cutoff = -1.0;
   params.min_zenith = -1.0;
-  params.rms_thresh[0] = -1.0;
-  params.rms_thresh[1] = -1.0;
-  params.rms_thresh[2] = -1.0;
-  params.rms_thresh[3] = -1.0;
-  params.gradew_dphi_max = -1.0;
-  params.gradew_dlat_max = -1.0;
-  params.gradew_dt_max = -1.0;
   params.subtract_B_main = -1;
   params.subtract_B_crust = -1;
   params.subtract_B_ext = -1;
-  params.pb_flag = -1;
-  params.pb_qdmax = -1.0;
-  params.pb_thresh[0] = -1.0;
-  params.pb_thresh[1] = -1.0;
-  params.pb_thresh[2] = -1.0;
-  params.pb_thresh[3] = -1.0;
 
   while (1)
     {
@@ -1061,12 +836,6 @@ main(int argc, char *argv[])
   /* replace config values with command-line arguments */
   if (downsample > 0)
     params.downsample = downsample;
-  if (flag_vec_rms == 0)
-    {
-      params.rms_thresh[0] = -1.0;
-      params.rms_thresh[1] = -1.0;
-      params.rms_thresh[2] = -1.0;
-    }
 
   /* check parameters */
   status = check_parameters(&params);
@@ -1082,14 +851,8 @@ main(int argc, char *argv[])
   solarpos_workspace_p = solarpos_alloc();
 
   fprintf(stderr, "main: downsample       = %zu\n", params.downsample);
-  fprintf(stderr, "main: rms X threshold  = %.1f [nT]\n", params.rms_thresh[0]);
-  fprintf(stderr, "main: rms Y threshold  = %.1f [nT]\n", params.rms_thresh[1]);
-  fprintf(stderr, "main: rms Z threshold  = %.1f [nT]\n", params.rms_thresh[2]);
-  fprintf(stderr, "main: rms F threshold  = %.1f [nT]\n", params.rms_thresh[3]);
   fprintf(stderr, "main: LT minimum       = %.1f\n", params.min_LT);
   fprintf(stderr, "main: LT maximum       = %.1f\n", params.max_LT);
-  fprintf(stderr, "main: Euler LT minimum = %.1f\n", params.euler_min_LT);
-  fprintf(stderr, "main: Euler LT maximum = %.1f\n", params.euler_max_LT);
 
   fprintf(stderr, "main: === PREPROCESSING OBSERVATORY DATA ===\n");
   preprocess_data(&params, magdata_flags, data);
