@@ -10,7 +10,12 @@ static int mfield_nonlinear_model(const int res_flag, const gsl_vector * x, cons
                                   const size_t thread_id, double B_model[3], mfield_workspace *w);
 static double mfield_nonlinear_model_int(const double t, const gsl_vector *v,
                                          const gsl_vector *g, const mfield_workspace *w);
+static int mfield_nonlinear_model_SV(const gsl_vector * x, const magdata * mptr, const size_t idx,
+                                     const size_t thread_id, double dBdt_model[3], mfield_workspace *w);
+static double mfield_nonlinear_model_int_SV(const double t, const gsl_vector *v,
+                                            const gsl_vector *g, const mfield_workspace *w);
 static inline int jacobian_row_int(const double t, const gsl_vector * dB, gsl_vector * J, mfield_workspace * w);
+static inline int jacobian_row_int_SV(const double t, const gsl_vector * dB, gsl_vector * J, mfield_workspace * w);
 static inline int jacobian_row_int_grad(const double t, const double t2, const gsl_vector * dB, const gsl_vector * dB2,
                                         gsl_vector * J, mfield_workspace * w);
 
@@ -62,12 +67,23 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           double B_obs[3];              /* observation vector NEC frame */
           double B_model_ns[3];         /* N/S internal + external */
           double B_obs_ns[3];           /* N/S observation vector NEC frame */
+          double dBdt_model[3];         /* dB/dt (SV of internal model) */
+          double dBdt_obs[3];           /* SV observation vector (NEC frame) */
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
 
           /* compute vector model for this residual */
           mfield_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
+
+          /* compute vector SV model for this residual */
+          if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
+            {
+              mfield_nonlinear_model_SV(x, mptr, j, thread_id, dBdt_model, w);
+              dBdt_obs[0] = mptr->dXdt_nec[j];
+              dBdt_obs[1] = mptr->dYdt_nec[j];
+              dBdt_obs[2] = mptr->dZdt_nec[j];
+            }
 
           /* compute vector model for gradient residual (N/S or E/W) */
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
@@ -176,6 +192,36 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
               ++ridx;
             }
 
+          if (MAGDATA_FitMF(mptr->flags[j]))
+            {
+              if (mptr->flags[j] & MAGDATA_FLG_DXDT)
+                {
+                  /* set residual vector */
+                  if (f)
+                    gsl_vector_set(f, ridx, dBdt_model[0] - dBdt_obs[0]);
+
+                  ++ridx;
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_DYDT)
+                {
+                  /* set residual vector */
+                  if (f)
+                    gsl_vector_set(f, ridx, dBdt_model[1] - dBdt_obs[1]);
+
+                  ++ridx;
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_DZDT)
+                {
+                  /* set residual vector */
+                  if (f)
+                    gsl_vector_set(f, ridx, dBdt_model[2] - dBdt_obs[2]);
+
+                  ++ridx;
+                }
+            }
+
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
             {
               /* set residual vector */
@@ -217,7 +263,8 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
   gettimeofday(&tv1, NULL);
 
 #if DEBUG
-  fprintf(stderr, "mfield_calc_f: leaving function (%g seconds)\n", time_diff(tv0, tv1));
+  fprintf(stderr, "mfield_calc_f: leaving function (%g seconds, ||f|| = %g)\n",
+          time_diff(tv0, tv1), f ? gsl_blas_dnrm2(f) : 0.0);
 #endif
 
 #if 0
@@ -794,6 +841,27 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               gsl_vector_scale(&Jv.vector, 1.0 / F);
             }
 
+          if (MAGDATA_FitMF(mptr->flags[j]))
+            {
+              if (mptr->flags[j] & MAGDATA_FLG_DXDT)
+                {
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
+                  jacobian_row_int_SV(t, &vx.vector, &Jv.vector, w);
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_DYDT)
+                {
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
+                  jacobian_row_int_SV(t, &vy.vector, &Jv.vector, w);
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_DZDT)
+                {
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
+                  jacobian_row_int_SV(t, &vz.vector, &Jv.vector, w);
+                }
+            }
+
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
             {
               /* check if fitting MF to this data point */
@@ -1017,6 +1085,94 @@ mfield_nonlinear_model_int(const double t, const gsl_vector *v,
 }
 
 /*
+mfield_nonlinear_model_SV()
+  Compute total time derivative model vector d/dt B for a given residual
+
+Inputs: x          - parameter vector
+        mptr       - magdata structure
+        idx        - index of datum in magdata
+        thread_id  - OpenMP thread id
+        dBdt_model - (output) d/dt B_model (X,Y,Z) in NEC
+        w          - workspace
+
+Notes:
+1) On output, w->omp_d{X,Y,Z}(thread_id,:) is filled with internal Green's functions
+for dX/dg, dY/dg, dZ/dg
+*/
+
+static int
+mfield_nonlinear_model_SV(const gsl_vector * x, const magdata * mptr, const size_t idx,
+                          const size_t thread_id, double dBdt_model[3], mfield_workspace *w)
+{
+  int s = 0;
+  double ts, r, theta, phi;
+  gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
+  gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
+  gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
+  double dBdt_int[3];
+  size_t k;
+
+  /* residual is for this data point specified by 'idx' */
+  ts = mptr->ts[idx];
+  r = mptr->r[idx];
+  theta = mptr->theta[idx];
+  phi = mptr->phi[idx];
+
+  green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data,
+                 w->green_array_p[thread_id]);
+
+  /* compute internal field model */
+  dBdt_int[0] = mfield_nonlinear_model_int_SV(ts, &vx.vector, x, w);
+  dBdt_int[1] = mfield_nonlinear_model_int_SV(ts, &vy.vector, x, w);
+  dBdt_int[2] = mfield_nonlinear_model_int_SV(ts, &vz.vector, x, w);
+
+  /* compute total time derivative of internal modeled field */
+  for (k = 0; k < 3; ++k)
+    dBdt_model[k] = dBdt_int[k];
+
+  return s;
+}
+
+/*
+mfield_nonlinear_model_int_SV()
+  Evaluate time derivative of internal field model d/dt B(r,t; g) for a given coefficient vector
+
+Inputs: t - scaled time
+        v - vector of basis functions (dX/dg,dY/dg,dZ/dg)
+        g - model coefficients
+        w - workspace
+
+Return: model = v . g_sv + t*(v . g_sa)
+*/
+
+static double
+mfield_nonlinear_model_int_SV(const double t, const gsl_vector *v,
+                              const gsl_vector *g, const mfield_workspace *w)
+{
+  double sv = 0.0, sa = 0.0, val;
+
+  if (w->nnm_sv > 0)
+    {
+      /* compute v . x_sv */
+      gsl_vector_const_view gsv = gsl_vector_const_subvector(g, w->sv_offset, w->nnm_sv);
+      gsl_vector_const_view vsv = gsl_vector_const_subvector(v, 0, w->nnm_sv);
+      gsl_blas_ddot(&vsv.vector, &gsv.vector, &sv);
+    }
+
+  if (w->nnm_sa > 0)
+    {
+      /* compute v . x_sa */
+      gsl_vector_const_view gsa = gsl_vector_const_subvector(g, w->sa_offset, w->nnm_sa);
+      gsl_vector_const_view vsa = gsl_vector_const_subvector(v, 0, w->nnm_sa);
+      gsl_blas_ddot(&vsa.vector, &gsa.vector, &sa);
+    }
+
+  val = sv + t * sa;
+
+  return val;
+}
+
+/*
 jacobian_row_int()
   Fill in row of Jacobian corresponding to internal Green's functions
 
@@ -1052,6 +1208,46 @@ jacobian_row_int(const double t, const gsl_vector * dB, gsl_vector * J, mfield_w
       /* secular acceleration portion */
       if (i < w->nnm_sa)
         gsl_vector_set(J, w->sa_offset + i, fac_sa * dBi);
+    }
+
+  return s;
+}
+
+/*
+jacobian_row_int_SV()
+  Fill in row of Jacobian corresponding to SV internal Green's functions
+
+J(row,:) = [ 0, dB, t dB ]
+
+accounting for differences in spherical harmonic degrees for MF, SV, and SA
+
+Inputs: t  - scaled time of measurement
+        dB - Green's functions for desired component (X,Y,Z), size nnm_max
+        J  - (output) Jacobian row; columns 1 - w->p_int will be filled in, size p_int
+        w  - workspace
+*/
+
+static inline int
+jacobian_row_int_SV(const double t, const gsl_vector * dB, gsl_vector * J, mfield_workspace * w)
+{
+  int s = 0;
+  size_t i;
+
+  for (i = 0; i < w->nnm_max; ++i)
+    {
+      double dBi = gsl_vector_get(dB, i);
+
+      /* main field portion */
+      if (i < w->nnm_mf)
+        gsl_vector_set(J, i, 0.0);
+
+      /* secular variation portion */
+      if (i < w->nnm_sv)
+        gsl_vector_set(J, w->sv_offset + i, dBi);
+
+      /* secular acceleration portion */
+      if (i < w->nnm_sa)
+        gsl_vector_set(J, w->sa_offset + i, t * dBi);
     }
 
   return s;

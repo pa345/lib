@@ -30,7 +30,7 @@
 #define MAGDATA_FLG_DZ_EW             (1 << 13) /* east-west DZ measurement available (both VFM and NEC) */
 #define MAGDATA_FLG_DF_EW             (1 << 14) /* east-west DF measurement available */
 #define MAGDATA_FLG_TRACK_START       (1 << 15) /* start of track in data structure */
-#define MAGDATA_FLG_FIT_MF            (1 << 16) /* fit main field to this data point */
+#define MAGDATA_FLG_FIT_MF            (1 << 16) /* fit internal main field to this data point */
 #define MAGDATA_FLG_FIT_EULER         (1 << 17) /* fit Euler angles to this data point */
 #define MAGDATA_FLG_DISCARD           (1 << 18) /* discard this data point */
 

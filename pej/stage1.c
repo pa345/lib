@@ -37,9 +37,6 @@
 /* define this to allow only 1 camera for data selection */
 #define PRINT_ONE_CAMERA           1
 
-/* number of seconds for computing along-track differences */
-#define POLTOR_GRAD_DT             (40.0)
-
 typedef struct
 {
   int all;            /* print all tracks */

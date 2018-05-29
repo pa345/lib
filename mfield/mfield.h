@@ -260,9 +260,8 @@ int mfield_eval(const double t, const double r, const double theta, const double
 int mfield_eval_dBdt(const double t, const double r, const double theta,
                      const double phi, double dBdt[4], mfield_workspace *w);
 int mfield_eval_dgdt(const double t, const double r, const double theta,
-                     const double phi, const gsl_vector *dg,
-                     const gsl_vector *ddg, double dBdt[4],
-                     mfield_workspace *w);
+                     const double phi, const gsl_vector *c,
+                     double dBdt[4], mfield_workspace *w);
 int mfield_eval_ext(const double t, const double r, const double theta, const double phi,
                     double B[4], mfield_workspace *w);
 int mfield_eval_ext_coeff(const double r, const double theta, const double phi,

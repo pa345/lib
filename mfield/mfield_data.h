@@ -21,6 +21,9 @@ typedef struct
   int fit_Y;             /* fit Y vector component */
   int fit_Z;             /* fit Z vector component */
   int fit_F;             /* fit F scalar component */
+  int fit_DXDT;          /* fit dX/dt vector component */
+  int fit_DYDT;          /* fit dY/dt vector component */
+  int fit_DZDT;          /* fit dZ/dt vector component */
   int fit_DX_NS;         /* fit DX N/S difference component */
   int fit_DY_NS;         /* fit DY N/S difference component */
   int fit_DZ_NS;         /* fit DZ N/S difference component */

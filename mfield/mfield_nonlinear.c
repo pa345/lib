@@ -457,12 +457,15 @@ mfield_init_nonlinear(mfield_workspace *w)
               MAGDATA_FitMF(mptr->flags[j]))
             ++nres_B[3];
 
-          if (MAGDATA_ExistDXDT(mptr->flags[j]))
-            ++nres_dBdt[0];
-          if (MAGDATA_ExistDYDT(mptr->flags[j]))
-            ++nres_dBdt[1];
-          if (MAGDATA_ExistDZDT(mptr->flags[j]))
-            ++nres_dBdt[2];
+          if (MAGDATA_FitMF(mptr->flags[j]))
+            {
+              if (MAGDATA_ExistDXDT(mptr->flags[j]))
+                ++nres_dBdt[0];
+              if (MAGDATA_ExistDYDT(mptr->flags[j]))
+                ++nres_dBdt[1];
+              if (MAGDATA_ExistDZDT(mptr->flags[j]))
+                ++nres_dBdt[2];
+            }
 
           if (MAGDATA_ExistDX_NS(mptr->flags[j]))
             ++nres_dB_ns[0];
@@ -619,14 +622,17 @@ mfield_init_nonlinear(mfield_workspace *w)
             if (MAGDATA_ExistScalar(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_F * wt);
 
-            if (MAGDATA_ExistDXDT(mptr->flags[j]))
-              gsl_vector_set(w->wts_spatial, idx++, params->weight_DXDT * wt);
+            if (MAGDATA_FitMF(mptr->flags[j]))
+              {
+                if (MAGDATA_ExistDXDT(mptr->flags[j]))
+                  gsl_vector_set(w->wts_spatial, idx++, params->weight_DXDT * wt);
 
-            if (MAGDATA_ExistDYDT(mptr->flags[j]))
-              gsl_vector_set(w->wts_spatial, idx++, params->weight_DYDT * wt);
+                if (MAGDATA_ExistDYDT(mptr->flags[j]))
+                  gsl_vector_set(w->wts_spatial, idx++, params->weight_DYDT * wt);
 
-            if (MAGDATA_ExistDZDT(mptr->flags[j]))
-              gsl_vector_set(w->wts_spatial, idx++, params->weight_DZDT * wt);
+                if (MAGDATA_ExistDZDT(mptr->flags[j]))
+                  gsl_vector_set(w->wts_spatial, idx++, params->weight_DZDT * wt);
+              }
 
             if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_DX * wt);
@@ -2421,10 +2427,23 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
   fprintf(stderr, "iteration %zu:\n", iter);
 
-  fprintf(stderr, "\t dipole: %12.4f %12.4f %12.4f [nT]\n",
-          gsl_vector_get(x, mfield_coeff_nmidx(1, 0)),
-          gsl_vector_get(x, mfield_coeff_nmidx(1, 1)),
-          gsl_vector_get(x, mfield_coeff_nmidx(1, -1)));
+  if (w->nnm_mf > 0)
+    {
+      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+              "dipole:",
+              mfield_get_mf(x, mfield_coeff_nmidx(1, 0), w),
+              mfield_get_mf(x, mfield_coeff_nmidx(1, 1), w),
+              mfield_get_mf(x, mfield_coeff_nmidx(1, -1), w));
+    }
+
+  if (w->nnm_sv > 0)
+    {
+      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+              "SV dipole:",
+              mfield_get_sv(x, mfield_coeff_nmidx(1, 0), w),
+              mfield_get_sv(x, mfield_coeff_nmidx(1, 1), w),
+              mfield_get_sv(x, mfield_coeff_nmidx(1, -1), w));
+    }
 
   if (w->params.fit_euler)
     {

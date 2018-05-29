@@ -86,10 +86,9 @@ mfield_workspace *
 mfield_alloc(const mfield_parameters *params)
 {
   mfield_workspace *w;
-  const size_t nmax_max = GSL_MAX(params->nmax_mf, GSL_MAX(params->nmax_sv, params->nmax_sa));
-  const size_t plm_size = gsl_sf_legendre_array_n(nmax_max);
   const size_t ntheta = 100;
   const size_t nphi = 100;
+  size_t plm_size;
 
   w = calloc(1, sizeof(mfield_workspace));
   if (!w)
@@ -101,7 +100,6 @@ mfield_alloc(const mfield_parameters *params)
   w->nmax_mf = params->nmax_mf;
   w->nmax_sv = params->nmax_sv;
   w->nmax_sa = params->nmax_sa;
-  w->nmax_max = nmax_max;
   w->data_workspace_p = params->mfield_data_p;
 
   w->params = *params;
@@ -129,13 +127,22 @@ mfield_alloc(const mfield_parameters *params)
   w->nnm_sa = (w->nmax_sa + 1) * (w->nmax_sa + 1) - 1;
 
   if (!params->fit_mf)
-    w->nnm_mf = 0;
+    {
+      w->nmax_mf = 0;
+      w->nnm_mf = 0;
+    }
 
   if (!params->fit_sv)
-    w->nnm_sv = 0;
+    {
+      w->nmax_sv = 0;
+      w->nnm_sv = 0;
+    }
 
   if (!params->fit_sa || !params->fit_sv)
-    w->nnm_sa = 0;
+    {
+      w->nmax_sa = 0;
+      w->nnm_sa = 0;
+    }
 
   /* total (internal) model coefficients */
   w->p_int = w->nnm_mf + w->nnm_sv + w->nnm_sa;
@@ -153,6 +160,14 @@ mfield_alloc(const mfield_parameters *params)
   w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_mf);
   w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_sv);
   w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_sa);
+
+  /* compute max nmax */
+  w->nmax_max = 0;
+  w->nmax_max = GSL_MAX(w->nmax_max, w->nmax_mf);
+  w->nmax_max = GSL_MAX(w->nmax_max, w->nmax_sv);
+  w->nmax_max = GSL_MAX(w->nmax_max, w->nmax_sa);
+
+  plm_size = gsl_sf_legendre_array_n(w->nmax_max);
 
   if (params->fit_euler && w->data_workspace_p)
     {
@@ -911,18 +926,11 @@ mfield_eval_dBdt(const double t, const double r, const double theta,
 {
   int s = 0;
   gsl_vector *c = w->c_copy;
-  gsl_vector_view dg, ddg;
-
-  if (w->nnm_sv > 0)
-    dg = gsl_vector_subvector(c, w->sv_offset, w->nnm_sv);
-
-  if (w->nnm_sa > 0)
-    ddg = gsl_vector_subvector(c, w->sa_offset, w->nnm_sa);
 
   /* convert coefficients to physical time units */
   mfield_coeffs(1, w->c, c, w);
 
-  s = mfield_eval_dgdt(t, r, theta, phi, &dg.vector, &ddg.vector, dBdt, w);
+  s = mfield_eval_dgdt(t, r, theta, phi, c, dBdt, w);
 
   return s;
 } /* mfield_eval_dBdt() */
@@ -991,8 +999,7 @@ Inputs: t     - timestamp (CDF_EPOCH)
         r     - radius (km)
         theta - colatitude (radians)
         phi   - longitude (radians)
-        dg    - secular variation coefficients (nT/year)
-        ddg   - secular acceleration coefficients (nT/year^2)
+        c     - SH coefficients (nT,nT/year,nT/year^2)
         dBdt  - (output) magnetic field
                 dBdt[0] = d/dt B_x
                 dBdt[1] = d/dt B_y
@@ -1003,17 +1010,15 @@ Inputs: t     - timestamp (CDF_EPOCH)
 
 int
 mfield_eval_dgdt(const double t, const double r, const double theta,
-                 const double phi, const gsl_vector *dg,
-                 const gsl_vector *ddg, double dBdt[4],
-                 mfield_workspace *w)
+                 const double phi, const gsl_vector *c,
+                 double dBdt[4], mfield_workspace *w)
 {
   int s = 0;
   size_t n;
   int m;
 
   /* convert to years and subtract epoch */
-  /*const double t1 = satdata_epoch2year(t) - w->epoch;*/
-  const double t1 = t - w->epoch;
+  const double t1 = satdata_epoch2year(t) - w->epoch;
 
   s += mfield_green(r, theta, phi, w);
 
@@ -1026,8 +1031,8 @@ mfield_eval_dgdt(const double t, const double r, const double theta,
       for (m = -ni; m <= ni; ++m)
         {
           size_t cidx = mfield_coeff_nmidx(n, m);
-          double dg0 = gsl_vector_get(dg, cidx);
-          double ddg0 = gsl_vector_get(ddg, cidx);
+          double dg0 = mfield_get_sv(c, cidx, w);
+          double ddg0 = mfield_get_sa(c, cidx, w);
           double gnm = dg0 + ddg0 * t1;
 
           dBdt[0] += gnm * w->dX[cidx];

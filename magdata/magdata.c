@@ -1878,8 +1878,17 @@ magdata_copy_station(const magdata_params *params, const obsdata_station * stati
   for (i = 0; i < station->n_sv; ++i)
     {
       int s;
-      size_t flags = MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT;
+      size_t flags = 0;
       size_t idx;
+
+      if (OBSDATA_ExistX(station->flags_sv[i]))
+        flags |= MAGDATA_FLG_DXDT;
+
+      if (OBSDATA_ExistY(station->flags_sv[i]))
+        flags |= MAGDATA_FLG_DYDT;
+
+      if (OBSDATA_ExistZ(station->flags_sv[i]))
+        flags |= MAGDATA_FLG_DZDT;
 
       datum.t = station->t_sv[i];
       datum.r = station->radius;
