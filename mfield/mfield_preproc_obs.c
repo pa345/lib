@@ -171,6 +171,9 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
   size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
   size_t i;
 
+  if (ndata == 0)
+    return NULL;
+
   params.model_main = 0;
   params.model_crust = 0;
   params.model_ext = 0;
@@ -197,6 +200,10 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
 
           if (fit_MF)
             fitting_flags |= MAGDATA_FLG_FIT_MF;
+#if 1
+          else
+            fprintf(stderr, "station %s: rejecting due to LT %f\n", station->name, LT);
+#endif
         }
       else
         {
@@ -488,6 +495,9 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
   struct timeval tv0, tv1;
   size_t i;
 
+  /*XXX*/
+  obs_params.max_dRC = -1.0;
+
   fprintf(stderr, "preprocess_data: selecting quiet time data...");
 
   for (i = 0; i < data->nstation; ++i)
@@ -502,6 +512,11 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds, %zu/%zu (%.1f%%) data flagged)\n",
               time_diff(tv0, tv1), nflagged, station->n, (double) nflagged / (double) station->n * 100.0);
+
+      fprintf(stderr, "\t\t flagged data due to LT:     %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_LT], (double) nflagged_array[OBSDATA_IDX_LT] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to kp:     %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_KP], (double) nflagged_array[OBSDATA_IDX_KP] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to dRC/dt: %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_DRC], (double) nflagged_array[OBSDATA_IDX_DRC] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to SMDL:   %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_SMDL], (double) nflagged_array[OBSDATA_IDX_SMDL] / (double) station->n * 100.0);
 
       fprintf(stderr, "\t computing %s daily means...", station->name);
       gettimeofday(&tv0, NULL);
@@ -861,6 +876,12 @@ main(int argc, char *argv[])
     {
       obsdata_station *station = data->stations[i];
       magdata *mdata = copy_data(magdata_flags, station, &params);
+
+      if (mdata == NULL)
+        {
+          fprintf(stderr, "main: WARNING: station %s has no usable SV data\n", station->name);
+          continue;
+        }
 
       sprintf(output_file, "%s/%s.dat", path_dir, station->name);
       fprintf(stderr, "main: writing data to %s...", output_file);

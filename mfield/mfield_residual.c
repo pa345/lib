@@ -37,9 +37,9 @@ mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w
     {
       magdata *mptr = mfield_data_ptr(i, data_p);
 
-      if (mptr->name[0] == '\0')
+      if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
         mfield_residual_print_satellite(prefix, iter, i, &idx, mptr, w);
-      else
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
         mfield_residual_print_observatory(prefix, iter, &idx, mptr, w);
     }
 

@@ -2,9 +2,9 @@ bin_PROGRAMS = mfield mfield_preproc mfield_preproc_obs
 
 check_PROGRAMS = mfield_emag mfield_eval_main mfield_compare mfield_plot
 
-common_libs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/estist/libestist_calc.la -L/home/palken/usr/lib -lobsdata -lapex -lflow -lcommon -lmsynth -lm -lcdf -lpomme -lsatdata -lindices ~/usr/lib/libgsl.a ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libptcblas.a ~/usr/lib/libptf77blas.a ~/usr/lib/libatlas.a -lpthread -lgfortran -lnetcdf
+common_libs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/estist/libestist_calc.la -L/home/palken/usr/lib -lobsdata -lmagcoord -lapex -lflow -lcommon -lmsynth -lm -lcdf -lpomme -lsatdata -lindices ~/usr/lib/libgsl.a ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libptcblas.a ~/usr/lib/libptf77blas.a ~/usr/lib/libatlas.a -lpthread -lgfortran -lnetcdf
 
-mfield_SOURCES = mfield.c mfield_data.c mfield_green.c mfield_main.c mfield_residual.c mfield_synth.c
+mfield_SOURCES = mfield.c mfield_data.c mfield_error.c mfield_green.c mfield_main.c mfield_residual.c mfield_synth.c
 mfield_CFLAGS = -fopenmp
 mfield_LDFLAGS = -fopenmp
 mfield_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lfftw3 -lconfig ${common_libs}

@@ -89,7 +89,7 @@ int
 mag_log_F2(const int header, const mag_workspace *w)
 {
   int s = 0;
-  const size_t downsample = 5; /* downsample to keep file size reasonable */
+  const size_t downsample = 1; /* downsample to keep file size reasonable */
   size_t i;
   mag_track *track = (mag_track *) &(w->track);
 

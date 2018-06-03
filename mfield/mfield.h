@@ -22,7 +22,7 @@
 #include "green.h"
 #include "track_weight.h"
 
-#define MFIELD_SYNTH_HIGH_LAT_ONLY 1
+#define MFIELD_SYNTH_HIGH_LAT_ONLY 0
 
 /* fit external field model to data */
 #define MFIELD_FIT_EXTFIELD    0
@@ -177,6 +177,7 @@ typedef struct
   size_t nres_tot;         /* total number of residuals to minimize, including regularization terms */
   size_t nres;             /* number of residuals to minimize (data only) */
   size_t nres_vec;         /* number of vector residuals to minimize */
+  size_t nres_vec_SV;      /* number of secular variation vector residuals to minimize */
   size_t nres_vec_grad;    /* number of vector gradient residuals to minimize */
   size_t data_block;       /* maximum observations to accumulate at once in LS system */
   gsl_vector *lambda_diag; /* diag(L) regularization matrix */
@@ -209,6 +210,7 @@ typedef struct
    * the matrix is symmetric
    */
   gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
+  gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p_int-by-p_int */
 
   size_t max_threads;      /* maximum number of threads/processors available */
   gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_max */
@@ -272,7 +274,6 @@ int mfield_eval_g_ext(const double t, const double r, const double theta, const 
                       double B[4], mfield_workspace *w);
 int mfield_eval_static(const double r, const double theta, const double phi,
                        const gsl_vector *g, double B[4], mfield_workspace *w);
-int mfield_calc_uncertainties(mfield_workspace *w);
 int mfield_calc_evals(gsl_vector *evals, mfield_workspace *w);
 double mfield_spectrum(const size_t n, const mfield_workspace *w);
 double mfield_spectrum_sv(const size_t n, const mfield_workspace *w);

@@ -300,7 +300,7 @@ mfield_alloc(const mfield_parameters *params)
   w->c_copy = gsl_vector_alloc(w->p);
 
   /* covariance matrix of the internal field coefficients */
-  w->covar = gsl_matrix_alloc(w->p_int, w->p_int);
+  w->covar = gsl_matrix_alloc(w->p, w->p);
 
   w->dX = malloc(w->nnm_max * sizeof(double));
   w->dY = malloc(w->nnm_max * sizeof(double));
@@ -330,6 +330,7 @@ mfield_alloc(const mfield_parameters *params)
   w->niter = 0;
 
   w->JTJ_vec = gsl_matrix_alloc(w->p_int, w->p_int);
+  w->choleskyL = gsl_matrix_alloc(w->p_int, w->p_int);
 
   w->eigen_workspace_p = gsl_eigen_symm_alloc(w->p);
 
@@ -348,9 +349,9 @@ mfield_alloc(const mfield_parameters *params)
   {
     /*
      * Number of components added to omp_J matrix:
-     * X, Y, Z, F, DX_NS, DY_NS, DZ_NS, DF_NS, DX_EW, DY_EW, DZ_EW, DF_EW
+     * X, Y, Z, F, DX_NS, DY_NS, DZ_NS, DF_NS, DX_EW, DY_EW, DZ_EW, DF_EW, dX/dt, dY/dt, dZ/dt
      */
-    const size_t ncomp = 12;
+    const size_t ncomp = 15;
     size_t i;
 
     /*
@@ -463,6 +464,9 @@ mfield_free(mfield_workspace *w)
 
   if (w->JTJ_vec)
     gsl_matrix_free(w->JTJ_vec);
+
+  if (w->choleskyL)
+    gsl_matrix_free(w->choleskyL);
 
   if (w->omp_dX)
     gsl_matrix_free(w->omp_dX);
@@ -701,70 +705,6 @@ mfield_init(mfield_workspace *w)
 
   return s;
 } /* mfield_init() */
-
-/*
-mfield_calc_uncertainties()
-  Compute uncertainties in coefficients using the variance-covariance
-matrix:
-
-C = [J^T W J]^{-1}
-
-and
-
-W = diag(w_i) = diag(1 / sigma^2)  with
-
-sigma^2 = chi^2 / (n-p+1) for all i
-
-Notes:
-1) On output, w->covar contains the covariance matrix
-   C = sigma^2 (J^T J)^{-1}
-*/
-
-int
-mfield_calc_uncertainties(mfield_workspace *w)
-{
-  int s = GSL_SUCCESS;
-#if 0 /* XXX */
-  /*
-   * compute uncertainties only for internal field coefficients; the
-   * external field coefficients could be zero for many days (if no
-   * data) leading to a singular Jacobian
-   */
-  const size_t p = w->p_int;
-  gsl_vector * f = gsl_multilarge_regnlinear_residual(w->nlinear_workspace_p);
-  gsl_matrix * JTJ = gsl_multilarge_regnlinear_JTJ(w->nlinear_workspace_p);
-  gsl_matrix_view m = gsl_matrix_submatrix(JTJ, 0, 0, p, p);
-  double dof = (double)f->size - (double)w->p;
-  double chisq, sigmasq;
-
-  fprintf(stderr, "\n");
-
-  /* compute chi^2 = f^T f */
-  fprintf(stderr, "\t computing final chisq...");
-  gsl_blas_ddot(f, f, &chisq);
-  fprintf(stderr, "done (chisq = %f)\n", chisq);
-
-  /* use total number of coefficients for this calculation of dof */
-  fprintf(stderr, "\t computing final sigmasq...");
-  sigmasq = chisq / dof;
-  fprintf(stderr, "done (sigmasq = %f)\n", sigmasq);
-
-  /* copy lower triangle of JTJ to covar */
-  gsl_matrix_tricpy('L', 1, w->covar, &m.matrix);
-
-  /* compute (J^T J)^{-1} using Cholesky decomposition */
-  fprintf(stderr, "\t inverting J^T J matrix...");
-  gsl_linalg_cholesky_decomp(w->covar);
-  gsl_linalg_cholesky_invert(w->covar);
-  fprintf(stderr, "done\n");
-
-  /* scale by sigma^2 */
-  gsl_matrix_scale(w->covar, sigmasq);
-
-#endif
-
-  return s;
-} /* mfield_calc_uncertainties() */
 
 int
 mfield_calc_evals(gsl_vector *evals, mfield_workspace *w)
@@ -1257,7 +1197,7 @@ mfield_spectrum(const size_t n, const mfield_workspace *w)
   for (m = -ni; m <= ni; ++m)
     {
       size_t cidx = mfield_coeff_nmidx(n, m);
-      double gnm = gsl_vector_get(c, cidx);
+      double gnm = mfield_get_mf(c, cidx, w);
 
       sum += gnm * gnm;
     }
@@ -1395,7 +1335,8 @@ mfield_write_ascii(const char *filename, const double epoch,
   const mfield_parameters *params = &(w->params);
   FILE *fp;
   size_t n, i;
-  gsl_vector_view v = gsl_matrix_diagonal(w->covar);
+  gsl_vector_view d = gsl_matrix_diagonal(w->covar);
+  gsl_vector_view v = gsl_vector_subvector(&d.vector, 0, w->p_int);
   gsl_vector_view cov = gsl_vector_subvector(w->c_copy, 0, w->p_int);
 
   fp = fopen(filename, "w");

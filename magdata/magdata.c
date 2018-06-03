@@ -1406,6 +1406,8 @@ Return: success/error
 
 Notes:
 1) ntype should be initialized by the calling function
+
+2) mdata->global_flags is modified to include MAGDATA_GLOBFLG_SATELLITE
 */
 
 int
@@ -1578,6 +1580,8 @@ magdata_copy_track(const magdata_params *params, const size_t track_idx,
         ++(ntype[3]);
     }
 
+  mdata->global_flags |= MAGDATA_GLOBFLG_SATELLITE;
+
   return 0;
 }
 
@@ -1607,6 +1611,8 @@ Return: success/error
 
 Notes:
 1) ntype should be initialized by the calling function
+
+2) mdata->global_flags is modified to include MAGDATA_GLOBFLG_SATELLITE
 */
 
 int
@@ -1838,6 +1844,8 @@ magdata_copy_track_EW(const magdata_params *params, const size_t track_idx,
         ++(ntype[5]);
     }
 
+  mdata->global_flags |= MAGDATA_GLOBFLG_SATELLITE;
+
   return 0;
 }
 
@@ -1861,6 +1869,8 @@ Return: success/error
 
 Notes:
 1) ntype should be initialized by the calling function
+
+2) mdata->global_flags is modified to include MAGDATA_GLOBFLG_OBSERVATORY
 */
 
 int
@@ -1895,7 +1905,7 @@ magdata_copy_station(const magdata_params *params, const obsdata_station * stati
       datum.theta = M_PI / 2.0 - station->latitude * M_PI / 180.0;
       datum.phi = station->longitude * M_PI / 180.0;
       datum.flags = flags;
-      datum.lt = obsdata_localtime(datum.t, datum.phi);
+      datum.lt = get_localtime(epoch2timet(datum.t), datum.phi);
       datum.dBdt_nec[0] = station->X_sv[i];
       datum.dBdt_nec[1] = station->Y_sv[i];
       datum.dBdt_nec[2] = station->Z_sv[i];
@@ -1910,6 +1920,8 @@ magdata_copy_station(const magdata_params *params, const obsdata_station * stati
       if (s)
         return s;
     }
+
+  mdata->global_flags |= MAGDATA_GLOBFLG_OBSERVATORY;
 
   return 0;
 }

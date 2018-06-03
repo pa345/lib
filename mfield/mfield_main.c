@@ -46,6 +46,7 @@
 #include "euler.h"
 #include "magdata.h"
 #include "mfield.h"
+#include "mfield_error.h"
 #include "mfield_residual.h"
 #include "mfield_synth.h"
 #include "track.h"
@@ -1019,6 +1020,7 @@ int
 main(int argc, char *argv[])
 {
   int status;
+  const char *error_file = "error.txt";
   char *outfile = NULL;
   char *Lfile = NULL;
   char *datamap_prefix = "output";
@@ -1350,10 +1352,17 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
 
-  /* calculate errors in coefficients */
-  fprintf(stderr, "main: calculating coefficient uncertainties...");
+  /* calculate covariance matrix */
+  fprintf(stderr, "main: calculating covariance matrix...");
   gettimeofday(&tv0, NULL);
-  mfield_calc_uncertainties(mfield_workspace_p);
+  status = mfield_covariance(mfield_workspace_p->covar, mfield_workspace_p);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (status = %d, %g seconds)\n", status, time_diff(tv0, tv1));
+
+  /* calculate errors in coefficients */
+  fprintf(stderr, "main: printing coefficient uncertainties to %s...", error_file);
+  gettimeofday(&tv0, NULL);
+  mfield_print_uncertainties(error_file, mfield_workspace_p->covar, mfield_workspace_p);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 

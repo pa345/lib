@@ -5,6 +5,7 @@
  */
 
 static int mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f);
+static int mfield_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f);
 static int mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J);
 static int mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t idx,
                                   const size_t thread_id, double B_model[3], mfield_workspace *w);

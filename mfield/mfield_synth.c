@@ -15,7 +15,6 @@
 #include <gsl/gsl_randist.h>
 
 #include <msynth/msynth.h>
-#include <common/oct.h>
 
 #include "euler.h"
 
@@ -24,6 +23,8 @@
 
 static int mfield_synth_calc(const double t, const double r, const double theta, const double phi,
                              const gsl_vector * g, double B[3], mfield_workspace *w);
+static int mfield_synth_calc_dBdt(const double t, const double r, const double theta, const double phi, const gsl_vector * g,
+                                  double dBdt[3], mfield_workspace *w);
 
 /* fill in internal coefficient vector of synthetic gauss coefficients */
 int
@@ -38,7 +39,7 @@ mfield_synth_g(gsl_vector * g, mfield_workspace * w)
     msynth_workspace *msynth_p = msynth_swarm_read(MSYNTH_CHAOS_FILE);
     const double epoch = 2010.0;
     size_t nmin = params->synth_nmin;
-    size_t nmax = GSL_MIN(GSL_MIN(msynth_p->nmax, w->nmax_mf), 15);
+    size_t nmax = GSL_MIN(GSL_MIN(msynth_p->nmax, w->nmax_max), 15);
     size_t n;
 
     for (n = nmin; n <= nmax; ++n)
@@ -85,8 +86,6 @@ mfield_synth_g(gsl_vector * g, mfield_workspace * w)
 
       msynth_free(crust_p);
     }
-
-  printv_octave(g, "g_synth");
 
   return 0;
 }
@@ -195,6 +194,17 @@ mfield_synth_replace(mfield_workspace *w)
               mptr->Bz_vfm[j] = B_vfm[2];
             }
 
+          if (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT))
+            {
+              double dBdt[3];
+
+              /* synthesize dB/dt vector */
+              mfield_synth_calc_dBdt(t, r, theta, phi, g, dBdt, mfield_p);
+              mptr->dXdt_nec[j] = dBdt[0];
+              mptr->dYdt_nec[j] = dBdt[1];
+              mptr->dZdt_nec[j] = dBdt[2];
+            }
+
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DF_NS |
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW | MAGDATA_FLG_DF_EW))
             {
@@ -247,7 +257,7 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
   const double t0 = w->epoch;
   const double t1 = t - t0;
   const double t2 = 0.5 * t1 * t1;
-  const size_t nmax = w->nmax_mf;
+  const size_t nmax = w->nmax_max;
   const double ratio = w->R / r;
   const double sint = sin(theta);
   const double cost = cos(theta);
@@ -299,6 +309,70 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
           B[0] += rterm * (gnm * c + hnm * s) * dPlm[pidx];
           B[1] += rterm / sint * m * (gnm * s - hnm * c) * Plm[pidx];
           B[2] -= (n + 1.0) * rterm * (gnm * c + hnm * s) * Plm[pidx];
+        }
+    }
+
+  return s;
+}
+
+/* compute dB/dt(r,theta,phi) using Gauss coefficients 'g' */
+static int
+mfield_synth_calc_dBdt(const double t, const double r, const double theta, const double phi, const gsl_vector * g,
+                       double dBdt[3], mfield_workspace *w)
+{
+  int s = 0;
+  const double t0 = w->epoch;
+  const double t1 = t - t0;
+  const size_t nmax = w->nmax_max;
+  const double ratio = w->R / r;
+  const double sint = sin(theta);
+  const double cost = cos(theta);
+  double rterm = ratio * ratio;
+  double *Plm = w->Plm;
+  double *dPlm = w->dPlm;
+  size_t n;
+
+  dBdt[0] = 0.0;
+  dBdt[1] = 0.0;
+  dBdt[2] = 0.0;
+
+  gsl_sf_legendre_deriv_alt_array(GSL_SF_LEGENDRE_SCHMIDT, nmax, cost, Plm, dPlm);
+
+  for (n = 0; n <= nmax; ++n)
+    {
+      w->cosmphi[n] = cos(n * phi);
+      w->sinmphi[n] = sin(n * phi);
+    }
+
+  for (n = 1; n <= nmax; ++n)
+    {
+      int ni = (int) n;
+      int m;
+
+      /* (R/r)^{n+2} */
+      rterm *= ratio;
+
+      for (m = 0; m <= ni; ++m)
+        {
+          double c = w->cosmphi[m];
+          double s = w->sinmphi[m];
+          size_t pidx = gsl_sf_legendre_array_index(n, m);
+          size_t cidx = mfield_coeff_nmidx(n, m);
+          double gnm, hnm = 0.0;
+
+          gnm = mfield_get_sv(g, cidx, w) +
+                mfield_get_sa(g, cidx, w) * t1;
+
+          if (m > 0)
+            {
+              cidx = mfield_coeff_nmidx(n, -m);
+              hnm = mfield_get_sv(g, cidx, w) +
+                    mfield_get_sa(g, cidx, w) * t1;
+            }
+
+          dBdt[0] += rterm * (gnm * c + hnm * s) * dPlm[pidx];
+          dBdt[1] += rterm / sint * m * (gnm * s - hnm * c) * Plm[pidx];
+          dBdt[2] -= (n + 1.0) * rterm * (gnm * c + hnm * s) * Plm[pidx];
         }
     }
 

@@ -415,9 +415,9 @@ mfield_data_print(const char *dir_prefix, const gsl_vector *wts_spatial,
     {
       magdata *mptr = mfield_data_ptr(i, w);
 
-      if (mptr->name[0] == '\0')
+      if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
         mfield_data_print_satellite(dir_prefix, wts_spatial, i, mptr, &idx);
-      else
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
         mfield_data_print_observatory(dir_prefix, wts_spatial, mptr, &idx);
     }
 
