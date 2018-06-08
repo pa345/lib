@@ -683,8 +683,8 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter,
       mfield_eval_dBdt(mptr->t[j], r, theta, phi, dBdt_fit, w);
 
       res_dBdt[0] = mptr->dXdt_nec[j] - dBdt_fit[0];
-      res_dBdt[1] = mptr->dXdt_nec[j] - dBdt_fit[1];
-      res_dBdt[2] = mptr->dXdt_nec[j] - dBdt_fit[2];
+      res_dBdt[1] = mptr->dYdt_nec[j] - dBdt_fit[1];
+      res_dBdt[2] = mptr->dZdt_nec[j] - dBdt_fit[2];
 
       if (MAGDATA_ExistDXDT(mptr->flags[j]))
         {

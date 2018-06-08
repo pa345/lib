@@ -117,6 +117,7 @@ peak_find(const double minheight, const double nsigma, const gsl_vector * x, siz
     }
   else
     {
+#if 0
       const double sigma = 0.25;
       gsl_vector_view d = gsl_vector_subvector(w->deriv, 0, n);
       gsl_vector_view med = gsl_vector_subvector(w->median, 0, n);
@@ -170,6 +171,7 @@ peak_find(const double minheight, const double nsigma, const gsl_vector * x, siz
                  gsl_vector_get(&scale.vector, i),
                  gsl_vector_int_get(ipeak, i));
         }
+#endif
 
       return GSL_SUCCESS;
     }

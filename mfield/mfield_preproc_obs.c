@@ -39,7 +39,6 @@
 #include <gsl/gsl_rng.h>
 
 #include <common/common.h>
-#include <common/solarpos.h>
 #include <msynth/msynth.h>
 
 #include "magdata.h"
@@ -84,13 +83,6 @@ static size_t model_flags(const size_t magdata_flags, const double t,
 #define MFIELD_IDX_DF_EW          11
 #define MFIELD_IDX_B_EULER        12
 #define MFIELD_IDX_END            13
-
-/* Global */
-solarpos_workspace *solarpos_workspace_p = NULL;
-
-#if 0
-#include "mfield_preproc_filter.c"
-#endif
 
 static int
 check_parameters(preprocess_parameters * params)
@@ -160,12 +152,11 @@ check_parameters(preprocess_parameters * params)
   return s;
 }
 
+/* convert observatory SV data to magdata format */
 magdata *
-copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess_parameters * preproc_params)
+copy_data_SV(const size_t magdata_flags, const obsdata_station *station, preprocess_parameters * preproc_params)
 {
-#if 1
-
-  size_t ndata = station->n_sv;
+  size_t ndata = station->n_sv_tot;
   magdata *mdata;
   magdata_params params;
   size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
@@ -200,10 +191,6 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
 
           if (fit_MF)
             fitting_flags |= MAGDATA_FLG_FIT_MF;
-#if 1
-          else
-            fprintf(stderr, "station %s: rejecting due to LT %f\n", station->name, LT);
-#endif
         }
       else
         {
@@ -215,136 +202,6 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
     }
 
   return mdata;
-
-#elif 0
-  const size_t nflagged = obsdata_station_nflagged(station);
-  size_t ndata = station->n - nflagged;
-  magdata *mdata;
-  magdata_params params;
-  size_t i;
-  size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
-  size_t nmodel[MFIELD_IDX_END];
-
-  params.grad_dphi_max = preproc_params->gradew_dphi_max;
-  params.grad_dlat_max = preproc_params->gradew_dlat_max;
-
-  /* subtract main field from data prior to modeling */
-  if (preproc_params->subtract_B_main)
-    params.model_main = 1;
-  else
-    params.model_main = 0;
-
-  /* subtract crustal field model from data prior to modeling */
-  if (preproc_params->subtract_B_crust)
-    params.model_crust = 1;
-  else
-    params.model_crust = 0;
-
-  /* subtract external field from data prior to modeling */
-  if (preproc_params->subtract_B_ext)
-    params.model_ext = 1;
-  else
-    params.model_ext = 0;
-
-  /* initialize arrays */
-  for (i = 0; i < MFIELD_IDX_END; ++i)
-    nmodel[i] = 0;
-
-  mdata = magdata_alloc(ndata, R_EARTH_KM);
-  if (!mdata)
-    return 0;
-
-  mdata->global_flags = magdata_flags;
-  
-  fprintf(stderr, "\n");
-  fprintf(stderr, "\t copy_data: converting station %s to magdata format...", station->name);
-
-#if 0
-  /* copy tracks into mdata structure */
-  for (i = 0; i < track_p->n; ++i)
-    {
-      track_data *tptr = &(track_p->tracks[i]);
-
-      /* discard flagged tracks */
-      if (tptr->flags)
-        continue;
-
-      if (data2 == NULL)
-        magdata_copy_track(&params, i, data, track_p, mdata, npts);
-      else
-        magdata_copy_track_EW(&params, i, data, track_p, data2, track_p2, mdata, npts);
-    }
-#endif
-
-  fprintf(stderr, "done (ndata = %zu mdata_n = %zu, mdata_ntot = %zu)\n", ndata, mdata->n, mdata->ntot);
-
-  fprintf(stderr, "\t copy_data: flagging data for MF, Euler, etc...");
-
-  /*
-   * now determine which points in mdata will be used for
-   * MF modeling, Euler angle fitting, etc
-   */
-  for (i = 0; i < mdata->n; ++i)
-    {
-      size_t fitting_flags = 0;
-
-      if (fabs(mdata->qdlat[i]) <= preproc_params->qdlat_preproc_cutoff)
-        {
-          /*
-           * mid-latitude point: check local time of equator crossing to determine whether
-           * to fit field model and/or Euler angles
-           */
-
-          double LT = mdata->lt_eq[i];
-          int fit_MF = mfield_check_LT(LT, preproc_params->min_LT, preproc_params->max_LT);
-
-          if (fit_MF)
-            fitting_flags |= MAGDATA_FLG_FIT_MF;
-        }
-      else
-        {
-          /* high-latitude point - fit field model */
-          fitting_flags |= MAGDATA_FLG_FIT_MF;
-        }
-
-      if (fitting_flags & MAGDATA_FLG_FIT_MF)
-        {
-          if (MAGDATA_ExistX(mdata->flags[i]))
-            ++(nmodel[MFIELD_IDX_X]);
-
-          if (MAGDATA_ExistY(mdata->flags[i]))
-            ++(nmodel[MFIELD_IDX_Y]);
-
-          if (MAGDATA_ExistZ(mdata->flags[i]))
-            ++(nmodel[MFIELD_IDX_Z]);
-
-          if (MAGDATA_ExistScalar(mdata->flags[i]))
-            ++(nmodel[MFIELD_IDX_F]);
-        }
-
-      mdata->flags[i] |= fitting_flags;
-    }
-
-  fprintf(stderr, "done\n");
-
-  fprintf(stderr, "\t copy_data: %zu/%zu (%.1f%%) scalar measurements available\n",
-          npts[0], mdata->n, (double) npts[0] / (double) mdata->n * 100.0);
-  fprintf(stderr, "\t copy_data: %zu/%zu (%.1f%%) vector measurements available\n",
-          npts[1], mdata->n, (double) npts[1] / (double) mdata->n * 100.0);
-
-  fprintf(stderr, "\t copy_data: %zu/%zu (%.1f%%) X vector measurements selected for MF modeling\n",
-          nmodel[MFIELD_IDX_X], mdata->n, (double) nmodel[MFIELD_IDX_X] / (double) mdata->n * 100.0);
-  fprintf(stderr, "\t copy_data: %zu/%zu (%.1f%%) Y vector measurements selected for MF modeling\n",
-          nmodel[MFIELD_IDX_Y], mdata->n, (double) nmodel[MFIELD_IDX_Y] / (double) mdata->n * 100.0);
-  fprintf(stderr, "\t copy_data: %zu/%zu (%.1f%%) Z vector measurements selected for MF modeling\n",
-          nmodel[MFIELD_IDX_Z], mdata->n, (double) nmodel[MFIELD_IDX_Z] / (double) mdata->n * 100.0);
-  fprintf(stderr, "\t copy_data: %zu/%zu (%.1f%%) scalar measurements selected for MF modeling\n",
-          nmodel[MFIELD_IDX_F], mdata->n, (double) nmodel[MFIELD_IDX_F] / (double) mdata->n * 100.0);
-
-  return mdata;
-#else
-  return NULL;
-#endif
 }
 
 /*
@@ -380,103 +237,9 @@ mfield_check_LT(const double lt, const double lt_min, const double lt_max)
   return 1;
 }
 
-#if 0
-
-/*
-model_flags()
-  Check an individual data point to determine if it will be used to
-fit various model parameters.
-
-Inputs: magdata_flags - MAGDATA_GLOBFLG_xxx
-        t             - CDF_EPOCH timestamp
-        theta         - colatitude (radians)
-        phi           - longitude (radians)
-        qdlat         - QD latitude (degrees)
-        params        - preprocess parameters
-
-Return: flags indicating fit parameters (MAGDATA_FLG_FIT_xxx)
-
-Notes:
-1) If data point is below MFIELD_HIGH_LATITUDE and local time is
-within [params->min_LT,params->max_LT], flag is set to MAGDATA_FLG_FIT_MF
-
-2) If data point is higher than MFIELD_HIGH_LATITUDE, zenith angle
-is computed and if the point is in darkness, MAGDATA_FLG_FIT_MF is set
-
-3) If we are fitting Euler angles to this satellite, and the data
-point satisfies the criteria, MAGDATA_FLG_FIT_EULER is set
-*/
-
-static size_t
-model_flags(const size_t magdata_flags, const double t,
-            const double theta, const double phi, const double qdlat,
-            const preprocess_parameters * params)
-{
-  size_t flags = 0;
-  const time_t unix_time = satdata_epoch2timet(t);
-  const double lt = get_localtime(unix_time, phi);
-  const double lat_deg = 90.0 - theta * 180.0 / M_PI;
-  int status;
-
-  /* check if we should fit Euler angles to this data point */
-  status = mfield_check_LT(lt, MFIELD_EULER_LT_MIN, MFIELD_EULER_LT_MAX);
-  if ((status == 1) &&
-      (magdata_flags & MAGDATA_GLOBFLG_EULER) &&
-      (fabs(qdlat) <= MFIELD_EULER_QDLAT))
-    {
-      flags |= MAGDATA_FLG_FIT_EULER;
-    }
-
-  /* check if we should fit main field model to this data point */
-  if (fabs(lat_deg) <= MFIELD_HIGH_LATITUDE)
-    {
-      status = mfield_check_LT(lt, params->min_LT, params->max_LT);
-
-      if (status == 1)
-        flags |= MAGDATA_FLG_FIT_MF;
-    }
-  else
-    {
-      double lat_rad = lat_deg * M_PI / 180.0;
-      double zenith;
-
-      solarpos_calc_zenith(unix_time, lat_rad, phi, &zenith, solarpos_workspace_p);
-      zenith *= 180.0 / M_PI;
-      assert(zenith >= 0.0);
-
-      /* large zenith angle means darkness */
-      if (zenith >= MFIELD_MAX_ZENITH)
-        flags |= MAGDATA_FLG_FIT_MF;
-    }
-
-  return flags;
-}
-
-#endif
-
-int
-print_track_stats(const satdata_mag *data, const track_workspace *track_p)
-{
-  size_t nflagged = satdata_nflagged(data);
-  size_t nleft = data->n - nflagged;
-  size_t nflagged_track = track_nflagged(track_p);
-  size_t nleft_track = track_p->n - nflagged_track;
-
-  fprintf(stderr, "preprocess_data: total flagged data: %zu/%zu (%.1f%%)\n",
-          nflagged, data->n, (double)nflagged / (double)data->n * 100.0);
-  fprintf(stderr, "preprocess_data: total remaining data: %zu/%zu (%.1f%%)\n",
-          nleft, data->n, (double)nleft / (double)data->n * 100.0);
-
-  fprintf(stderr, "preprocess_data: total flagged tracks: %zu/%zu (%.1f%%)\n",
-          nflagged_track, track_p->n, (double)nflagged_track / (double)track_p->n * 100.0);
-  fprintf(stderr, "preprocess_data: total remaining tracks: %zu/%zu (%.1f%%)\n",
-          nleft_track, track_p->n, (double)nleft_track / (double)track_p->n * 100.0);
-
-  return 0;
-} /* print_track_stats() */
-
 /*
 preprocess_data()
+  Compute daily means and SV data for observatories
 
 Inputs: params - preprocess parameters
           downsample - downsampling factor
@@ -495,9 +258,6 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
   struct timeval tv0, tv1;
   size_t i;
 
-  /*XXX*/
-  obs_params.max_dRC = -1.0;
-
   fprintf(stderr, "preprocess_data: selecting quiet time data...");
 
   for (i = 0; i < data->nstation; ++i)
@@ -513,10 +273,11 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
       fprintf(stderr, "done (%g seconds, %zu/%zu (%.1f%%) data flagged)\n",
               time_diff(tv0, tv1), nflagged, station->n, (double) nflagged / (double) station->n * 100.0);
 
-      fprintf(stderr, "\t\t flagged data due to LT:     %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_LT], (double) nflagged_array[OBSDATA_IDX_LT] / (double) station->n * 100.0);
-      fprintf(stderr, "\t\t flagged data due to kp:     %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_KP], (double) nflagged_array[OBSDATA_IDX_KP] / (double) station->n * 100.0);
-      fprintf(stderr, "\t\t flagged data due to dRC/dt: %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_DRC], (double) nflagged_array[OBSDATA_IDX_DRC] / (double) station->n * 100.0);
-      fprintf(stderr, "\t\t flagged data due to SMDL:   %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_SMDL], (double) nflagged_array[OBSDATA_IDX_SMDL] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to LT:        %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_LT], (double) nflagged_array[OBSDATA_IDX_LT] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to kp:        %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_KP], (double) nflagged_array[OBSDATA_IDX_KP] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to dRC/dt:    %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_DRC], (double) nflagged_array[OBSDATA_IDX_DRC] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to SMDL:      %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_SMDL], (double) nflagged_array[OBSDATA_IDX_SMDL] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to d/dt SMDL: %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_DSMDL], (double) nflagged_array[OBSDATA_IDX_DSMDL] / (double) station->n * 100.0);
 
       fprintf(stderr, "\t computing %s daily means...", station->name);
       gettimeofday(&tv0, NULL);
@@ -530,7 +291,7 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
       obsdata_station_SV(min_samples, interval_SV, station);
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds, %zu SV values computed)\n",
-              time_diff(tv0, tv1), station->n_sv);
+              time_diff(tv0, tv1), station->n_sv_tot);
     }
 
   fprintf(stderr, "done\n");
@@ -560,161 +321,6 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
 #endif
 
   return 0;
-}
-
-int
-calc_main(satdata_mag *data)
-{
-  const int max_threads = omp_get_max_threads();
-  msynth_workspace **msynth_p;
-  size_t i;
-
-  msynth_p = malloc(max_threads * sizeof(msynth_workspace *));
-
-  for (i = 0; i < (size_t) max_threads; ++i)
-    {
-      msynth_p[i] = msynth_read(MSYNTH_BOUMME_FILE);
-      msynth_set(1, 15, msynth_p[i]);
-    }
-
-#pragma omp parallel for private(i)
-  for (i = 0; i < data->n; ++i)
-    {
-      int thread_id = omp_get_thread_num();
-      double tyr = satdata_epoch2year(data->t[i]);
-      double r = data->r[i];
-      double theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
-      double phi = data->longitude[i] * M_PI / 180.0;
-      double B_core[4];
-
-      /* IMPORTANT: this needs the second check below, since AvailableData() will
-       * reject downsampled points, but they could be used for N/S or E/W gradients
-       * so the field value must be computed for thos too
-       */
-#if 0
-      if (!SATDATA_AvailableData(data->flags[i]))
-        continue;
-#else
-      if (SATDATA_BadData(data->flags[i]) || (data->flags[i] & SATDATA_FLG_FILTER))
-        continue;
-#endif
-
-      msynth_eval(tyr, r, theta, phi, B_core, msynth_p[thread_id]);
-
-      SATDATA_VEC_X(data->B_main, i) = B_core[0];
-      SATDATA_VEC_Y(data->B_main, i) = B_core[1];
-      SATDATA_VEC_Z(data->B_main, i) = B_core[2];
-    }
-
-  for (i = 0; i < (size_t) max_threads; ++i)
-    msynth_free(msynth_p[i]);
-
-  free(msynth_p);
-
-  return 0;
-}
-
-static int
-subtract_RC(const char *filename, satdata_mag *data, track_workspace *w)
-{
-  int s = 0;
-  const magfit_type *T = magfit_rc;
-  magfit_parameters magfit_params = magfit_default_parameters();
-  magfit_workspace *magfit_p;
-  size_t i, j;
-  FILE *fp;
-
-  magfit_params.rc_p = 1;
-  magfit_params.rc_fit_Y = 0;
-  magfit_params.rc_subtract_crust = 1;
-  magfit_p = magfit_alloc(T, &magfit_params);
-
-  fp = fopen(filename, "w");
-  magfit_print_track(1, fp, NULL, data, magfit_p);
-
-  for (i = 0; i < w->n; ++i)
-    {
-      track_data *tptr = &(w->tracks[i]);
-      double rnorm, snorm;
-
-      if (tptr->flags != 0)
-        continue;
-
-      magfit_reset(magfit_p);
-
-      for (j = 0; j < tptr->n; ++j)
-        {
-          size_t didx = j + tptr->start_idx;
-          double t = data->t[didx];
-          double r = data->r[didx];
-          double theta = M_PI / 2.0 - data->latitude[didx] * M_PI / 180.0;
-          double phi = data->longitude[didx] * M_PI / 180.0;
-          double qdlat = data->qdlat[didx];
-          double B[3];
-
-          if (SATDATA_BadData(data->flags[didx]) || (data->flags[didx] & SATDATA_FLG_FILTER))
-            continue;
-
-          /* only fit RC model to low-latitude data */
-          if (fabs(qdlat) > 55.0)
-            continue;
-
-          /* start with total measurement */
-          B[0] = SATDATA_VEC_X(data->B, didx);
-          B[1] = SATDATA_VEC_Y(data->B, didx);
-          B[2] = SATDATA_VEC_Z(data->B, didx);
-
-          /* subtract main field */
-          B[0] -= SATDATA_VEC_X(data->B_main, didx);
-          B[1] -= SATDATA_VEC_Y(data->B_main, didx);
-          B[2] -= SATDATA_VEC_Z(data->B_main, didx);
-
-          /* subtract crustal field */
-          B[0] -= SATDATA_VEC_X(data->B_crust, didx);
-          B[1] -= SATDATA_VEC_Y(data->B_crust, didx);
-          B[2] -= SATDATA_VEC_Z(data->B_crust, didx);
-
-          /* subtract external field */
-          B[0] -= SATDATA_VEC_X(data->B_ext, didx);
-          B[1] -= SATDATA_VEC_Y(data->B_ext, didx);
-          B[2] -= SATDATA_VEC_Z(data->B_ext, didx);
-
-          /* add residual to magfit workspace */
-          magfit_add_datum(t, r, theta, phi, qdlat, B, magfit_p);
-        }
-
-      /* fit RC model */
-      s = magfit_fit(&rnorm, &snorm, magfit_p);
-      if (s)
-        continue;
-
-      magfit_print_track(0, fp, tptr, data, magfit_p);
-
-      /* now add the RC model to the external field model vector */
-      for (j = 0; j < tptr->n; ++j)
-        {
-          size_t didx = j + tptr->start_idx;
-          double t = data->t[didx];
-          double r = data->r[didx];
-          double theta = M_PI / 2.0 - data->latitude[didx] * M_PI / 180.0;
-          double phi = data->longitude[didx] * M_PI / 180.0;
-          double B[3];
-
-          if (SATDATA_BadData(data->flags[didx]) || (data->flags[didx] & SATDATA_FLG_FILTER))
-            continue;
-
-          magfit_eval_B(t, r, theta, phi, B, magfit_p);
-
-          SATDATA_VEC_X(data->B_ext, didx) += B[0];
-          SATDATA_VEC_Y(data->B_ext, didx) += B[1];
-          SATDATA_VEC_Z(data->B_ext, didx) += B[2];
-        }
-    }
-
-  magfit_free(magfit_p);
-  fclose(fp);
-
-  return s;
 }
 
 static int
@@ -863,8 +469,6 @@ main(int argc, char *argv[])
       exit(1);
     }
 
-  solarpos_workspace_p = solarpos_alloc();
-
   fprintf(stderr, "main: downsample       = %zu\n", params.downsample);
   fprintf(stderr, "main: LT minimum       = %.1f\n", params.min_LT);
   fprintf(stderr, "main: LT maximum       = %.1f\n", params.max_LT);
@@ -875,7 +479,9 @@ main(int argc, char *argv[])
   for (i = 0; i < data->nstation; ++i)
     {
       obsdata_station *station = data->stations[i];
-      magdata *mdata = copy_data(magdata_flags, station, &params);
+      magdata *mdata;
+      
+      mdata = copy_data_SV(magdata_flags, station, &params);
 
       if (mdata == NULL)
         {
@@ -883,7 +489,7 @@ main(int argc, char *argv[])
           continue;
         }
 
-      sprintf(output_file, "%s/%s.dat", path_dir, station->name);
+      sprintf(output_file, "%s/%s_SV.dat", path_dir, station->name);
       fprintf(stderr, "main: writing data to %s...", output_file);
       magdata_write(output_file, mdata);
       fprintf(stderr, "done\n");
@@ -928,7 +534,6 @@ main(int argc, char *argv[])
     }
 
   magdata_free(mdata);
-  solarpos_free(solarpos_workspace_p);
 #endif
 
   return 0;

@@ -1885,7 +1885,7 @@ magdata_copy_station(const magdata_params *params, const obsdata_station * stati
 
   strncpy(datum.name, station->name, MAGDATA_NAME_LENGTH);
 
-  for (i = 0; i < station->n_sv; ++i)
+  for (i = 0; i < station->n_sv_tot; ++i)
     {
       int s;
       size_t flags = 0;

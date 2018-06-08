@@ -50,11 +50,19 @@ mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfie
       for (m = -ni; m <= ni; ++m)
         {
           size_t cidx = mfield_coeff_nmidx(n, m);
+          double gnm = mfield_get_mf(w->c, cidx, w);
+          double dgnm = mfield_get_sv(w->c, cidx, w);
+          double ddgnm = mfield_get_sa(w->c, cidx, w);
           double err_gnm = mfield_get_mf(&d.vector, cidx, w);
           double err_dgnm = mfield_get_sv(&d.vector, cidx, w);
           double err_ddgnm = mfield_get_sa(&d.vector, cidx, w);
 
-          fprintf(fp, "%5d %5zu %20.4e %20.4e %20.4e\n", m, n, err_gnm, err_dgnm, err_ddgnm);
+          fprintf(fp, "%5d %5zu %20.4e %20.4e %20.4e\n",
+                  m,
+                  n,
+                  fabs(err_gnm / gnm),
+                  fabs(err_dgnm / dgnm),
+                  fabs(err_ddgnm / ddgnm));
         }
 
       fprintf(fp, "\n");

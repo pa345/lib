@@ -613,6 +613,10 @@ mfield_init_nonlinear(mfield_workspace *w)
 
             track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
 
+            /* XXX: spatial weighting for observatories gives nan values */
+            if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+              wt = 1.0;
+
             if (MAGDATA_ExistX(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_X * wt);
 
@@ -2244,6 +2248,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
   gsl_rstat_workspace **rstat_y = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
   gsl_rstat_workspace **rstat_z = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
   gsl_rstat_workspace **rstat_f = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
+  gsl_rstat_workspace **rstat_dxdt = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
+  gsl_rstat_workspace **rstat_dydt = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
+  gsl_rstat_workspace **rstat_dzdt = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
   gsl_rstat_workspace **rstat_dx_ns = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
   gsl_rstat_workspace **rstat_dy_ns = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
   gsl_rstat_workspace **rstat_low_dz_ns = malloc(w->nsat * sizeof(gsl_rstat_workspace *));
@@ -2259,6 +2266,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
       rstat_y[i] = gsl_rstat_alloc();
       rstat_z[i] = gsl_rstat_alloc();
       rstat_f[i] = gsl_rstat_alloc();
+      rstat_dxdt[i] = gsl_rstat_alloc();
+      rstat_dydt[i] = gsl_rstat_alloc();
+      rstat_dzdt[i] = gsl_rstat_alloc();
       rstat_dx_ns[i] = gsl_rstat_alloc();
       rstat_dy_ns[i] = gsl_rstat_alloc();
       rstat_low_dz_ns[i] = gsl_rstat_alloc();
@@ -2273,7 +2283,7 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
 
   /*
    * first loop through the residuals and compute statistics for each residual type
-   * (X,Y,Z,F,DX,DY,DZ)
+   * (X,Y,Z,F,DX,DY,DZ,dX/dt,dY/dt,dZ/dt)
    */
   for (i = 0; i < w->nsat; ++i)
     {
@@ -2314,6 +2324,27 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
             {
               double fi = gsl_vector_get(f, idx++);
               gsl_rstat_add(fi, rstat_f[i]);
+            }
+
+          if (MAGDATA_FitMF(mptr->flags[j]))
+            {
+              if (MAGDATA_ExistDXDT(mptr->flags[j]))
+                {
+                  double fi = gsl_vector_get(f, idx++);
+                  gsl_rstat_add(fi, rstat_dxdt[i]);
+                }
+
+              if (MAGDATA_ExistDYDT(mptr->flags[j]))
+                {
+                  double fi = gsl_vector_get(f, idx++);
+                  gsl_rstat_add(fi, rstat_dydt[i]);
+                }
+
+              if (MAGDATA_ExistDZDT(mptr->flags[j]))
+                {
+                  double fi = gsl_vector_get(f, idx++);
+                  gsl_rstat_add(fi, rstat_dzdt[i]);
+                }
             }
 
           if (MAGDATA_ExistDX_NS(mptr->flags[j]))
@@ -2389,6 +2420,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
       double sigma_Y = alpha * gsl_rstat_sd(rstat_y[i]);
       double sigma_Z = alpha * gsl_rstat_sd(rstat_z[i]);
       double sigma_F = alpha * gsl_rstat_sd(rstat_f[i]);
+      double sigma_DXDT = alpha * gsl_rstat_sd(rstat_dxdt[i]);
+      double sigma_DYDT = alpha * gsl_rstat_sd(rstat_dydt[i]);
+      double sigma_DZDT = alpha * gsl_rstat_sd(rstat_dzdt[i]);
       double sigma_DX_NS = alpha * gsl_rstat_sd(rstat_dx_ns[i]);
       double sigma_DY_NS = alpha * gsl_rstat_sd(rstat_dy_ns[i]);
       double sigma_low_DZ_NS = alpha * gsl_rstat_sd(rstat_low_dz_ns[i]);
@@ -2402,6 +2436,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
       gsl_rstat_reset(rstat_y[i]);
       gsl_rstat_reset(rstat_z[i]);
       gsl_rstat_reset(rstat_f[i]);
+      gsl_rstat_reset(rstat_dxdt[i]);
+      gsl_rstat_reset(rstat_dydt[i]);
+      gsl_rstat_reset(rstat_dzdt[i]);
       gsl_rstat_reset(rstat_dx_ns[i]);
       gsl_rstat_reset(rstat_dy_ns[i]);
       gsl_rstat_reset(rstat_low_dz_ns[i]);
@@ -2447,6 +2484,33 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
               double wi = bisquare(fi / (tune * sigma_F));
               gsl_vector_set(wts, idx++, wi);
               gsl_rstat_add(wi, rstat_f[i]);
+            }
+
+          if (MAGDATA_FitMF(mptr->flags[j]))
+            {
+              if (MAGDATA_ExistDXDT(mptr->flags[j]))
+                {
+                  double fi = gsl_vector_get(f, idx);
+                  double wi = bisquare(fi / (tune * sigma_DXDT));
+                  gsl_vector_set(wts, idx++, wi);
+                  gsl_rstat_add(wi, rstat_dxdt[i]);
+                }
+
+              if (MAGDATA_ExistDYDT(mptr->flags[j]))
+                {
+                  double fi = gsl_vector_get(f, idx);
+                  double wi = bisquare(fi / (tune * sigma_DYDT));
+                  gsl_vector_set(wts, idx++, wi);
+                  gsl_rstat_add(wi, rstat_dydt[i]);
+                }
+
+              if (MAGDATA_ExistDZDT(mptr->flags[j]))
+                {
+                  double fi = gsl_vector_get(f, idx);
+                  double wi = bisquare(fi / (tune * sigma_DZDT));
+                  gsl_vector_set(wts, idx++, wi);
+                  gsl_rstat_add(wi, rstat_dzdt[i]);
+                }
             }
 
           if (MAGDATA_ExistDX_NS(mptr->flags[j]))
@@ -2520,22 +2584,41 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
             }
         }
 
-      fprintf(stderr, "\t === SATELLITE %zu (robust sigma) ===\n", i);
+      if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
+        {
+          fprintf(stderr, "\t === SATELLITE %zu (robust sigma) ===\n", i);
 
-      mfield_robust_print_stat("sigma X", sigma_X, rstat_x[i]);
-      mfield_robust_print_stat("sigma Y", sigma_Y, rstat_y[i]);
-      mfield_robust_print_stat("sigma Z", sigma_Z, rstat_z[i]);
-      mfield_robust_print_stat("sigma F", sigma_F, rstat_f[i]);
+          mfield_robust_print_stat("sigma X", sigma_X, rstat_x[i]);
+          mfield_robust_print_stat("sigma Y", sigma_Y, rstat_y[i]);
+          mfield_robust_print_stat("sigma Z", sigma_Z, rstat_z[i]);
+          mfield_robust_print_stat("sigma F", sigma_F, rstat_f[i]);
 
-      mfield_robust_print_stat("sigma DX_NS", sigma_DX_NS, rstat_dx_ns[i]);
-      mfield_robust_print_stat("sigma DY_NS", sigma_DY_NS, rstat_dy_ns[i]);
-      mfield_robust_print_stat("sigma low DZ_NS", sigma_low_DZ_NS, rstat_low_dz_ns[i]);
-      mfield_robust_print_stat("sigma high DZ_NS", sigma_high_DZ_NS, rstat_high_dz_ns[i]);
+          mfield_robust_print_stat("sigma DX_NS", sigma_DX_NS, rstat_dx_ns[i]);
+          mfield_robust_print_stat("sigma DY_NS", sigma_DY_NS, rstat_dy_ns[i]);
+          mfield_robust_print_stat("sigma low DZ_NS", sigma_low_DZ_NS, rstat_low_dz_ns[i]);
+          mfield_robust_print_stat("sigma high DZ_NS", sigma_high_DZ_NS, rstat_high_dz_ns[i]);
 
-      mfield_robust_print_stat("sigma DX_EW", sigma_DX_EW, rstat_dx_ew[i]);
-      mfield_robust_print_stat("sigma DY_EW", sigma_DY_EW, rstat_dy_ew[i]);
-      mfield_robust_print_stat("sigma low DZ_EW", sigma_low_DZ_EW, rstat_low_dz_ew[i]);
-      mfield_robust_print_stat("sigma high DZ_EW", sigma_high_DZ_EW, rstat_high_dz_ew[i]);
+          mfield_robust_print_stat("sigma DX_EW", sigma_DX_EW, rstat_dx_ew[i]);
+          mfield_robust_print_stat("sigma DY_EW", sigma_DY_EW, rstat_dy_ew[i]);
+          mfield_robust_print_stat("sigma low DZ_EW", sigma_low_DZ_EW, rstat_low_dz_ew[i]);
+          mfield_robust_print_stat("sigma high DZ_EW", sigma_high_DZ_EW, rstat_high_dz_ew[i]);
+        }
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+        {
+          if (!strcasecmp(mptr->name, "KOU0") ||
+              !strcasecmp(mptr->name, "MBO0") ||
+              !strcasecmp(mptr->name, "ASC0") ||
+              !strcasecmp(mptr->name, "RES0") ||
+              !strcasecmp(mptr->name, "THL0") ||
+              !strcasecmp(mptr->name, "MAW0"))
+            {
+              fprintf(stderr, "\t === OBSERVATORY %s (robust sigma) ===\n", mptr->name);
+
+              mfield_robust_print_stat("sigma dX/dt", sigma_DXDT, rstat_dxdt[i]);
+              mfield_robust_print_stat("sigma dY/dt", sigma_DYDT, rstat_dydt[i]);
+              mfield_robust_print_stat("sigma dZ/dt", sigma_DZDT, rstat_dzdt[i]);
+            }
+        }
     }
 
   assert(idx == w->nres);
@@ -2546,6 +2629,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
       gsl_rstat_free(rstat_y[i]);
       gsl_rstat_free(rstat_z[i]);
       gsl_rstat_free(rstat_f[i]);
+      gsl_rstat_free(rstat_dxdt[i]);
+      gsl_rstat_free(rstat_dydt[i]);
+      gsl_rstat_free(rstat_dzdt[i]);
       gsl_rstat_free(rstat_dx_ns[i]);
       gsl_rstat_free(rstat_dy_ns[i]);
       gsl_rstat_free(rstat_low_dz_ns[i]);
@@ -2560,6 +2646,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
   free(rstat_y);
   free(rstat_z);
   free(rstat_f);
+  free(rstat_dxdt);
+  free(rstat_dydt);
+  free(rstat_dzdt);
   free(rstat_dx_ns);
   free(rstat_dy_ns);
   free(rstat_low_dz_ns);
