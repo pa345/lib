@@ -144,7 +144,7 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
       gsl_vector_memcpy(w->wts_final, w->wts_spatial);
     }
 
-  if (!params->use_weights)
+  if (!params->use_weights || params->synth_data)
     gsl_vector_set_all(w->wts_final, 1.0);
 
 #if !OLD_FDF
@@ -614,7 +614,7 @@ mfield_init_nonlinear(mfield_workspace *w)
             track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
 
             /* XXX: spatial weighting for observatories gives nan values */
-            if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+            if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
               wt = 1.0;
 
             if (MAGDATA_ExistX(mptr->flags[j]))
@@ -2605,12 +2605,28 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
         }
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
         {
-          if (!strcasecmp(mptr->name, "KOU0") ||
-              !strcasecmp(mptr->name, "MBO0") ||
-              !strcasecmp(mptr->name, "ASC0") ||
-              !strcasecmp(mptr->name, "RES0") ||
-              !strcasecmp(mptr->name, "THL0") ||
-              !strcasecmp(mptr->name, "MAW0"))
+          if (!strncasecmp(mptr->name, "KOU0", 4) ||
+              !strncasecmp(mptr->name, "MBO0", 4) ||
+              !strncasecmp(mptr->name, "ASC0", 4) ||
+              !strncasecmp(mptr->name, "RES0", 4) ||
+              !strncasecmp(mptr->name, "THL0", 4) ||
+              !strncasecmp(mptr->name, "MAW0", 4))
+            {
+              fprintf(stderr, "\t === OBSERVATORY %s (robust sigma) ===\n", mptr->name);
+
+              mfield_robust_print_stat("sigma X", sigma_X, rstat_x[i]);
+              mfield_robust_print_stat("sigma Y", sigma_Y, rstat_y[i]);
+              mfield_robust_print_stat("sigma Z", sigma_Z, rstat_z[i]);
+            }
+        }
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
+        {
+          if (!strncasecmp(mptr->name, "KOU0", 4) ||
+              !strncasecmp(mptr->name, "MBO0", 4) ||
+              !strncasecmp(mptr->name, "ASC0", 4) ||
+              !strncasecmp(mptr->name, "RES0", 4) ||
+              !strncasecmp(mptr->name, "THL0", 4) ||
+              !strncasecmp(mptr->name, "MAW0", 4))
             {
               fprintf(stderr, "\t === OBSERVATORY %s (robust sigma) ===\n", mptr->name);
 

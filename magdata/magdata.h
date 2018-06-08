@@ -35,10 +35,11 @@
 #define MAGDATA_FLG_DISCARD           (1 << 18) /* discard this data point */
 
 /* global flags */
-#define MAGDATA_GLOBFLG_EULER         (1 << 0)  /* fit Euler angles to this dataset */
-#define MAGDATA_GLOBFLG_SCALAR_GRID   (1 << 1)  /* dataset is a scalar-only grid like EMAG2 */
-#define MAGDATA_GLOBFLG_OBSERVATORY   (1 << 2)  /* dataset is from ground observatory */
-#define MAGDATA_GLOBFLG_SATELLITE     (1 << 3)  /* dataset is from satellite */
+#define MAGDATA_GLOBFLG_EULER           (1 << 0)  /* fit Euler angles to this dataset */
+#define MAGDATA_GLOBFLG_SCALAR_GRID     (1 << 1)  /* dataset is a scalar-only grid like EMAG2 */
+#define MAGDATA_GLOBFLG_OBSERVATORY     (1 << 2)  /* dataset is from ground observatory main field measurements */
+#define MAGDATA_GLOBFLG_OBSERVATORY_SV  (1 << 3)  /* dataset is from ground observatory secular variation measurements */
+#define MAGDATA_GLOBFLG_SATELLITE       (1 << 4)  /* dataset is from satellite */
 
 /* k_b * mu_0 in units of: nT^2 cm^3 / K */
 #define MAGDATA_KB_MU0                (1.73497445090703e-05)
@@ -299,6 +300,8 @@ int magdata_copy_track_EW(const magdata_params *params, const size_t track_idx,
                           const satdata_mag *data, const track_workspace *track_p,
                           const satdata_mag *data2, const track_workspace *track_p2,
                           magdata *mdata, size_t ntype[6]);
+int magdata_copy_station_SV(const magdata_params *params, const obsdata_station * station,
+                            magdata *mdata, size_t ntype[6]);
 int magdata_copy_station(const magdata_params *params, const obsdata_station * station,
                          magdata *mdata, size_t ntype[6]);
 satdata_mag *magdata_mag2sat(const magdata *mdata);

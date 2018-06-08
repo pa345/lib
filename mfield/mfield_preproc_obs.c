@@ -175,6 +175,58 @@ copy_data_SV(const size_t magdata_flags, const obsdata_station *station, preproc
 
   mdata->global_flags = magdata_flags;
 
+  magdata_copy_station_SV(&params, station, mdata, npts);
+
+  /* now determine which points in mdata will be used for MF modeling */
+  for (i = 0; i < mdata->n; ++i)
+    {
+      size_t fitting_flags = 0;
+
+      if (fabs(mdata->qdlat[i]) <= preproc_params->qdlat_preproc_cutoff)
+        {
+          /* mid-latitude point: check local time to determine whether to fit MF model */
+
+          double LT = mdata->lt[i];
+          int fit_MF = mfield_check_LT(LT, preproc_params->min_LT, preproc_params->max_LT);
+
+          if (fit_MF)
+            fitting_flags |= MAGDATA_FLG_FIT_MF;
+        }
+      else
+        {
+          /* high-latitude point - fit field model */
+          fitting_flags |= MAGDATA_FLG_FIT_MF;
+        }
+
+      mdata->flags[i] |= fitting_flags;
+    }
+
+  return mdata;
+}
+
+/* convert observatory daily mean data to magdata format */
+magdata *
+copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess_parameters * preproc_params)
+{
+  size_t ndata = station->n_mean_tot;
+  magdata *mdata;
+  magdata_params params;
+  size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
+  size_t i;
+
+  if (ndata == 0)
+    return NULL;
+
+  params.model_main = 0;
+  params.model_crust = 0;
+  params.model_ext = 0;
+
+  mdata = magdata_alloc(ndata, R_EARTH_KM);
+  if (!mdata)
+    return 0;
+
+  mdata->global_flags = magdata_flags;
+
   magdata_copy_station(&params, station, mdata, npts);
 
   /* now determine which points in mdata will be used for MF modeling */
@@ -480,7 +532,9 @@ main(int argc, char *argv[])
     {
       obsdata_station *station = data->stations[i];
       magdata *mdata;
-      
+
+      /* copy SV data */
+
       mdata = copy_data_SV(magdata_flags, station, &params);
 
       if (mdata == NULL)
@@ -490,6 +544,22 @@ main(int argc, char *argv[])
         }
 
       sprintf(output_file, "%s/%s_SV.dat", path_dir, station->name);
+      fprintf(stderr, "main: writing data to %s...", output_file);
+      magdata_write(output_file, mdata);
+      fprintf(stderr, "done\n");
+
+      magdata_free(mdata);
+
+      /* copy daily mean data */
+      mdata = copy_data(magdata_flags, station, &params);
+
+      if (mdata == NULL)
+        {
+          fprintf(stderr, "main: WARNING: station %s has no usable daily mean data\n", station->name);
+          continue;
+        }
+
+      sprintf(output_file, "%s/%s.dat", path_dir, station->name);
       fprintf(stderr, "main: writing data to %s...", output_file);
       magdata_write(output_file, mdata);
       fprintf(stderr, "done\n");

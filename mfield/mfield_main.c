@@ -1178,6 +1178,14 @@ main(int argc, char *argv[])
   if (status)
     exit(1);
 
+  /* make sure config flags are consistent with what components are fitted */
+  if (!mfield_params.fit_mf)
+    {
+      data_params.fit_X = data_params.fit_Y = data_params.fit_Z = data_params.fit_F = 0;
+      data_params.fit_DX_NS = data_params.fit_DY_NS = data_params.fit_DZ_NS = data_params.fit_DF_NS = 0;
+      data_params.fit_DX_EW = data_params.fit_DY_EW = data_params.fit_DZ_EW = data_params.fit_DF_EW = 0;
+    }
+
   fprintf(stderr, "main: epoch = %.2f\n", mfield_params.epoch);
   fprintf(stderr, "main: radius = %g [km]\n", mfield_params.R);
 

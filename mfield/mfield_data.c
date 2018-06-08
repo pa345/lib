@@ -25,6 +25,8 @@ static int mfield_data_print_satellite(const char *dir_prefix, const gsl_vector 
                                        const size_t nsource, const magdata * mptr, size_t * index);
 static int mfield_data_print_observatory(const char *dir_prefix, const gsl_vector *wts_spatial,
                                          const magdata * mptr, size_t * index);
+static int mfield_data_print_observatory_SV(const char *dir_prefix, const gsl_vector *wts_spatial,
+                                            const magdata * mptr, size_t * index);
 
 /*
 mfield_data_alloc()
@@ -419,6 +421,8 @@ mfield_data_print(const char *dir_prefix, const gsl_vector *wts_spatial,
         mfield_data_print_satellite(dir_prefix, wts_spatial, i, mptr, &idx);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
         mfield_data_print_observatory(dir_prefix, wts_spatial, mptr, &idx);
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
+        mfield_data_print_observatory_SV(dir_prefix, wts_spatial, mptr, &idx);
     }
 
   assert(idx == wts_spatial->size);
@@ -801,8 +805,106 @@ mfield_data_print_observatory(const char *dir_prefix, const gsl_vector *wts_spat
                               const magdata * mptr, size_t * index)
 {
   int s = 0;
-  const size_t n = 3; /* number of components to print */
   const char *fmtstr = "%ld %8.4f %6.3f %10.4f\n";
+  const size_t n = 3; /* number of components to print */
+  FILE *fp[3];
+  char buf[2048];
+  size_t j, k;
+  size_t idx = *index;
+
+  sprintf(buf, "%s/obs/%s_X.dat", dir_prefix, mptr->name);
+  fp[0] = fopen(buf, "w");
+
+  sprintf(buf, "%s/obs/%s_Y.dat", dir_prefix, mptr->name);
+  fp[1] = fopen(buf, "w");
+
+  sprintf(buf, "%s/obs/%s_Z.dat", dir_prefix, mptr->name);
+  fp[2] = fopen(buf, "w");
+
+  for (j = 0; j < n; ++j)
+    {
+      if (fp[j] == NULL)
+        {
+          fprintf(stderr, "mfield_data_print_observatory: fp[%zu] is NULL\n", j);
+          return -1;
+        }
+    }
+
+  /* print header */
+  fprintf(fp[0], "# %s observatory\n# X vector data for MF modeling\n", mptr->name);
+  fprintf(fp[1], "# %s observatory\n# Y vector data for MF modeling\n", mptr->name);
+  fprintf(fp[2], "# %s observatory\n# Z vector data for MF modeling\n", mptr->name);
+
+  for (j = 0; j < n; ++j)
+    {
+      fprintf(fp[j], "# Radius:    %.4f [km]\n", mptr->r[0]);
+      fprintf(fp[j], "# Longitude: %.4f [deg]\n", mptr->phi[0] * 180.0 / M_PI);
+      fprintf(fp[j], "# Latitude:  %.4f [deg]\n", 90.0 - mptr->theta[0] * 180.0 / M_PI);
+
+      k = 1;
+      fprintf(fp[j], "# Field %zu: timestamp (UT seconds since 1970-01-01)\n", k++);
+      fprintf(fp[j], "# Field %zu: QD latitude (degrees)\n", k++);
+      fprintf(fp[j], "# Field %zu: spatial weight factor\n", k++);
+    }
+
+  fprintf(fp[0], "# Field %zu: X vector measurement (nT)\n", k);
+  fprintf(fp[1], "# Field %zu: Y vector measurement (nT)\n", k);
+  fprintf(fp[2], "# Field %zu: Z vector measurement (nT)\n", k);
+
+  for (j = 0; j < mptr->n; ++j)
+    {
+      time_t unix_time = satdata_epoch2timet(mptr->t[j]);
+
+      if (MAGDATA_Discarded(mptr->flags[j]))
+        continue;
+
+      if (!MAGDATA_FitMF(mptr->flags[j]))
+        continue;
+
+      if (MAGDATA_ExistX(mptr->flags[j]))
+        {
+          double wj = gsl_vector_get(wts_spatial, idx++);
+          fprintf(fp[0], fmtstr, unix_time, mptr->qdlat[j], wj, mptr->Bx_nec[j]);
+        }
+
+      if (MAGDATA_ExistY(mptr->flags[j]))
+        {
+          double wj = gsl_vector_get(wts_spatial, idx++);
+          fprintf(fp[1], fmtstr, unix_time, mptr->qdlat[j], wj, mptr->By_nec[j]);
+        }
+
+      if (MAGDATA_ExistZ(mptr->flags[j]))
+        {
+          double wj = gsl_vector_get(wts_spatial, idx++);
+          fprintf(fp[2], fmtstr, unix_time, mptr->qdlat[j], wj, mptr->Bz_nec[j]);
+        }
+    }
+
+  for (j = 0; j < n; ++j)
+    fclose(fp[j]);
+
+  *index = idx;
+
+  return s;
+}
+
+/*
+mfield_data_print_observatory_SV()
+  Print observatory data used for secular variation modeling
+
+Inputs: dir_prefix  - directory prefix
+        wts_spatial - spatial weights
+        mptr        - magdata
+        index       - (input/output) index into wts_spatial
+*/
+
+static int
+mfield_data_print_observatory_SV(const char *dir_prefix, const gsl_vector *wts_spatial,
+                                 const magdata * mptr, size_t * index)
+{
+  int s = 0;
+  const char *fmtstr = "%ld %8.4f %6.3f %10.4f\n";
+  const size_t n = 3; /* number of components to print */
   FILE *fp[3];
   char buf[2048];
   size_t j, k;

@@ -22,6 +22,8 @@ static int mfield_residual_print_satellite(const char *prefix, const size_t iter
                                            size_t * index, magdata * mptr, mfield_workspace * w);
 static int mfield_residual_print_observatory(const char *prefix, const size_t iter,
                                              size_t * index, magdata * mptr, mfield_workspace * w);
+static int mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
+                                                size_t * index, magdata * mptr, mfield_workspace * w);
 
 int
 mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w)
@@ -41,6 +43,8 @@ mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w
         mfield_residual_print_satellite(prefix, iter, i, &idx, mptr, w);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
         mfield_residual_print_observatory(prefix, iter, &idx, mptr, w);
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
+        mfield_residual_print_observatory_SV(prefix, iter, &idx, mptr, w);
     }
 
   assert(idx == w->nres);
@@ -612,9 +616,144 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter,
   size_t idx = *index;
   size_t j, k;
   char buf[2048];
-  gsl_rstat_workspace *rstat_dxdt = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_dydt = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_dzdt = gsl_rstat_alloc();
+
+  sprintf(buf, "%s/obs/res_%s_X_iter%zu.dat", prefix, mptr->name, iter);
+  fp[0] = fopen(buf, "w");
+
+  sprintf(buf, "%s/obs/res_%s_Y_iter%zu.dat", prefix, mptr->name, iter);
+  fp[1] = fopen(buf, "w");
+
+  sprintf(buf, "%s/obs/res_%s_Z_iter%zu.dat", prefix, mptr->name, iter);
+  fp[2] = fopen(buf, "w");
+
+  for (j = 0; j < n; ++j)
+    {
+      if (fp[j] == NULL)
+        {
+          fprintf(stderr, "mfield_residual_print_observatory: fp[%zu] is NULL\n", j);
+          return -1;
+        }
+    }
+
+  /* print header */
+  fprintf(fp[0], "# %s observatory\n# X vector data for MF modeling\n", mptr->name);
+  fprintf(fp[1], "# %s observatory\n# Y vector data for MF modeling\n", mptr->name);
+  fprintf(fp[2], "# %s observatory\n# Z vector data for MF modeling\n", mptr->name);
+
+  for (j = 0; j < n; ++j)
+    {
+      fprintf(fp[j], "# Radius:    %.4f [km]\n", r);
+      fprintf(fp[j], "# Longitude: %.4f [deg]\n", phi * 180.0 / M_PI);
+      fprintf(fp[j], "# Latitude:  %.4f [deg]\n", 90.0 - theta * 180.0 / M_PI);
+
+      k = 1;
+      fprintf(fp[j], "# Field %zu: timestamp (UT seconds since 1970-01-01)\n", k++);
+      fprintf(fp[j], "# Field %zu: QD latitude (degrees)\n", k++);
+      fprintf(fp[j], "# Field %zu: spatial weight factor\n", k++);
+      fprintf(fp[j], "# Field %zu: robust weight factor\n", k++);
+      fprintf(fp[j], "# Field %zu: total weight factor\n", k++);
+    }
+
+  fprintf(fp[0], "# Field %zu: X vector measurement (nT)\n", k);
+  fprintf(fp[1], "# Field %zu: Y vector measurement (nT)\n", k);
+  fprintf(fp[2], "# Field %zu: Z vector measurement (nT)\n", k);
+  ++k;
+
+  fprintf(fp[0], "# Field %zu: X fitted model (nT)\n", k);
+  fprintf(fp[1], "# Field %zu: Y fitted model (nT)\n", k);
+  fprintf(fp[2], "# Field %zu: Z fitted model (nT)\n", k);
+  ++k;
+
+  fprintf(fp[0], "# Field %zu: X residual (nT)\n", k);
+  fprintf(fp[1], "# Field %zu: Y residual (nT)\n", k);
+  fprintf(fp[2], "# Field %zu: Z residual (nT)\n", k);
+  ++k;
+
+  for (j = 0; j < mptr->n; ++j)
+    {
+      time_t unix_time = satdata_epoch2timet(mptr->t[j]);
+      double B_fit[4], res_B[3];
+
+      if (MAGDATA_Discarded(mptr->flags[j]))
+        continue;
+
+      if (!MAGDATA_FitMF(mptr->flags[j]))
+        continue;
+
+      /* evaluate internal field models */
+      mfield_eval(mptr->t[j], r, theta, phi, B_fit, w);
+
+      res_B[0] = mptr->Bx_nec[j] - B_fit[0];
+      res_B[1] = mptr->By_nec[j] - B_fit[1];
+      res_B[2] = mptr->Bz_nec[j] - B_fit[2];
+
+      if (MAGDATA_ExistX(mptr->flags[j]))
+        {
+          double ws = gsl_vector_get(w->wts_spatial, idx);
+          double wr = gsl_vector_get(w->wts_robust, idx);
+          double wf = gsl_vector_get(w->wts_final, idx);
+
+          fprintf(fp[0], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->Bx_nec[j], B_fit[0], res_B[0]);
+
+          ++idx;
+        }
+
+      if (MAGDATA_ExistY(mptr->flags[j]))
+        {
+          double ws = gsl_vector_get(w->wts_spatial, idx);
+          double wr = gsl_vector_get(w->wts_robust, idx);
+          double wf = gsl_vector_get(w->wts_final, idx);
+
+          fprintf(fp[1], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->By_nec[j], B_fit[1], res_B[1]);
+
+          ++idx;
+        }
+
+      if (MAGDATA_ExistZ(mptr->flags[j]))
+        {
+          double ws = gsl_vector_get(w->wts_spatial, idx);
+          double wr = gsl_vector_get(w->wts_robust, idx);
+          double wf = gsl_vector_get(w->wts_final, idx);
+
+          fprintf(fp[2], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->Bz_nec[j], B_fit[2], res_B[2]);
+
+          ++idx;
+        }
+    }
+
+  *index = idx;
+
+  for (j = 0; j < n; ++j)
+    fclose(fp[j]);
+
+  return s;
+}
+
+/*
+mfield_residual_print_observatory_SV()
+  Print residuals for observatory data
+
+Inputs: prefix  - directory prefix for output files
+        iter    - robust iteration number
+        index   - (input/output)
+        mptr    - magdata
+        w       - mfield workspace
+*/
+
+static int
+mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
+                                     size_t * index, magdata * mptr, mfield_workspace * w)
+{
+  int s = 0;
+  const char *fmtstr = "%ld %8.4f %6.3f %6.3f %6.3f %10.4f %10.4f %10.4f\n";
+  const size_t n = 3; /* number of components to write to disk */
+  const double r = mptr->r[0];
+  const double theta = mptr->theta[0];
+  const double phi = mptr->phi[0];
+  FILE *fp[3];
+  size_t idx = *index;
+  size_t j, k;
+  char buf[2048];
 
   sprintf(buf, "%s/obs/res_%s_DXDT_iter%zu.dat", prefix, mptr->name, iter);
   fp[0] = fopen(buf, "w");
@@ -724,10 +863,6 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter,
 
   for (j = 0; j < n; ++j)
     fclose(fp[j]);
-
-  gsl_rstat_free(rstat_dxdt);
-  gsl_rstat_free(rstat_dydt);
-  gsl_rstat_free(rstat_dzdt);
 
   return s;
 }
