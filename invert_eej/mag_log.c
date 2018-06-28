@@ -89,7 +89,7 @@ int
 mag_log_F2(const int header, const mag_workspace *w)
 {
   int s = 0;
-  const size_t downsample = 1; /* downsample to keep file size reasonable */
+  const size_t downsample = 5; /* downsample to keep file size reasonable */
   size_t i;
   mag_track *track = (mag_track *) &(w->track);
 
@@ -648,3 +648,100 @@ mag_log_EEF(const int header, const time_t t, const double phi,
 
   return s;
 } /* mag_log_EEF() */
+
+/*
+mag_log_grids()
+  Log modeled PDE solution to a file
+
+Inputs: header - 1 = print header, 0 = don't
+        w      - workspace
+*/
+
+int
+mag_log_grids(const int header, const mag_workspace *w)
+{
+  int s = 0;
+  size_t i;
+  inverteef_workspace *inveef_p = w->inverteef_workspace_p;
+  mag_eej_workspace *eej_p = w->eej_workspace_p;
+
+  if (header)
+    {
+      /* print header information */
+      i = 1;
+      log_proc(w->log_grids, "# Field %zu: QD latitude (degrees)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: modeled current density (mA/m)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: satellite current density (mA/m)\n", i++);
+      return s;
+    }
+
+  for (i = 0; i < w->ncurr; ++i)
+    {
+      double qdlat = -eej_p->qdlat_max + i * eej_p->dqdlat;
+
+      log_proc(w->log_model, "%f %.12e %.12e\n",
+               qdlat,
+               gsl_vector_get(inveef_p->J_pde, i) * 1000.0,
+               w->EEJ[i] * 1000.0);
+    }
+
+  log_proc(w->log_model, "\n\n");
+
+  return s;
+}
+
+/*
+mag_log_fields()
+  Log E(r,theta), J(r,theta) and psi(r,theta) grids to file.
+These are derived from PDE solution psi.
+
+Inputs: header - 1 = print header, 0 = don't
+        w      - workspace
+*/
+
+int
+mag_log_fields(const int header, const mag_workspace *w)
+{
+  int s = 0;
+  size_t i, j;
+  pde_workspace *pde_p = w->pde_workspace_p;
+
+  if (header)
+    {
+      /* print header information */
+      i = 1;
+      log_proc(w->log_fields, "# Field %zu: radius (km)\n", i++);
+      log_proc(w->log_fields, "# Field %zu: latitude (degrees)\n", i++);
+      log_proc(w->log_fields, "# Field %zu: psi(r,theta)\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_r(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_theta(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_phi(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_r(r,theta) [mV/m]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_theta(r,theta) [mV/m]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_phi(r,theta) [mV/m]\n", i++);
+      return s;
+    }
+
+  for (i = 0; i < pde_p->nr; ++i)
+    {
+      for (j = 0; j < pde_p->ntheta; ++j)
+        {
+          log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
+                   pde_r_km(i, pde_p) - R_EARTH_KM,
+                   90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
+                   PSI_GET(pde_p->psi, i, j, pde_p),
+                   gsl_matrix_get(pde_p->J_r, i, j) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->J_theta, i, j) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->J_phi, i, j) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->E_r, i, j) * pde_p->E_s * 1.0e3,
+                   gsl_matrix_get(pde_p->E_theta, i, j) * pde_p->E_s * 1.0e3,
+                   gsl_matrix_get(pde_p->E_phi, i, j) * pde_p->E_s * 1.0e3);
+        }
+
+      log_proc(w->log_fields, "\n");
+    }
+
+  log_proc(w->log_fields, "\n\n");
+
+  return s;
+}

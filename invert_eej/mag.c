@@ -169,6 +169,8 @@ mag_alloc(mag_params *params)
   w->log_PDE = log_alloc(LOG_WRITE, "%s/PDE.dat", params->log_dir);
   w->log_model = log_alloc(LOG_WRITE, "%s/model.dat", params->log_dir);
   w->log_EEF = log_alloc(LOG_WRITE, "%s/EEF.dat", params->log_dir);
+  w->log_grids = log_alloc(LOG_WRITE, "%s/grids.dat", params->log_dir);
+  w->log_fields = log_alloc(LOG_WRITE, "%s/fields.dat", params->log_dir);
 
   /* initialize headers in log files */
   mag_log_profile(1, 0, 0.0, 1, w);
@@ -186,6 +188,8 @@ mag_alloc(mag_params *params)
   mag_log_PDE(1, w);
   mag_log_model(1, w);
   mag_log_EEF(1, 0, 0.0, 0.0, w);
+  mag_log_grids(1, w);
+  mag_log_fields(1, w);
 
   mag_output(1, w);
 
@@ -299,6 +303,12 @@ mag_free(mag_workspace *w)
 
   if (w->log_EEF)
     log_free(w->log_EEF);
+
+  if (w->log_grids)
+    log_free(w->log_grids);
+
+  if (w->log_fields)
+    log_free(w->log_fields);
 
   if (w->fp_output)
     fclose(w->fp_output);
@@ -594,6 +604,9 @@ mag_proc(const mag_params *params, track_workspace *track_p,
        * consistent in log files
        */
       mag_log_PDE(0, w);
+
+      /* log electric field and current density grids */
+      mag_log_fields(0, w);
 
       if (s)
         {

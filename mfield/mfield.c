@@ -272,7 +272,50 @@ mfield_alloc(const mfield_parameters *params)
 
 #endif /* MFIELD_FIT_EXTFIELD */
 
-  w->p += w->neuler + w->next;
+  w->nbias = 0;
+
+  if (params->fit_cbias && w->data_workspace_p)
+    {
+      size_t i;
+
+      w->bias_idx = calloc(w->nsat, sizeof(size_t));
+
+      for (i = 0; i < w->nsat; ++i)
+        {
+          magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+          size_t nX = 0, nY = 0, nZ = 0;
+          size_t j;
+
+          if (!(mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY))
+            continue;
+
+          for (j = 0; j < mptr->n; ++j)
+            {
+              if (MAGDATA_Discarded(mptr->flags[j]))
+                continue;
+
+              if (MAGDATA_ExistX(mptr->flags[j]))
+                ++nX;
+
+              if (MAGDATA_ExistY(mptr->flags[j]))
+                ++nY;
+
+              if (MAGDATA_ExistZ(mptr->flags[j]))
+                ++nZ;
+            }
+
+          if (nX > 0 || nY > 0 || nZ > 0)
+            {
+              /* sanity check */
+              assert(nX > 50 && nY > 50 && nZ > 50);
+
+              w->bias_idx[i] = w->nbias;
+              w->nbias += 3;
+            }
+        }
+    }
+
+  w->p += w->neuler + w->next + w->nbias;
 
   if (w->p == 0)
     {
@@ -284,6 +327,7 @@ mfield_alloc(const mfield_parameters *params)
   w->sa_offset = w->sv_offset + w->nnm_sv;
   w->euler_offset = w->sa_offset + w->nnm_sa;
   w->ext_offset = w->euler_offset + w->neuler;
+  w->bias_offset = w->ext_offset + w->next;
 
   w->cosmphi = malloc((w->nmax_max + 1) * sizeof(double));
   w->sinmphi = malloc((w->nmax_max + 1) * sizeof(double));
@@ -420,6 +464,9 @@ mfield_free(mfield_workspace *w)
   if (w->hz)
     gsl_histogram_free(w->hz);
 
+  if (w->bias_idx)
+    free(w->bias_idx);
+
   if (w->lambda_diag)
     gsl_vector_free(w->lambda_diag);
 
@@ -530,6 +577,7 @@ mfield_init_params(mfield_parameters * params)
   params->fit_sa = 0;
   params->fit_euler = 0;
   params->fit_ext = 0;
+  params->fit_cbias = 0;
   params->qdlat_fit_cutoff = -1.0;
   params->scale_time = 0;
   params->regularize = 0;
@@ -644,7 +692,7 @@ mfield_init(mfield_workspace *w)
   w->t0_data = w->data_workspace_p->t0_data;
 
   /* convert to dimensionless units with time scale */
-  w->lambda_mf = 0.0;
+  w->lambda_mf = params->lambda_mf;
   w->lambda_sv = params->lambda_sv / w->t_sigma;
   w->lambda_sa = params->lambda_sa / (w->t_sigma * w->t_sigma);
 
@@ -1365,6 +1413,7 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% nmax:  %zu\n", w->nmax_max);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
+  fprintf(fp, "%% lambda_mf: %.2f\n", params->lambda_mf);
   fprintf(fp, "%% lambda_sv: %.2f\n", params->lambda_sv);
   fprintf(fp, "%% lambda_sa: %.2f\n", params->lambda_sa);
 

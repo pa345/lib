@@ -74,6 +74,7 @@ size_t mfield_data_filter_time(const double tmin, const double tmax,
                                mfield_data_workspace *w);
 size_t mfield_data_filter_euler(mfield_data_workspace *w);
 size_t mfield_data_filter_comp(mfield_data_workspace *w);
+size_t mfield_data_filter_observatory(mfield_data_workspace *w);
 int mfield_data_init(mfield_data_workspace *w);
 double mfield_data_epoch(mfield_data_workspace *w);
 int mfield_data_map(const char *dir_prefix, const mfield_data_workspace *w);

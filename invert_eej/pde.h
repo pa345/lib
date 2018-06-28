@@ -124,17 +124,21 @@ typedef struct
   gsl_matrix *A;   /* pde matrix */
   gsl_vector *b;   /* rhs vector */
   gsl_vector *b_copy; /* rhs vector */
-  gsl_vector *psi; /* pde solution */
+  gsl_vector *psi; /* pde solution, size nr*ntheta */
   double residual; /* residual ||A*psi - b|| */
   double rrnorm;   /* relative residual ||b - A*psi|| / ||b|| */
 
-  gsl_matrix *J_phi; /* eastward current solution (A/m^2) */
-  gsl_vector *J_lat; /* height integrated current density profile (A/m) */
+  gsl_matrix *J_r;     /* J_r current solution (A/m^2) */
+  gsl_matrix *J_theta; /* J_theta current solution (A/m^2) */
+  gsl_matrix *J_phi;   /* J_phi current solution (A/m^2) */
+  gsl_vector *J_lat;   /* height integrated current density profile (A/m) */
 
   gsl_vector *J_lat_E; /* current profile for u = 0 (A/m) */
   gsl_vector *J_lat_u; /* current profile for E = 0 (A/m) */
 
-  gsl_matrix *Er;    /* vertial electric field in V/m */
+  gsl_matrix *E_r;     /* E_r electric field in V/m */
+  gsl_matrix *E_theta; /* E_theta electric field in V/m */
+  gsl_matrix *E_phi;   /* E_phi electric field in V/m */
 
   /* pde parameters */
   double *alpha;

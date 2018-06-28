@@ -267,12 +267,16 @@ mfield_data_filter_comp(mfield_data_workspace *w)
               mptr->flags[j] &= ~(MAGDATA_FLG_X | MAGDATA_FLG_Y);
               mptr->flags[j] &= ~(MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS);
               mptr->flags[j] &= ~(MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW);
+              mptr->flags[j] &= ~(MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT);
 
               if (!params->fit_Z_highlat)
                 mptr->flags[j] &= ~MAGDATA_FLG_Z;
 
               if (!params->fit_F_highlat)
                 mptr->flags[j] &= ~MAGDATA_FLG_F;
+
+              if (!params->fit_DZDT)
+                mptr->flags[j] &= ~MAGDATA_FLG_DZDT;
 
               if (!params->fit_DZ_NS_highlat)
                 mptr->flags[j] &= ~MAGDATA_FLG_DZ_NS;
@@ -290,6 +294,61 @@ mfield_data_filter_comp(mfield_data_workspace *w)
     }
 
   return cnt;
+}
+
+/*
+mfield_data_filter_observatory()
+  When computing crustal biases, we need a certain minimum number of
+measurements. Check each observatory to see that it has sufficient data,
+otherwise flag the whole observatory dataset to remove it from the modeling.
+
+Inputs: w - data workspace
+*/
+
+size_t
+mfield_data_filter_observatory(mfield_data_workspace *w)
+{
+  const size_t min_data = 50;
+  size_t i, j;
+  size_t nflagged = 0;
+
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w);
+      size_t ndata[3] = { 0, 0, 0 };
+
+      if (!(mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY))
+        continue;
+
+      /* count number of data for each component */
+      for (j = 0; j < mptr->n; ++j)
+        {
+          if (MAGDATA_Discarded(mptr->flags[j]))
+            continue;
+
+          if (MAGDATA_ExistX(mptr->flags[j]))
+            ++ndata[0];
+
+          if (MAGDATA_ExistY(mptr->flags[j]))
+            ++ndata[1];
+
+          if (MAGDATA_ExistZ(mptr->flags[j]))
+            ++ndata[2];
+        }
+
+      /* if available data is below threshold, flag all data */
+      if ((ndata[0] > 0 && ndata[0] < min_data) ||
+          (ndata[1] > 0 && ndata[1] < min_data) ||
+          (ndata[2] > 0 && ndata[2] < min_data))
+        {
+          ++nflagged;
+
+          for (j = 0; j < mptr->n; ++j)
+            mptr->flags[j] &= ~(MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z);
+        }
+    }
+
+  return nflagged;
 }
 
 /*

@@ -254,6 +254,8 @@ typedef struct
   log_workspace *log_PDE;
   log_workspace *log_model;
   log_workspace *log_EEF;
+  log_workspace *log_grids;
+  log_workspace *log_fields;
 
   mag_sqfilt_scalar_workspace *sqfilt_scalar_workspace_p;
   mag_eej_workspace *eej_workspace_p;
@@ -309,6 +311,8 @@ int mag_log_PDE(const int header, const mag_workspace *w);
 int mag_log_model(const int header, const mag_workspace *w);
 int mag_log_EEF(const int header, const time_t t, const double phi,
                 const double kp, const mag_workspace *w);
+int mag_log_grids(const int header, const mag_workspace *w);
+int mag_log_fields(const int header, const mag_workspace *w);
 
 /* mag_log_grad.c */
 int mag_log_B2_grad(const int header, const mag_workspace *w);

@@ -95,10 +95,15 @@ pde_alloc(pde_parameters *params)
   w->J_lat = gsl_vector_alloc(w->ntheta);
   w->J_lat_E = gsl_vector_alloc(w->ntheta);
   w->J_lat_u = gsl_vector_alloc(w->ntheta);
+  w->J_r = gsl_matrix_alloc(w->nr, w->ntheta);
+  w->J_theta = gsl_matrix_alloc(w->nr, w->ntheta);
   w->J_phi = gsl_matrix_alloc(w->nr, w->ntheta);
-  w->Er = gsl_matrix_alloc(w->nr, w->ntheta);
-  if (w->b == 0 || w->psi == 0 || w->J_lat == 0 || w->J_phi == 0 ||
-      w->Er == 0)
+  w->E_r = gsl_matrix_alloc(w->nr, w->ntheta);
+  w->E_theta = gsl_matrix_alloc(w->nr, w->ntheta);
+  w->E_phi = gsl_matrix_alloc(w->nr, w->ntheta);
+  if (w->b == 0 || w->psi == 0 || w->J_lat == 0 ||
+      w->J_r == 0 || w->J_theta == 0 || w->J_phi == 0 ||
+      w->E_r == 0 || w->E_theta == 0 || w->E_phi == 0)
     {
       pde_free(w);
       return 0;
@@ -253,11 +258,23 @@ pde_free(pde_workspace *w)
   if (w->J_lat_u)
     gsl_vector_free(w->J_lat_u);
 
+  if (w->J_r)
+    gsl_matrix_free(w->J_r);
+
+  if (w->J_theta)
+    gsl_matrix_free(w->J_theta);
+
   if (w->J_phi)
     gsl_matrix_free(w->J_phi);
 
-  if (w->Er)
-    gsl_matrix_free(w->Er);
+  if (w->E_r)
+    gsl_matrix_free(w->E_r);
+
+  if (w->E_theta)
+    gsl_matrix_free(w->E_theta);
+
+  if (w->E_phi)
+    gsl_matrix_free(w->E_phi);
 
   if (w->merid)
     free(w->merid);
@@ -398,6 +415,8 @@ pde_proc(const time_t t, const double longitude,
    * like
    */
 
+#if 0 /*XXX*/
+
   pde_debug(w, "pde_proc: ---- solving for E_0 (no winds) ----\n");
 
   s += pde_solve(0, EEF_PHI_0, w);
@@ -411,6 +430,14 @@ pde_proc(const time_t t, const double longitude,
 
   /* save J(E_0 = 0, u) solution */
   gsl_vector_memcpy(w->J_lat_u, w->J_lat);
+
+#else
+
+  pde_debug(w, "pde_proc: ---- solving for FULL SOLUTION (E0 = %.1f [mV/m]) ----\n", EEF_PHI_0 * 1.0e3);
+
+  s += pde_solve(1, EEF_PHI_0, w);
+
+#endif
 
   return s;
 } /* pde_proc() */
@@ -520,7 +547,7 @@ pde_solve(int compute_winds, double E_phi0, pde_workspace *w)
   s += pde_compute_psi(w);
   pde_debug(w, "done (residual norm = %.12e, relative residual norm = %.12e)\n", w->residual, w->residual / normb);
 
-#if 0
+#if 1
   pde_debug(w, "pde_solve: checking psi solution...");
   s += pde_check_psi(w);
   pde_debug(w, "done (s = %d)\n", s);
@@ -1605,20 +1632,20 @@ pde_check_psi(pde_workspace *w)
 
 /*
 pde_calc_J()
-  Compute eastward current J and store in w->J_phi and the height
-integrated current in w->J_lat
+  Compute current density components and store in w->J_{r,theta,phi}. Also
+compute height integrated eastward current and store in w->J_lat
 
-J_phi and J_lat will have dimensionless units
+J_{r,theta,phi} and J_lat will have dimensionless units
 */
 
 static int
 pde_calc_J(pde_workspace *w)
 {
   size_t i, j;
-  double Er, Et; /* r and theta components of E */
+  double Er, Et, Ep; /* electric field components */
   double psi_r,  /* @/@r psi */
          psi_t;  /* @/@theta psi */
-  double J_phi;
+  double J_r, J_theta, J_phi;
   double dr = pde_dr(w);
   double dtheta = pde_dtheta(w);
 
@@ -1629,6 +1656,8 @@ pde_calc_J(pde_workspace *w)
       for (j = 0; j < w->ntheta; ++j)
         {
           size_t k = PDE_IDX(i, j, w);
+          double theta = pde_theta(j, w);
+          double sint = sin(theta);
           gsl_matrix *s = w->sigma[k];
           double s_rr = gsl_matrix_get(s, IDX_R, IDX_R);
           double s_rt = gsl_matrix_get(s, IDX_R, IDX_THETA);
@@ -1682,7 +1711,11 @@ pde_calc_J(pde_workspace *w)
           Et = (s_tr / r * psi_t + s_rr * psi_r + w->beta[k]) /
                w->alpha[k];
 
-          J_phi = s_pr * Er + s_pt * Et + s_pp * E_phi(i, j, w);
+          Ep = E_phi(i, j, w);
+
+          J_r = -psi_t / (r * r * sint);
+          J_theta = psi_r / (r * sint);
+          J_phi = s_pr * Er + s_pt * Et + s_pp * Ep;
 
           if (w->compute_winds)
             {
@@ -1694,10 +1727,15 @@ pde_calc_J(pde_workspace *w)
                                w->mwind[k] * w->Br[k]);
             }
 
+          /* store currents */
+          gsl_matrix_set(w->J_r, i, j, J_r);
+          gsl_matrix_set(w->J_theta, i, j, J_theta);
           gsl_matrix_set(w->J_phi, i, j, J_phi);
 
-          /* save vertical electric field also */
-          gsl_matrix_set(w->Er, i, j, Er);
+          /* store electric field */
+          gsl_matrix_set(w->E_r, i, j, Er);
+          gsl_matrix_set(w->E_theta, i, j, Et);
+          gsl_matrix_set(w->E_phi, i, j, Ep);
 
 #if 0
           printf("%e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e %e\n",

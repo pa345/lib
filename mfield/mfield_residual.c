@@ -20,8 +20,8 @@
 static int mfield_residual_print_stat(const char *component_str, const gsl_rstat_workspace *rstat_p);
 static int mfield_residual_print_satellite(const char *prefix, const size_t iter, const size_t nsource,
                                            size_t * index, magdata * mptr, mfield_workspace * w);
-static int mfield_residual_print_observatory(const char *prefix, const size_t iter,
-                                             size_t * index, magdata * mptr, mfield_workspace * w);
+static int mfield_residual_print_observatory(const char *prefix, const size_t iter, const size_t mptr_index,
+                                             size_t * index, mfield_workspace * w);
 static int mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
                                                 size_t * index, magdata * mptr, mfield_workspace * w);
 
@@ -42,7 +42,7 @@ mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w
       if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
         mfield_residual_print_satellite(prefix, iter, i, &idx, mptr, w);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
-        mfield_residual_print_observatory(prefix, iter, &idx, mptr, w);
+        mfield_residual_print_observatory(prefix, iter, i, &idx, w);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
         mfield_residual_print_observatory_SV(prefix, iter, &idx, mptr, w);
     }
@@ -595,18 +595,19 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
 mfield_residual_print_observatory()
   Print residuals for observatory data
 
-Inputs: prefix  - directory prefix for output files
-        iter    - robust iteration number
-        index   - (input/output)
-        mptr    - magdata
-        w       - mfield workspace
+Inputs: prefix     - directory prefix for output files
+        iter       - robust iteration number
+        mptr_index - magdata index
+        index      - (input/output)
+        w          - mfield workspace
 */
 
 static int
-mfield_residual_print_observatory(const char *prefix, const size_t iter,
-                                  size_t * index, magdata * mptr, mfield_workspace * w)
+mfield_residual_print_observatory(const char *prefix, const size_t iter, const size_t mptr_index,
+                                  size_t * index, mfield_workspace * w)
 {
   int s = 0;
+  const magdata *mptr = mfield_data_ptr(mptr_index, w->data_workspace_p);
   const char *fmtstr = "%ld %8.4f %6.3f %6.3f %6.3f %10.4f %10.4f %10.4f\n";
   const size_t n = 3; /* number of components to write to disk */
   const double r = mptr->r[0];
@@ -672,7 +673,9 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter,
   for (j = 0; j < mptr->n; ++j)
     {
       time_t unix_time = satdata_epoch2timet(mptr->t[j]);
-      double B_fit[4], res_B[3];
+      double B_nec[3];
+      double B_model[3], B_fit[4], res_B[3];
+      size_t l;
 
       if (MAGDATA_Discarded(mptr->flags[j]))
         continue;
@@ -680,12 +683,27 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter,
       if (!MAGDATA_FitMF(mptr->flags[j]))
         continue;
 
+      B_nec[0] = mptr->Bx_nec[j];
+      B_nec[1] = mptr->By_nec[j];
+      B_nec[2] = mptr->Bz_nec[j];
+
+      B_model[0] = mptr->Bx_model[j];
+      B_model[1] = mptr->By_model[j];
+      B_model[2] = mptr->Bz_model[j];
+
       /* evaluate internal field models */
       mfield_eval(mptr->t[j], r, theta, phi, B_fit, w);
 
-      res_B[0] = mptr->Bx_nec[j] - B_fit[0];
-      res_B[1] = mptr->By_nec[j] - B_fit[1];
-      res_B[2] = mptr->Bz_nec[j] - B_fit[2];
+      /* add crustal bias if needed */
+      if (w->params.fit_cbias)
+        {
+          B_fit[0] += gsl_vector_get(w->c, w->bias_offset + w->bias_idx[mptr_index]);
+          B_fit[1] += gsl_vector_get(w->c, w->bias_offset + w->bias_idx[mptr_index] + 1);
+          B_fit[2] += gsl_vector_get(w->c, w->bias_offset + w->bias_idx[mptr_index] + 2);
+        }
+
+      for (l = 0; l < 3; ++l)
+        res_B[l] = B_nec[l] - B_fit[l] - B_model[l];
 
       if (MAGDATA_ExistX(mptr->flags[j]))
         {

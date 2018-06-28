@@ -68,11 +68,13 @@ typedef struct
   int fit_sa;                           /* fit SA coefficients */
   int fit_euler;                        /* fit Euler angles */
   int fit_ext;                          /* fit external field correction */
+  int fit_cbias;                        /* fit crustal biases to observatories */
 
   int scale_time;                       /* scale time into dimensionless units */
   int use_weights;                      /* use weights in the fitting */
 
   int regularize;                       /* regularize the solution vector */
+  double lambda_mf;                     /* main field damping factor */
   double lambda_sv;                     /* secular variation damping factor */
   double lambda_sa;                     /* secular acceleration damping factor */
 
@@ -113,11 +115,13 @@ typedef struct
   size_t nnm_sa;    /* number of (n,m) coefficients in model for SA */
   size_t neuler;    /* number of Euler angles in model */
   size_t next;      /* number of external coefficients in model */
+  size_t nbias;     /* number of crustal bias coefficients in model */
 
   size_t nnm_max;   /* MAX(nnm_mf, nnm_sv, nnm_sa) */
 
   size_t *nbins_euler;  /* number of Euler bins for each satellite */
   size_t *offset_euler; /* start index of each satellite's Euler angles in coefficient vector */
+  size_t *bias_idx;     /* indices of observatory biases in coefficient vector */
 
   int ext_fdayi[3 * 366 + 30]; /* sorted array of daily timestamps with data for that day */
 
@@ -161,6 +165,7 @@ typedef struct
   size_t sa_offset;    /* offset of SA coefficients in 'c' */
   size_t euler_offset; /* offset of Euler angles in 'c' */
   size_t ext_offset;   /* offset of external coefficients in 'c' */
+  size_t bias_offset;  /* offset of crustal bias coefficients in 'c' */
 
   gsl_vector *diag; /* diag(D) where D is regularization matrix */
 

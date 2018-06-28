@@ -218,8 +218,13 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
     return NULL;
 
   params.model_main = 0;
-  params.model_crust = 0;
   params.model_ext = 0;
+
+  /* subtract crustal field biases from data prior to modeling */
+  if (preproc_params->subtract_B_crust)
+    params.model_crust = 1;
+  else
+    params.model_crust = 0;
 
   mdata = magdata_alloc(ndata, R_EARTH_KM);
   if (!mdata)

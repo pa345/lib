@@ -903,6 +903,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->fit_euler = ival;
   if (config_lookup_int(&cfg, "fit_ext", &ival))
     mfield_params->fit_ext = ival;
+  if (config_lookup_int(&cfg, "fit_cbias", &ival))
+    mfield_params->fit_cbias = ival;
 
   if (config_lookup_int(&cfg, "scale_time", &ival))
     mfield_params->scale_time = ival;
@@ -911,6 +913,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
   if (config_lookup_int(&cfg, "regularize", &ival))
     mfield_params->regularize = ival;
 
+  if (config_lookup_float(&cfg, "lambda_mf", &fval))
+    mfield_params->lambda_mf = fval;
   if (config_lookup_float(&cfg, "lambda_sv", &fval))
     mfield_params->lambda_sv = fval;
   if (config_lookup_float(&cfg, "lambda_sa", &fval))
@@ -1038,7 +1042,7 @@ main(int argc, char *argv[])
   double euler_period = -1.0; /* set to 0 for single set of angles */
   double tmin = -1.0;         /* minimum time for data in years */
   double tmax = -1.0;         /* maximum time for data in years */
-  int nsat = 0;               /* number of satellites */
+  int nsource = 0;            /* number of data sources (satellites/observatories) */
   int print_data = 0;         /* print data for MF modeling */
   int print_map = 0;          /* print data maps */
   int print_residuals = 0;    /* print residuals at each iteration */
@@ -1150,8 +1154,8 @@ main(int argc, char *argv[])
         }
     }
 
-  nsat = argc - optind;
-  if (nsat == 0)
+  nsource = argc - optind;
+  if (nsource == 0)
     {
       print_help(argv);
       exit(1);
@@ -1186,11 +1190,19 @@ main(int argc, char *argv[])
       data_params.fit_DX_EW = data_params.fit_DY_EW = data_params.fit_DZ_EW = data_params.fit_DF_EW = 0;
     }
 
+  if (!mfield_params.fit_sv)
+    {
+      data_params.fit_DXDT = data_params.fit_DYDT = data_params.fit_DZDT = 0;
+    }
+
   fprintf(stderr, "main: epoch = %.2f\n", mfield_params.epoch);
   fprintf(stderr, "main: radius = %g [km]\n", mfield_params.R);
 
   if (mfield_params.fit_mf)
-    fprintf(stderr, "main: MF nmax = %zu\n", mfield_params.nmax_mf);
+    {
+      fprintf(stderr, "main: MF nmax = %zu\n", mfield_params.nmax_mf);
+      fprintf(stderr, "main: MF damping = %g\n", mfield_params.lambda_mf);
+    }
 
   if (mfield_params.fit_sv)
     {
@@ -1208,7 +1220,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: tmin = %g\n", tmin);
   fprintf(stderr, "main: tmax = %g\n", tmax);
   fprintf(stderr, "main: number of robust iterations = %zu\n", mfield_params.max_iter);
-  fprintf(stderr, "main: number of satellites = %d\n", nsat);
+  fprintf(stderr, "main: number of data sources = %d\n", nsource);
   fprintf(stderr, "main: number of threads = %d\n", omp_get_max_threads());
   fprintf(stderr, "main: print_residuals = %d\n", print_residuals);
   if (outfile)
@@ -1218,7 +1230,7 @@ main(int argc, char *argv[])
 
   /* allocate data workspace */
   data_params.epoch = mfield_params.epoch;
-  mfield_data_p = mfield_data_alloc(nsat, &data_params);
+  mfield_data_p = mfield_data_alloc(nsource, &data_params);
 
   {
     int satnum = 0;
@@ -1227,7 +1239,7 @@ main(int argc, char *argv[])
       {
         magdata **mdata = &(mfield_data_p->mdata[satnum]);
 
-        assert(satnum++ < nsat);
+        assert(satnum++ < nsource);
 
         fprintf(stderr, "main: reading %s...", argv[optind]);
         gettimeofday(&tv0, NULL);
@@ -1265,6 +1277,10 @@ main(int argc, char *argv[])
     fprintf(stderr, "main: flagging non-fitted components...");
     nflag = mfield_data_filter_comp(mfield_data_p);
     fprintf(stderr, "done (%zu data flagged)\n", nflag);
+
+    fprintf(stderr, "main: flagging sparse observatory data...");
+    nflag = mfield_data_filter_observatory(mfield_data_p);
+    fprintf(stderr, "done (%zu observatories flagged)\n", nflag);
   }
 
   if (bias > 0.0 || sigma > 0.0)
@@ -1284,7 +1300,7 @@ main(int argc, char *argv[])
       mfield_data_map(datamap_prefix, mfield_data_p);
     }
 
-  mfield_params.nsat = nsat;
+  mfield_params.nsat = nsource;
   mfield_params.mfield_data_p = mfield_data_p;
 
   /* allocate mfield workspace */
@@ -1294,6 +1310,13 @@ main(int argc, char *argv[])
       fprintf(stderr, "main: mfield_alloc failed\n");
       exit(1);
     }
+
+  fprintf(stderr, "main: number of main field parameters:           %zu\n", mfield_workspace_p->nnm_mf);
+  fprintf(stderr, "main: number of secular variation parameters:    %zu\n", mfield_workspace_p->nnm_sv);
+  fprintf(stderr, "main: number of secular acceleration parameters: %zu\n", mfield_workspace_p->nnm_sa);
+  fprintf(stderr, "main: number of Euler angle parameters:          %zu\n", mfield_workspace_p->neuler);
+  fprintf(stderr, "main: number of external field parameters:       %zu\n", mfield_workspace_p->next);
+  fprintf(stderr, "main: number of crustal bias parameters:         %zu\n", mfield_workspace_p->nbias);
 
   if (mfield_params.synth_data)
     {

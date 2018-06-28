@@ -2205,6 +2205,8 @@ mfield_nonlinear_regularize(gsl_vector *diag, mfield_workspace *w)
       for (m = -ni; m <= ni; ++m)
         {
           size_t cidx = mfield_coeff_nmidx(n, m);
+
+          mfield_set_mf(diag, cidx, w->lambda_mf * term, w);
           mfield_set_sv(diag, cidx, w->lambda_sv * term, w);
           mfield_set_sa(diag, cidx, w->lambda_sa * term, w);
         }
@@ -2754,6 +2756,28 @@ mfield_nonlinear_callback(const size_t iter, void *params,
                       gsl_vector_get(x, euler_idx) * 180.0 / M_PI,
                       gsl_vector_get(x, euler_idx + 1) * 180.0 / M_PI,
                       gsl_vector_get(x, euler_idx + 2) * 180.0 / M_PI);
+            }
+        }
+    }
+
+  if (w->params.fit_cbias)
+    {
+      size_t i;
+
+      for (i = 0; i < w->nsat; ++i)
+        {
+          magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+
+          if (!(mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY))
+            continue;
+
+          if (!strcasecmp(mptr->name, "MBO0"))
+            {
+              fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+                      "MBO bias:",
+                      gsl_vector_get(x, w->bias_offset + w->bias_idx[i]),
+                      gsl_vector_get(x, w->bias_offset + w->bias_idx[i] + 1),
+                      gsl_vector_get(x, w->bias_offset + w->bias_idx[i] + 2));
             }
         }
     }

@@ -7,8 +7,8 @@
 static int mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f);
 static int mfield_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f);
 static int mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J);
-static int mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t idx,
-                                  const size_t thread_id, double B_model[3], mfield_workspace *w);
+static int mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t src_idx,
+                                  const size_t data_idx, const size_t thread_id, double B_model[3], mfield_workspace *w);
 static double mfield_nonlinear_model_int(const double t, const gsl_vector *v,
                                          const gsl_vector *g, const mfield_workspace *w);
 static int mfield_nonlinear_model_SV(const gsl_vector * x, const magdata * mptr, const size_t idx,
@@ -75,7 +75,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
             continue;
 
           /* compute vector model for this residual */
-          mfield_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
+          mfield_nonlinear_model(0, x, mptr, i, j, thread_id, B_model, w);
 
           /* compute vector SV model for this residual */
           if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
@@ -89,7 +89,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           /* compute vector model for gradient residual (N/S or E/W) */
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
-            mfield_nonlinear_model(1, x, mptr, j, thread_id, B_model_ns, w);
+            mfield_nonlinear_model(1, x, mptr, i, j, thread_id, B_model_ns, w);
 
           if (fit_euler)
             {
@@ -463,7 +463,7 @@ mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vec
               size_t k, kp;
 
               /* compute vector model for this residual (this call will fill in vx, vy, vz) */
-              mfield_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
+              mfield_nonlinear_model(0, x, mptr, i, j, thread_id, B_model, w);
               B_model[3] = gsl_hypot3(B_model[0], B_model[1], B_model[2]);
 
               /* b_model = B_model / || B_model || */
@@ -613,6 +613,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
       int fit_euler = w->params.fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
+      int fit_bias = w->params.fit_cbias && (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY);
 
 #pragma omp parallel for private(j)
       for (j = 0; j < mptr->n; ++j)
@@ -732,6 +733,9 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 #if MFIELD_FIT_EXTFIELD
                   gsl_matrix_set(J, ridx, extidx, dB_ext[0]);
 #endif
+
+                  if (fit_bias)
+                    gsl_matrix_set(J, ridx, w->bias_offset + w->bias_idx[i], -1.0);
                 }
 
               /* check if fitting Euler angles to this data point */
@@ -757,6 +761,9 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 #if MFIELD_FIT_EXTFIELD
                   gsl_matrix_set(J, ridx, extidx, dB_ext[1]);
 #endif
+
+                  if (fit_bias)
+                    gsl_matrix_set(J, ridx, w->bias_offset + w->bias_idx[i] + 1, -1.0);
                 }
 
               /* check if fitting Euler angles to this data point */
@@ -782,6 +789,9 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 #if MFIELD_FIT_EXTFIELD
                   gsl_matrix_set(J, ridx, extidx, dB_ext[2]);
 #endif
+
+                  if (fit_bias)
+                    gsl_matrix_set(J, ridx, w->bias_offset + w->bias_idx[i] + 2, -1.0);
                 }
 
               /* check if fitting Euler angles to this data point */
@@ -946,7 +956,8 @@ Inputs: res_flag  - 0 = normal residual
                     1 = gradient residual
         x         - parameter vector
         mptr      - magdata structure
-        idx       - index of datum in magdata
+        src_idx   - index of data source (mptr) in [0,w->nsat-1]
+        data_idx  - index of datum in magdata
         thread_id - OpenMP thread id
         B_model   - (output) B_model (X,Y,Z) in NEC
         w         - workspace
@@ -957,44 +968,44 @@ for dX/dg, dY/dg, dZ/dg
 */
 
 static int
-mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t idx,
-                       const size_t thread_id, double B_model[3], mfield_workspace *w)
+mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t src_idx,
+                       const size_t data_idx, const size_t thread_id, double B_model[3], mfield_workspace *w)
 {
   int s = 0;
   double t, ts, r, theta, phi;
   gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
   gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
   gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
-  double B_int[3], B_prior[3], B_extcorr[3];
+  double B_int[3], B_prior[3], B_extcorr[3], B_bias[3];
   size_t k;
 
   if (res_flag == 0)
     {
-      /* residual is for this data point specified by 'idx' */
-      t = mptr->t[idx];
-      ts = mptr->ts[idx];
-      r = mptr->r[idx];
-      theta = mptr->theta[idx];
-      phi = mptr->phi[idx];
+      /* residual is for this data point specified by 'data_idx' */
+      t = mptr->t[data_idx];
+      ts = mptr->ts[data_idx];
+      r = mptr->r[data_idx];
+      theta = mptr->theta[data_idx];
+      phi = mptr->phi[data_idx];
 
       /* load apriori model of external (and possibly crustal) field */
-      B_prior[0] = mptr->Bx_model[idx];
-      B_prior[1] = mptr->By_model[idx];
-      B_prior[2] = mptr->Bz_model[idx];
+      B_prior[0] = mptr->Bx_model[data_idx];
+      B_prior[1] = mptr->By_model[data_idx];
+      B_prior[2] = mptr->Bz_model[data_idx];
     }
   else if (res_flag == 1)
     {
       /* residual is for gradient (N/S or E/W) */
-      t = mptr->t_ns[idx];
-      ts = mptr->ts_ns[idx];
-      r = mptr->r_ns[idx];
-      theta = mptr->theta_ns[idx];
-      phi = mptr->phi_ns[idx];
+      t = mptr->t_ns[data_idx];
+      ts = mptr->ts_ns[data_idx];
+      r = mptr->r_ns[data_idx];
+      theta = mptr->theta_ns[data_idx];
+      phi = mptr->phi_ns[data_idx];
 
       /* load apriori model of external (and possibly crustal) field */
-      B_prior[0] = mptr->Bx_model_ns[idx];
-      B_prior[1] = mptr->By_model_ns[idx];
-      B_prior[2] = mptr->Bz_model_ns[idx];
+      B_prior[0] = mptr->Bx_model_ns[data_idx];
+      B_prior[1] = mptr->By_model_ns[data_idx];
+      B_prior[2] = mptr->Bz_model_ns[data_idx];
     }
 
   green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data,
@@ -1008,9 +1019,9 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
 #if MFIELD_FIT_EXTFIELD
 
   /* external field is fitted only to data points used for main field modeling */
-  if ((MAGDATA_ExistX(mptr->flags[idx]) || MAGDATA_ExistY(mptr->flags[idx]) ||
-       MAGDATA_ExistZ(mptr->flags[idx]) || MAGDATA_ExistScalar(mptr->flags[idx])) &&
-      (MAGDATA_FitMF(mptr->flags[idx])))
+  if ((MAGDATA_ExistX(mptr->flags[data_idx]) || MAGDATA_ExistY(mptr->flags[data_idx]) ||
+       MAGDATA_ExistZ(mptr->flags[data_idx]) || MAGDATA_ExistScalar(mptr->flags[data_idx])) &&
+      (MAGDATA_FitMF(mptr->flags[data_idx])))
     {
       size_t extidx = mfield_extidx(t, w);
       double extcoeff = gsl_vector_get(x, extidx);
@@ -1031,9 +1042,20 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
 
 #endif
 
+  if (w->params.fit_cbias && mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+    {
+      B_bias[0] = gsl_vector_get(x, w->bias_offset + w->bias_idx[src_idx]);
+      B_bias[1] = gsl_vector_get(x, w->bias_offset + w->bias_idx[src_idx] + 1);
+      B_bias[2] = gsl_vector_get(x, w->bias_offset + w->bias_idx[src_idx] + 2);
+    }
+  else
+    {
+      B_bias[0] = B_bias[1] = B_bias[2] = 0.0;
+    }
+
   /* compute total modeled field (internal + external) */
   for (k = 0; k < 3; ++k)
-    B_model[k] = B_int[k] + B_prior[k] + B_extcorr[k];
+    B_model[k] = B_int[k] + B_prior[k] + B_extcorr[k] + B_bias[k];
 
   return s;
 }

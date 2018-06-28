@@ -32,6 +32,7 @@ pde_r_m(size_t idx, pde_workspace *w)
 {
   return (w->rmin + idx * w->dr);
 } /* pde_r_m() */
+
 /*
 pde_r()
   Compute radius r corresponding to an index idx \in [0, NR - 1] in
