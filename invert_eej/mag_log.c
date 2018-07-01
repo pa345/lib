@@ -651,7 +651,7 @@ mag_log_EEF(const int header, const time_t t, const double phi,
 
 /*
 mag_log_grids()
-  Log modeled PDE solution to a file
+  Log PDE grids to a file
 
 Inputs: header - 1 = print header, 0 = don't
         w      - workspace
@@ -661,31 +661,45 @@ int
 mag_log_grids(const int header, const mag_workspace *w)
 {
   int s = 0;
-  size_t i;
-  inverteef_workspace *inveef_p = w->inverteef_workspace_p;
-  mag_eej_workspace *eej_p = w->eej_workspace_p;
+  size_t i, j;
+  pde_workspace *pde_p = w->pde_workspace_p;
 
   if (header)
     {
       /* print header information */
       i = 1;
-      log_proc(w->log_grids, "# Field %zu: QD latitude (degrees)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: modeled current density (mA/m)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: satellite current density (mA/m)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: radius (km)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: latitude (degrees)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f1(r,theta)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f2(r,theta)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f3(r,theta)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f4(r,theta)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f5(r,theta)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f6(r,theta)\n", i++);
       return s;
     }
 
-  for (i = 0; i < w->ncurr; ++i)
+  for (i = 0; i < pde_p->nr; ++i)
     {
-      double qdlat = -eej_p->qdlat_max + i * eej_p->dqdlat;
+      for (j = 0; j < pde_p->ntheta; ++j)
+        {
+          size_t k = PDE_IDX(i, j, pde_p);
 
-      log_proc(w->log_model, "%f %.12e %.12e\n",
-               qdlat,
-               gsl_vector_get(inveef_p->J_pde, i) * 1000.0,
-               w->EEJ[i] * 1000.0);
+          log_proc(w->log_grids, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e\n",
+                   pde_r_km(i, pde_p) - R_EARTH_KM,
+                   90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
+                   pde_p->f1[k],
+                   pde_p->f2[k],
+                   pde_p->f3[k],
+                   pde_p->f4[k],
+                   pde_p->f5[k],
+                   pde_p->f6[k]);
+        }
+
+      log_proc(w->log_grids, "\n");
     }
 
-  log_proc(w->log_model, "\n\n");
+  log_proc(w->log_grids, "\n\n");
 
   return s;
 }
@@ -712,7 +726,7 @@ mag_log_fields(const int header, const mag_workspace *w)
       i = 1;
       log_proc(w->log_fields, "# Field %zu: radius (km)\n", i++);
       log_proc(w->log_fields, "# Field %zu: latitude (degrees)\n", i++);
-      log_proc(w->log_fields, "# Field %zu: psi(r,theta)\n", i++);
+      log_proc(w->log_fields, "# Field %zu: psi(r,theta) [A]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_r(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_theta(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_phi(r,theta) [A/m^2]\n", i++);
@@ -729,7 +743,7 @@ mag_log_fields(const int header, const mag_workspace *w)
           log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
                    pde_r_km(i, pde_p) - R_EARTH_KM,
                    90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
-                   PSI_GET(pde_p->psi, i, j, pde_p),
+                   PSI_GET(pde_p->psi, i, j, pde_p) * pde_p->psi_s,
                    gsl_matrix_get(pde_p->J_r, i, j) * pde_p->J_s,
                    gsl_matrix_get(pde_p->J_theta, i, j) * pde_p->J_s,
                    gsl_matrix_get(pde_p->J_phi, i, j) * pde_p->J_s,

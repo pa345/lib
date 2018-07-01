@@ -13,6 +13,7 @@
 #include <gsl/gsl_spmatrix.h>
 
 #include <msynth/msynth.h>
+#include <pde/gsl_pde2d.h>
 
 #include "hwm.h"
 #include "mageq.h"
@@ -59,12 +60,6 @@
  */
 #define PDE_USE_LSE
 
-/*
- * Define to construct the complete dense PDE matrix (in addition to
- * the sparse format)
- */ 
-#undef PDE_CONSTRUCT_MATRIX
-
 /* r and theta step sizes in meters and radians */
 
 #define R_BOTTOM             (R_EARTH_KM + 80.0)
@@ -102,7 +97,8 @@ typedef struct
   double lat_eq;     /* magnetic equator latitude */
   time_t t;          /* current time */
 
-  double *theta_grid; /* array of theta grid values (radians) */
+  double *r_grid;     /* array of r grid values (m), size nr */
+  double *theta_grid; /* array of theta grid values (radians), size ntheta */
 
   double eej_angle;  /* angle EEJ makes with geographic eastward */
 
@@ -115,18 +111,17 @@ typedef struct
   double *merid;    /* meridional wind array for HWM */
   double *zonal;    /* zonal wind array for HWM */
 
-  double *Br;       /* r component of B in T */
-  double *Bt;       /* theta component of B in T */
-  double *Bp;       /* phi component of B in T */
-  double *Bf;       /* total field intensity in T */
+  double *Br_main;  /* main field r component in T */
+  double *Bt_main;  /* main field theta component in T */
+  double *Bp_main;  /* main field phi component in T */
+  double *Bf_main;  /* total main field intensity in T */
 
   gsl_spmatrix *S; /* sparse pde matrix */
-  gsl_matrix *A;   /* pde matrix */
   gsl_vector *b;   /* rhs vector */
-  gsl_vector *b_copy; /* rhs vector */
   gsl_vector *psi; /* pde solution, size nr*ntheta */
   double residual; /* residual ||A*psi - b|| */
   double rrnorm;   /* relative residual ||b - A*psi|| / ||b|| */
+  double rcond;    /* reciprical condition number */
 
   gsl_matrix *J_r;     /* J_r current solution (A/m^2) */
   gsl_matrix *J_theta; /* J_theta current solution (A/m^2) */
@@ -177,6 +172,7 @@ typedef struct
   mageq_workspace *mageq_workspace_p;
   msynth_workspace *msynth_workspace_p;
   sigma_workspace *sigma_workspace_p;
+  gsl_pde2d_workspace *gsl_pde2d_workspace_p;
 } pde_workspace;
 
 #define PDE_IDX(i, j, w)     ((i) * (w)->ntheta + (j))

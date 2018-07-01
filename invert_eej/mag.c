@@ -605,6 +605,9 @@ mag_proc(const mag_params *params, track_workspace *track_p,
        */
       mag_log_PDE(0, w);
 
+      /* log PDE intermediate grids */
+      mag_log_grids(0, w);
+
       /* log electric field and current density grids */
       mag_log_fields(0, w);
 

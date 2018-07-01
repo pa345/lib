@@ -28,7 +28,11 @@
 #include <gsl/gsl_splinalg.h>
 
 #include <common/common.h>
+#include <common/bsearch.h>
+#include <common/interp.h>
 #include <common/oct.h>
+
+#include <magfield/magfield.h>
 
 #include "mageq.h"
 #include "lisw.h"
@@ -49,11 +53,15 @@ static int pde_scales(sigma_workspace *sigma_p, pde_workspace *w);
 static int pde_coefficients(pde_workspace *w);
 static int pde_discretize(pde_workspace *w);
 static int pde_matrix(pde_workspace *w);
-static int pde_compute_psi(pde_workspace *w);
+static int pde_compute_psi(gsl_spmatrix *A, gsl_vector *b, pde_workspace *w);
 static int pde_check_psi(pde_workspace *w);
 static int pde_calc_J(pde_workspace *w);
-static int pde_magnetic_field(pde_workspace *w);
+static int pde_main_field(pde_workspace *w);
 static int pde_debug(pde_workspace *w, const char *format, ...);
+static int pde_coefs(const double r, const double theta, double coef[GSL_PDE2D_COEF_TOTAL], void *params);
+static int pde_bnd(const gsl_pde2d_bnd_t type, const double *v, gsl_vector *alpha, gsl_vector *beta,
+                   gsl_vector *gamma, gsl_vector *delta, void *params);
+static int pde_magfield(pde_workspace *w);
 
 pde_workspace *
 pde_alloc(pde_parameters *params)
@@ -76,7 +84,7 @@ pde_alloc(pde_parameters *params)
   w->theta_min = params->theta_min;
   w->theta_max = params->theta_max;
 
-  w->dr = (w->rmax - w->rmin) / w->nr;
+  w->dr = (w->rmax - w->rmin) / (w->nr - 1.0);
   w->dtheta = (w->theta_max - w->theta_min) / (w->ntheta - 1.0);
 
   nrt = w->nr * w->ntheta;
@@ -157,11 +165,11 @@ pde_alloc(pde_parameters *params)
       return 0;
     }
 
-  w->Br = malloc(nrt * sizeof(double));
-  w->Bt = malloc(nrt * sizeof(double));
-  w->Bp = malloc(nrt * sizeof(double));
-  w->Bf = malloc(nrt * sizeof(double));
-  if (!w->Br || !w->Bt || !w->Bp || !w->Bf)
+  w->Br_main = malloc(nrt * sizeof(double));
+  w->Bt_main = malloc(nrt * sizeof(double));
+  w->Bp_main = malloc(nrt * sizeof(double));
+  w->Bf_main = malloc(nrt * sizeof(double));
+  if (!w->Br_main || !w->Bt_main || !w->Bp_main || !w->Bf_main)
     {
       pde_free(w);
       return 0;
@@ -223,14 +231,13 @@ pde_alloc(pde_parameters *params)
   w->psi_s = 1.0;
   w->J_s = 1.0;
 
-#ifdef PDE_CONSTRUCT_MATRIX
-  w->A = gsl_matrix_alloc(nrt, nrt);
-  w->b_copy = gsl_vector_alloc(nrt);
-#endif
+  /* store explicit grid points in array */
 
-  /* store explicit theta grid points in array */
-
+  w->r_grid = malloc(w->nr * sizeof(double));
   w->theta_grid = malloc(w->ntheta * sizeof(double));
+
+  for (i = 0; i < w->nr; ++i)
+    w->r_grid[i] = pde_r(i, w);
 
   for (i = 0; i < w->ntheta; ++i)
     w->theta_grid[i] = pde_theta(i, w);
@@ -318,20 +325,23 @@ pde_free(pde_workspace *w)
   if (w->vwind)
     free(w->vwind);
 
-  if (w->Br)
-    free(w->Br);
+  if (w->Br_main)
+    free(w->Br_main);
 
-  if (w->Bt)
-    free(w->Bt);
+  if (w->Bt_main)
+    free(w->Bt_main);
 
-  if (w->Bp)
-    free(w->Bp);
+  if (w->Bp_main)
+    free(w->Bp_main);
 
-  if (w->Bf)
-    free(w->Bf);
+  if (w->Bf_main)
+    free(w->Bf_main);
 
   if (w->S)
     gsl_spmatrix_free(w->S);
+
+  if (w->r_grid)
+    free(w->r_grid);
 
   if (w->theta_grid)
     free(w->theta_grid);
@@ -433,9 +443,17 @@ pde_proc(const time_t t, const double longitude,
 
 #else
 
-  pde_debug(w, "pde_proc: ---- solving for FULL SOLUTION (E0 = %.1f [mV/m]) ----\n", EEF_PHI_0 * 1.0e3);
+  {
+    double Ephi0 = 2.0e-3;
 
-  s += pde_solve(1, EEF_PHI_0, w);
+    pde_debug(w, "pde_proc: ---- solving for FULL SOLUTION (E0 = %.1f [mV/m]) ----\n", Ephi0 * 1.0e3);
+    s += pde_solve(1, Ephi0, w);
+
+#if 0
+    pde_debug(w, "pde_proc: ---- computing magnetic field grids ----\n");
+    s += pde_magfield(w);
+#endif
+  }
 
 #endif
 
@@ -470,8 +488,8 @@ pde_initialize(time_t t, double longitude, pde_workspace *w)
   w->eej_angle = mageq_angle(w->longitude, r, tyr, w->mageq_workspace_p);
   pde_debug(w, "done (angle = %f degrees)\n", w->eej_angle * 180.0 / M_PI);
 
-  pde_debug(w, "pde_init: computing magnetic field...");
-  pde_magnetic_field(w);
+  pde_debug(w, "pde_init: computing magnetic main field...");
+  pde_main_field(w);
   pde_debug(w, "done\n");
 
   pde_debug(w, "pde_init: constructing sigma tensor...");
@@ -487,6 +505,25 @@ pde_initialize(time_t t, double longitude, pde_workspace *w)
   pde_debug(w, "pde_init: computing scaling factors...");
   s += pde_scales(w->sigma_workspace_p, w);
   pde_debug(w, "done\n");
+
+  /* now that we have the r scale we can allocate pde2d workspace */
+  {
+    gsl_pde2d_parameters pde2d_params;
+
+    pde2d_params.nx = w->nr;
+    pde2d_params.ny = w->ntheta;
+    pde2d_params.xmin = w->rmin / w->r_s;
+    pde2d_params.xmax = w->rmax / w->r_s;
+    pde2d_params.ymin = w->theta_min;
+    pde2d_params.ymax = w->theta_max;
+    pde2d_params.coef_function = pde_coefs;
+    pde2d_params.coef_params = w;
+    pde2d_params.bnd_function = pde_bnd;
+    pde2d_params.bnd_params = w;
+
+    w->gsl_pde2d_workspace_p = gsl_pde2d_alloc(&pde2d_params);
+  }
+
 
   return s;
 } /* pde_initialize() */
@@ -512,6 +549,8 @@ pde_solve(int compute_winds, double E_phi0, pde_workspace *w)
   double min, max;
   int s = 0;
   double normb;
+  gsl_spmatrix *A;
+  gsl_vector *rhs;
 
   w->compute_winds = compute_winds;
   w->E_phi0 = E_phi0;
@@ -536,18 +575,32 @@ pde_solve(int compute_winds, double E_phi0, pde_workspace *w)
   if (s)
     return s;
 
-  gsl_spmatrix_minmax(w->S, &min, &max);
+#if 0
+  A = w->S;
+  rhs = w->b;
+#else
+  A = w->gsl_pde2d_workspace_p->S;
+  rhs = w->gsl_pde2d_workspace_p->rhs;
+#endif
+
+  printsp_octave(w->S, "A1");
+  printsp_octave(w->gsl_pde2d_workspace_p->S, "A2");
+  printv_octave(w->b, "rhs1");
+  printv_octave(w->gsl_pde2d_workspace_p->rhs, "rhs2");
+
+  gsl_spmatrix_minmax(A, &min, &max);
   pde_debug(w, "pde_solve: matrix minimum element = %.4e, maximum element = %.4e\n", min, max);
-  gsl_vector_minmax(w->b, &min, &max);
+  gsl_vector_minmax(rhs, &min, &max);
   pde_debug(w, "pde_solve: rhs minimum element = %.4e, maximum element = %.4e\n", min, max);
 
-  normb = gsl_blas_dnrm2(w->b);
+  normb = gsl_blas_dnrm2(rhs);
 
   pde_debug(w, "pde_solve: computing psi solution...");
-  s += pde_compute_psi(w);
-  pde_debug(w, "done (residual norm = %.12e, relative residual norm = %.12e)\n", w->residual, w->residual / normb);
+  s += pde_compute_psi(A, rhs, w);
+  pde_debug(w, "done (residual norm = %.12e, relative residual norm = %.12e, condition number = %.12e)\n",
+            w->residual, w->residual / normb, 1.0 / w->rcond);
 
-#if 1
+#if 0
   pde_debug(w, "pde_solve: checking psi solution...");
   s += pde_check_psi(w);
   pde_debug(w, "done (s = %d)\n", s);
@@ -568,13 +621,13 @@ pde_solve(int compute_winds, double E_phi0, pde_workspace *w)
 } /* pde_solve() */
 
 /*
-pde_magnetic_field()
-  Compute magnetic field components at all grid points and
+pde_main_field()
+  Compute main magnetic field components at all grid points and
 store in w->B{r,t,p,f}
 */
 
 static int
-pde_magnetic_field(pde_workspace *w)
+pde_main_field(pde_workspace *w)
 {
   size_t i, j;
   double B[4];
@@ -599,8 +652,8 @@ pde_magnetic_field(pde_workspace *w)
           B[2] *= 1.0e-9;
           B[3] *= 1.0e-9;
 
-          w->Br[k] = -B[2];
-          w->Bf[k] = B[3];
+          w->Br_main[k] = -B[2];
+          w->Bf_main[k] = B[3];
 
           /*
            * Perform a coordinate rotation on the (B_theta, B_phi)
@@ -611,13 +664,13 @@ pde_magnetic_field(pde_workspace *w)
           Bt = -B[0];
           Bp = B[1];
 
-          w->Bt[k] = Bt * cos(w->eej_angle) - Bp * sin(w->eej_angle);
-          w->Bp[k] = Bt * sin(w->eej_angle) + Bp * cos(w->eej_angle);
+          w->Bt_main[k] = Bt * cos(w->eej_angle) - Bp * sin(w->eej_angle);
+          w->Bp_main[k] = Bt * sin(w->eej_angle) + Bp * cos(w->eej_angle);
         }
     }
 
   return GSL_SUCCESS;
-} /* pde_magnetic_field() */
+}
 
 /*
 pde_sigma_tensor()
@@ -658,9 +711,9 @@ pde_sigma_tensor(sigma_workspace *sigma_p, pde_workspace *w)
           
           dsig = s0 - s1;
 
-          b[IDX_R] = w->Br[k] / w->Bf[k];
-          b[IDX_THETA] = w->Bt[k] / w->Bf[k];
-          b[IDX_PHI] = w->Bp[k] / w->Bf[k];
+          b[IDX_R] = w->Br_main[k] / w->Bf_main[k];
+          b[IDX_THETA] = w->Bt_main[k] / w->Bf_main[k];
+          b[IDX_PHI] = w->Bp_main[k] / w->Bf_main[k];
 
           gsl_matrix_set(s, IDX_R, IDX_R,
             dsig * b[IDX_R] * b[IDX_R] + s1);
@@ -833,7 +886,7 @@ pde_scales(sigma_workspace *sigma_p, pde_workspace *w)
   w->sigma_s = GSL_MAX(s0_max, GSL_MAX(s1_max, s2_max));
 
   /* compute B_s = max(|B|) */
-  m = gsl_matrix_view_array((double *) w->Bf, w->nr, w->ntheta);
+  m = gsl_matrix_view_array((double *) w->Bf_main, w->nr, w->ntheta);
   w->B_s = gsl_matrix_max(&m.matrix);
 
   /* compute U_s = max(U_r,U_t,U_p) */
@@ -855,12 +908,12 @@ pde_scales(sigma_workspace *sigma_p, pde_workspace *w)
 
           gsl_matrix_scale(sig, 1.0 / w->sigma_s);
 
-          w->Br[k] /= w->B_s;
-          w->Bt[k] /= w->B_s;
-          w->Bp[k] /= w->B_s;
-          w->Bf[k] = sqrt(w->Br[k] * w->Br[k] +
-                          w->Bt[k] * w->Bt[k] +
-                          w->Bp[k] * w->Bp[k]);
+          w->Br_main[k] /= w->B_s;
+          w->Bt_main[k] /= w->B_s;
+          w->Bp_main[k] /= w->B_s;
+          w->Bf_main[k] = sqrt(w->Br_main[k] * w->Br_main[k] +
+                          w->Bt_main[k] * w->Bt_main[k] +
+                          w->Bp_main[k] * w->Bp_main[k]);
 
           w->zwind[k] /= w->U_s;
           w->mwind[k] /= w->U_s;
@@ -928,19 +981,19 @@ pde_coefficients(pde_workspace *w)
           if (w->compute_winds)
             {
               /* [sigma U x B]_r */
-              sUBr = s_rr * (w->mwind[k] * w->Bp[k] -
-                             w->zwind[k] * w->Bt[k]) +
-                     s_rt * (w->zwind[k] * w->Br[k] -
-                             w->vwind[k] * w->Bp[k]) +
-                     s_rp * (w->vwind[k] * w->Bt[k] -
-                             w->mwind[k] * w->Br[k]);
+              sUBr = s_rr * (w->mwind[k] * w->Bp_main[k] -
+                             w->zwind[k] * w->Bt_main[k]) +
+                     s_rt * (w->zwind[k] * w->Br_main[k] -
+                             w->vwind[k] * w->Bp_main[k]) +
+                     s_rp * (w->vwind[k] * w->Bt_main[k] -
+                             w->mwind[k] * w->Br_main[k]);
               /* [sigma U x B]_t */
-              sUBt = s_tr * (w->mwind[k] * w->Bp[k] -
-                             w->zwind[k] * w->Bt[k]) +
-                     s_tt * (w->zwind[k] * w->Br[k] -
-                             w->vwind[k] * w->Bp[k]) +
-                     s_tp * (w->vwind[k] * w->Bt[k] -
-                             w->mwind[k] * w->Br[k]);
+              sUBt = s_tr * (w->mwind[k] * w->Bp_main[k] -
+                             w->zwind[k] * w->Bt_main[k]) +
+                     s_tt * (w->zwind[k] * w->Br_main[k] -
+                             w->vwind[k] * w->Bp_main[k]) +
+                     s_tp * (w->vwind[k] * w->Bt_main[k] -
+                             w->mwind[k] * w->Br_main[k]);
 
               w->beta[k] += r * sint * (s_tr * sUBr - s_rr * sUBt);
               w->gamma[k] += r * sint * (s_tt * sUBr - s_rt * sUBt);
@@ -958,8 +1011,8 @@ pde_coefficients(pde_workspace *w)
                  w->alpha[k],
                  w->beta[k],
                  w->gamma[k],
-                 w->Br[k],
-                 w->Bt[k]);
+                 w->Br_main[k],
+                 w->Bt_main[k]);
 #endif
         }
     }
@@ -1251,6 +1304,8 @@ pde_matrix(pde_workspace *w)
   int s = 0;
   size_t i, j, k;
 
+  gsl_pde2d_discretize(w->gsl_pde2d_workspace_p);
+
   gsl_spmatrix_set_zero(w->S);
 
   /*
@@ -1346,50 +1401,17 @@ Notes: on output, w->residual is set to the residual ||A psi - b||
 */
 
 static int
-pde_compute_psi(pde_workspace *w)
+pde_compute_psi(gsl_spmatrix *A, gsl_vector *b, pde_workspace *w)
 {
   int s = 0;
   double bscale;
-
-#ifdef PDE_CONSTRUCT_MATRIX
-
-  gsl_spmatrix_sp2d(w->A, w->S);
-  gsl_vector_memcpy(w->b_copy, w->b);
-
-  {
-    gsl_permutation *p = gsl_permutation_alloc(w->b->size);
-    int stat;
-    double residual;
-
-    gsl_linalg_LU_decomp(w->A, p, &stat);
-    gsl_linalg_LU_solve(w->A, p, w->b_copy, w->psi);
-
-    gsl_permutation_free(p);
-
-    /* construct dense matrix again since it was destroyed */
-    gsl_spmatrix_sp2d(w->A, w->S);
-    gsl_vector_memcpy(w->b_copy, w->b);
-
-    gsl_blas_dgemv(CblasNoTrans, 1.0, w->A, w->psi, -1.0, w->b_copy);
-    residual = gsl_blas_dnrm2(w->b_copy);
-    fprintf(stderr, "gsl residual = %.12e\n", residual);
-  }
-
-  if (w->b->size <= 5000)
-    {
-      print_octave(w->A, "A");
-      printv_octave(w->b, "b");
-      printv_octave(w->psi, "psigsl");
-    }
-
-#endif
 
   /*
    * the RHS tends to have a much smaller order of magnitude than the
    * matrix so scale it
    */
-  bscale = gsl_vector_max(w->b);
-  gsl_vector_scale(w->b, 1.0 / bscale);
+  bscale = gsl_vector_max(b);
+  gsl_vector_scale(b, 1.0 / bscale);
 
 #if 1
 
@@ -1406,10 +1428,10 @@ pde_compute_psi(pde_workspace *w)
 #if PDE_SOLVER_LIS
 
   {
-    lis_workspace *lis_p = lis_alloc(w->S->size1, w->S->size2);
+    lis_workspace *lis_p = lis_alloc(A->size1, A->size2);
     const double tol = 1.0e-6;
 
-    s = lis_proc(w->S, w->b->data, tol, w->psi->data, lis_p);
+    s = lis_proc(A, b->data, tol, w->psi->data, lis_p);
     w->residual = lis_p->rnorm;
 
     mylis_free(lis_p);
@@ -1423,11 +1445,12 @@ pde_compute_psi(pde_workspace *w)
 #elif PDE_SOLVER_SUPERLU
 
   {
-    slu_workspace *superlu_p = slu_alloc(w->S->size1, w->S->size2, 1);
-    gsl_spmatrix *C = gsl_spmatrix_compcol(w->S);
+    slu_workspace *superlu_p = slu_alloc(A->size1, A->size2, 1);
+    gsl_spmatrix *C = gsl_spmatrix_ccs(A);
 
-    s = slu_proc(C, w->b->data, w->psi->data, superlu_p);
+    s = slu_proc(C, b->data, w->psi->data, superlu_p);
     w->residual = superlu_p->rnorm;
+    w->rcond = superlu_p->rcond;
 
     slu_free(superlu_p);
     gsl_spmatrix_free(C);
@@ -1475,36 +1498,6 @@ pde_compute_psi(pde_workspace *w)
 #endif
 
   gsl_vector_scale(w->psi, bscale);
-
-#if 0
-  {
-    size_t i, j;
-    char *filename = "psi.dat";
-    FILE *fp = fopen(filename, "w");
-
-    fprintf(stderr, "pde_compute_psi: writing psi solution to %s...",
-            filename);
-    for (j = 0; j < w->ntheta; ++j)
-      {
-        for (i = 0; i < w->nr; ++i)
-          {
-            double r = pde_r(i, w);
-            double theta = pde_theta(j, w);
-            double psi = gsl_vector_get(w->psi, PDE_IDX(i, j, w)) * w->psi_s;
-
-            fprintf(fp, "%e %e %e %e\n",
-                   90.0-pde_theta(j, w)*180/M_PI,
-                   pde_r_km(i,w)-R_EARTH_KM,
-                   psi,
-                   -psi / r / sin(theta));
-          }
-        fprintf(fp, "\n");
-      }
-    fclose(fp);
-    fprintf(stderr, "done\n");
-    exit(1);
-  }
-#endif
 
   return s;
 } /* pde_compute_psi() */
@@ -1719,12 +1712,12 @@ pde_calc_J(pde_workspace *w)
 
           if (w->compute_winds)
             {
-              J_phi += s_pr * (w->mwind[k] * w->Bp[k] -
-                               w->zwind[k] * w->Bt[k]) +
-                       s_pt * (w->zwind[k] * w->Br[k] -
-                               w->vwind[k] * w->Bp[k]) +
-                       s_pp * (w->vwind[k] * w->Bt[k] -
-                               w->mwind[k] * w->Br[k]);
+              J_phi += s_pr * (w->mwind[k] * w->Bp_main[k] -
+                               w->zwind[k] * w->Bt_main[k]) +
+                       s_pt * (w->zwind[k] * w->Br_main[k] -
+                               w->vwind[k] * w->Bp_main[k]) +
+                       s_pp * (w->vwind[k] * w->Bt_main[k] -
+                               w->mwind[k] * w->Br_main[k]);
             }
 
           /* store currents */
@@ -1813,3 +1806,240 @@ pde_debug(pde_workspace *w, const char *format, ...)
 
   return s;
 } /* pde_debug() */
+
+/*
+pde_coefs()
+  Return coefficients of PDE for a given (r,theta)
+*/
+
+static int
+pde_coefs(const double r, const double theta, double coef[GSL_PDE2D_COEF_TOTAL], void *params)
+{
+  pde_workspace *w = (pde_workspace *) params;
+  size_t i = bsearch_double(w->r_grid, r * w->r_s, 0, w->nr - 1);
+  const size_t j = bsearch_double(w->theta_grid, theta, 0, w->ntheta - 1);
+  size_t k;
+
+  assert(theta == w->theta_grid[j]);
+
+  if (fabs(r - w->r_grid[i] / w->r_s) > 1.0e-12)
+    ++i;
+
+  assert(fabs(r - w->r_grid[i] / w->r_s) < 1.0e-12);
+
+  k = PDE_IDX(i, j, w);
+
+  coef[GSL_PDE2D_COEF_FXX] = w->f1[k];
+  coef[GSL_PDE2D_COEF_FXY] = w->f3[k];
+  coef[GSL_PDE2D_COEF_FYY] = w->f2[k];
+  coef[GSL_PDE2D_COEF_FX] = w->f5[k];
+  coef[GSL_PDE2D_COEF_FY] = w->f4[k];
+  coef[GSL_PDE2D_COEF_F] = 0.0;
+  coef[GSL_PDE2D_COEF_RHS] = -w->f6[k];
+
+  return GSL_SUCCESS;
+}
+
+static int
+pde_bnd(const gsl_pde2d_bnd_t type, const double *v, gsl_vector *alpha, gsl_vector *beta,
+        gsl_vector *gamma, gsl_vector *delta, void *params)
+{
+  const size_t n = alpha->size;
+  size_t i;
+
+  for (i = 0; i < n; ++i)
+    {
+      if (type == GSL_PDE2D_BND_X_LOWER)
+        {
+          /* lower radial boundary: psi = 0 */
+          gsl_vector_set(alpha, i, 0.0);
+          gsl_vector_set(beta, i, 0.0);
+          gsl_vector_set(gamma, i, 1.0);
+          gsl_vector_set(delta, i, 0.0);
+        }
+      else if (type == GSL_PDE2D_BND_X_UPPER)
+        {
+          /* upper radial boundary: psi = 0 */
+          gsl_vector_set(alpha, i, 0.0);
+          gsl_vector_set(beta, i, 0.0);
+          gsl_vector_set(gamma, i, 1.0);
+          gsl_vector_set(delta, i, 0.0);
+        }
+      else if (type == GSL_PDE2D_BND_Y_LOWER)
+        {
+          /* lower theta boundary: psi_theta = 0 */
+          gsl_vector_set(alpha, i, 0.0);
+          gsl_vector_set(beta, i, 1.0);
+          gsl_vector_set(gamma, i, 0.0);
+          gsl_vector_set(delta, i, 0.0);
+        }
+      else if (type == GSL_PDE2D_BND_Y_UPPER)
+        {
+          /* upper theta boundary: psi_theta = 0 */
+          gsl_vector_set(alpha, i, 0.0);
+          gsl_vector_set(beta, i, 1.0);
+          gsl_vector_set(gamma, i, 0.0);
+          gsl_vector_set(delta, i, 0.0);
+        }
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
+pde_magfield()
+*/
+
+static int
+pde_magfield(pde_workspace *w)
+{
+  int s = 0;
+  const size_t nr = w->nr;
+  const size_t ntheta = 2 * w->ntheta;
+  const size_t nphi = 72;
+  magfield_workspace *magfield_p;
+  magfield_params params;
+  size_t i, j, k;
+
+  params.lmin = 1;
+  params.lmax = 45;
+  params.mmax = 30;
+  params.nr = nr;
+  params.ntheta = ntheta;
+  params.nphi = nphi;
+  params.rmin = w->rmin - 0.001;
+  params.rmax = w->rmax + 0.001;
+  params.R = R_EARTH_KM * 1.0e3;
+  params.grid_type = MAGFIELD_GAUSS;
+
+  fprintf(stderr, "\t allocating magfield workspace...");
+  magfield_p = magfield_alloc(&params);
+  fprintf(stderr, "done\n");
+
+  /* fill magfield J grid */
+  for (i = 0; i < nr; ++i)
+    {
+      for (j = 0; j < ntheta; ++j)
+        {
+          double theta = magfield_p->theta[j];
+          double Jr, Jt, Jp;
+
+          if (theta < w->theta_min || theta > w->theta_max)
+            {
+              Jr = 0.0;
+              Jt = 0.0;
+              Jp = 0.0;
+            }
+          else
+            {
+              /*size_t idx = bsearch_double(w->theta_grid, theta, 0, w->ntheta - 1);*/
+              size_t idx = pde_thidx(theta, w);
+
+              assert(w->theta_grid[idx] <= theta && theta < w->theta_grid[idx + 1]);
+
+              Jr = interp1d(w->theta_grid[idx], w->theta_grid[idx + 1],
+                            gsl_matrix_get(w->J_r, i, idx), gsl_matrix_get(w->J_r, i, idx + 1), theta);
+              Jt = interp1d(w->theta_grid[idx], w->theta_grid[idx + 1],
+                            gsl_matrix_get(w->J_theta, i, idx), gsl_matrix_get(w->J_theta, i, idx + 1), theta);
+              Jp = interp1d(w->theta_grid[idx], w->theta_grid[idx + 1],
+                            gsl_matrix_get(w->J_phi, i, idx), gsl_matrix_get(w->J_phi, i, idx + 1), theta);
+            }
+
+          for (k = 0; k < nphi; ++k)
+            {
+              magfield_current_set(MAG_IDX_R, i, j, k, Jr * w->J_s, magfield_p);
+              magfield_current_set(MAG_IDX_THETA, i, j, k, Jt * w->J_s, magfield_p);
+              magfield_current_set(MAG_IDX_PHI, i, j, k, Jp * w->J_s, magfield_p);
+            }
+        }
+    }
+
+  /* perform SH decomposition */
+  fprintf(stderr, "\t performing SH decomposition...");
+  magfield_decomp(magfield_p);
+  fprintf(stderr, "done\n");
+
+#if 0
+  {
+    double r;
+
+    for (r = R_EARTH_M; r < (R_EARTH_KM + 750.0) * 1.0e3; r += 0.5*1.0e3)
+      {
+        complex double p10 = magfield_eval_plmr(r, 1, 0, magfield_p);
+        complex double p20 = magfield_eval_plmr(r, 2, 0, magfield_p);
+        complex double p30 = magfield_eval_plmr(r, 3, 0, magfield_p);
+        complex double qt10 = magfield_eval_qtlmr(r, 1, 0, magfield_p);
+        complex double qt20 = magfield_eval_qtlmr(r, 2, 0, magfield_p);
+        complex double qt30 = magfield_eval_qtlmr(r, 3, 0, magfield_p);
+
+        printf("%f %.12e %.12e %.12e %.12e %.12e %.12e\n",
+               (r - R_EARTH_M) * 1.0e-3,
+               creal(qt10),
+               creal(qt20),
+               creal(qt30),
+               creal(p10),
+               creal(p20),
+               creal(p30));
+      }
+
+    exit(1);
+  }
+#endif
+
+#if 0
+  for (i = 0; i < w->nr; ++i)
+    {
+      double r = w->r_grid[i];
+
+      for (j = 0; j < w->ntheta; ++j)
+        {
+          double theta = w->theta_grid[j];
+          double J_magfield[3], B_magfield[4];
+
+          magfield_eval_J(r, theta, 0.0, J_magfield, magfield_p);
+          magfield_eval_B(r, theta, 0.0, B_magfield, magfield_p);
+
+          printf("%f %f %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
+                 r * 1.0e-3 - R_EARTH_KM,
+                 90.0 - theta*180.0/M_PI,
+                 J_magfield[0],
+                 gsl_matrix_get(w->J_r, i, j) * w->J_s,
+                 J_magfield[1],
+                 gsl_matrix_get(w->J_theta, i, j) * w->J_s,
+                 J_magfield[2],
+                 gsl_matrix_get(w->J_phi, i, j) * w->J_s,
+                 B_magfield[0] * 1.0e9,
+                 B_magfield[1] * 1.0e9,
+                 B_magfield[2] * 1.0e9,
+                 B_magfield[3] * 1.0e9);
+        }
+      printf("\n");
+    }
+#endif
+
+#if 1
+  {
+    double theta;
+
+    for (theta = 0.1; theta <= M_PI - 0.1; theta += 1.0e-3)
+      {
+        double B[4];
+
+        magfield_eval_B((R_EARTH_KM + 450.0) * 1.0e3, theta, 0.0, B, magfield_p);
+
+        printf("%f %.12e %.12e %.12e %.12e\n",
+               90.0 - theta*180.0/M_PI,
+               B[0] * 1.0e9,
+               B[1] * 1.0e9,
+               B[2] * 1.0e9,
+               B[3] * 1.0e9);
+      }
+  }
+#endif
+
+  exit(1);
+
+  magfield_free(magfield_p);
+
+  return s;
+}
