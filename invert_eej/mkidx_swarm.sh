@@ -4,8 +4,7 @@
 # version available for each day
 
 # Use track-filtered data
-datadir="/data/SWARM/MAG/Stage1_CHAOS"
-#datadir="/data/SWARM/MAG_DiaCorr/Stage1"
+datadir="/data/SWARM/MAG/Stage1"
 
 function dosat
 {

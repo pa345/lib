@@ -3,8 +3,7 @@
 # Make index files for Swarm, using the latest baseline
 # version available for each day
 
-#datadir="$DATAHOME/SWARM/MAG/Stage1"
-datadir="$DATAHOME/SWARM/MAG/Stage1_CHAOS"
+datadir="$DATAHOME/SWARM/MAG/Stage1"
 
 function dosat
 {
@@ -16,7 +15,7 @@ function dosat
   echo "sat = ${sat_name}"
 
   # loop over years
-  for year in $(seq 2013 2017); do
+  for year in $(seq 2013 2018); do
     echo "year = ${year}"
 
     # loop over months

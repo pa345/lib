@@ -14,8 +14,8 @@ outdir="$DATAHOME/SWARM/MAG/Stage1"
 lpdir="$DATAHOME/SWARM/EFI/LP_Unzipped"
 
 # Use CHAOS external field model
-#extra_flags="-c"
-extra_flags=""
+extra_flags="-h"
+#extra_flags=""
 
 prog="$MYLIBHOME/track/stage1"
 

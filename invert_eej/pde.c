@@ -42,9 +42,11 @@
 #include "sigma.h"
 
 #include "pde_common.c"
+#include "sor.c"
 
 #define PDE_SOLVER_LIS          0
 #define PDE_SOLVER_SUPERLU      1
+#define PDE_SOLVER_SOR          0
 
 static int pde_initialize(time_t t, double longitude, pde_workspace *w);
 static int pde_sigma_tensor(sigma_workspace *sigma_p, pde_workspace *w);
@@ -444,7 +446,7 @@ pde_proc(const time_t t, const double longitude,
 #else
 
   {
-    double Ephi0 = 2.0e-3;
+    double Ephi0 = 0.1e-3;
 
     pde_debug(w, "pde_proc: ---- solving for FULL SOLUTION (E0 = %.1f [mV/m]) ----\n", Ephi0 * 1.0e3);
     s += pde_solve(1, Ephi0, w);
@@ -569,11 +571,8 @@ pde_solve(int compute_winds, double E_phi0, pde_workspace *w)
     return s;
 
   pde_debug(w, "pde_solve: constructing PDE matrix...");
+
   s = pde_matrix(w);
-  pde_debug(w, "done (non zero elements = %d)\n",
-            gsl_spmatrix_nnz(w->S));
-  if (s)
-    return s;
 
 #if 0
   A = w->S;
@@ -582,6 +581,13 @@ pde_solve(int compute_winds, double E_phi0, pde_workspace *w)
   A = w->gsl_pde2d_workspace_p->S;
   rhs = w->gsl_pde2d_workspace_p->rhs;
 #endif
+
+  pde_debug(w, "done (non zero elements = %zu/%zu [%.3f%%])\n",
+            gsl_spmatrix_nnz(A),
+            A->size1 * A->size2,
+            (double) gsl_spmatrix_nnz(A) / ((double) (A->size1 * A->size2)) * 100.0);
+  if (s)
+    return s;
 
   printsp_octave(w->S, "A1");
   printsp_octave(w->gsl_pde2d_workspace_p->S, "A2");
@@ -1461,12 +1467,52 @@ pde_compute_psi(gsl_spmatrix *A, gsl_vector *b, pde_workspace *w)
       fprintf(stderr, "pde_compute_psi: slu_proc failed: s = %d\n", s);
   }
 
+#elif PDE_SOLVER_SOR
+
+  {
+    const size_t max_iter = 500;
+    const double tol = 1.0e-6;
+    gsl_spmatrix *C = gsl_spmatrix_crs(A);
+    gsl_vector *r = gsl_vector_alloc(w->psi->size); /* residual vector */
+    size_t iter = 0;
+    int status;
+    double omega = 1.5;
+    double residual;
+
+    gsl_vector_set_zero(w->psi);
+
+    do
+      {
+        status = pde_sor(omega, tol, C, b, w->psi);
+
+        /* print out residual norm ||A*u - f|| */
+        gsl_vector_memcpy(r, b);
+        gsl_spblas_dgemv(CblasNoTrans, -1.0, C, w->psi, 1.0, r);
+        residual = gsl_blas_dnrm2(r);
+        fprintf(stderr, "iter %zu residual = %.12e\n", iter, residual);
+
+        if (status == GSL_SUCCESS)
+          fprintf(stderr, "Converged\n");
+      }
+    while (status == GSL_CONTINUE && ++iter < max_iter);
+
+    {
+      FILE *fp = fopen("A.txt", "w");
+      gsl_spmatrix_fprintf(fp, A, "%.12e");
+      fclose(fp);
+      exit(1);
+    }
+
+    gsl_spmatrix_free(C);
+    gsl_vector_free(r);
+  }
+
 #endif
 
 #else
 
   {
-    const double tol = 1.0e-1;
+    const double tol = 1.0e-3;
     const size_t max_iter = 100;
     const gsl_splinalg_itersolve_type *T = gsl_splinalg_itersolve_gmres;
     gsl_splinalg_itersolve *work =
@@ -1986,7 +2032,7 @@ pde_magfield(pde_workspace *w)
   }
 #endif
 
-#if 0
+#if 1
   for (i = 0; i < w->nr; ++i)
     {
       double r = w->r_grid[i];
@@ -2017,7 +2063,7 @@ pde_magfield(pde_workspace *w)
     }
 #endif
 
-#if 1
+#if 0
   {
     double theta;
 
