@@ -146,6 +146,11 @@ secs1d_alloc(const void * params)
       state->p += npoles;
     }
 
+  if (state->p == 0)
+    {
+      GSL_ERROR_NULL("must specify DF or CF SECS", GSL_EINVAL);
+    }
+
   state->X = gsl_matrix_alloc(state->nmax, state->p);
   state->c = gsl_vector_alloc(state->p);
   state->rhs = gsl_vector_alloc(state->nmax);
@@ -436,6 +441,7 @@ secs1d_fit(double * rnorm, double * snorm, void * vstate)
   lambda_l = 1.0e-3*s0;
 
   lambda = lambda_l;
+  lambda = 1.0e-3*s0; /*XXX*/
 
   /* solve regularized system with lambda */
   gsl_multifit_linear_solve(lambda, &As.matrix, &bs.vector, &cs.vector, rnorm, snorm, state->multifit_p);
@@ -679,6 +685,22 @@ secs1d_green_df(const double r, const double theta, const size_t pole_idx,
     }
   else
     {
+      double ratio = r / state->R_iono;
+      double rterm = 1.0; /* (r / R)^l */
+
+      for (l = 1; l <= state->lmax; ++l)
+        {
+          double Pltheta0 = gsl_vector_get(&Ptheta0.vector, l);
+
+          /* (r / R)^l */
+          rterm *= ratio;
+
+          B[0] -= rterm / (double)l * Pltheta0 * state->Pl1theta[l];
+          B[2] -= rterm * Pltheta0 * state->Pltheta[l];
+        }
+
+      B[0] *= MAGFIT_MU_0 / (2.0 * r);
+      B[2] *= MAGFIT_MU_0 / (2.0 * r);
     }
 
   return GSL_SUCCESS;

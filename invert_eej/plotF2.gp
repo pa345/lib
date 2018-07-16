@@ -4,8 +4,8 @@
 #
 # Adjust 'logdir' and 'outdir' below
 
-logdir = 'log'
-outdir = 'log/plots'
+logdir = 'log2'
+outdir = 'log2/plots'
 
 cmd = sprintf('mkdir -p %s', outdir)
 tstr = system(cmd)
@@ -92,7 +92,6 @@ set multiplot layout nrow,ncol
 load 'multi_reset.cfg'
 
 set xrange [-60:60]
-#set yrange [-60:80]
 set xlabel "QD latitude (degrees)"
 set ylabel "scalar residual (nT)"
 load 'lines2.cfg'
@@ -110,7 +109,6 @@ unset title
 load 'incrow.cfg'
 
 set xrange [-30:30]
-#set yrange [-20:20]
 #set y2range [-0.25:0.15]
 
 load 'xy2bordercol3.cfg'
@@ -131,7 +129,7 @@ load 'lines.cfg'
 load 'xylogon.cfg'
 
 set xrange [1:1e4]
-set yrange [.1:1e6]
+#set yrange [.1:1e6]
 
 set rmargin at screen 0.45
 
@@ -140,7 +138,8 @@ plot fileSqLcurve us 2:3 index idx w lp lt 5 pt 7 ps 0.3 ti "Sq", \
 
 set lmargin at screen 0.55
 set rmargin at screen right(currentcolumn,ncol,w,l,r,hbuffer)
-set xrange [1e-2:1e3]
+#set xrange [1e-2:1e3]
+set xrange [*:*]
 #set yrange [1e-4:1e10]
 set yrange [*:*]
 unset ylabel

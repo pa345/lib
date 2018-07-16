@@ -16,6 +16,8 @@
 #include <gsl/gsl_multifit.h>
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_test.h>
+#include <gsl/gsl_rng.h>
+#include <gsl/gsl_randist.h>
 
 #include <common/common.h>
 #include <common/interp.h>
@@ -475,6 +477,19 @@ sqfilt_calc_F2(const gsl_vector *c, mag_workspace *w)
   mag_track *track = &(w->track);
   gsl_vector *v = sqfilt_p->work_p;
 
+#if 0
+  /*XXX*/
+  gsl_rng *rng_p = gsl_rng_alloc(gsl_rng_default);
+  const double sigma = 100.0;
+
+  /*XXX*/
+  for (i = 0; i < track->n; ++i)
+    {
+      track->r[i] -= 440.0;
+      track->r[i] += 85.0;
+    }
+#endif
+
   for (i = 0; i < track->n; ++i)
     {
       double r = track->r[i];
@@ -543,7 +558,18 @@ sqfilt_calc_F2(const gsl_vector *c, mag_workspace *w)
       track->X2[i] = track->X1[i] - (track->X_Sq_int[i] + track->X_Sq_ext[i]);
       track->Y2[i] = track->Y1[i] - (track->Y_Sq_int[i] + track->Y_Sq_ext[i]);
       track->Z2[i] = track->Z1[i] - (track->Z_Sq_int[i] + track->Z_Sq_ext[i]);
+
+#if 0
+      /*XXX*/
+      track->F2[i] *= -5.0; /* increase magnitude to simulate 85km signal */
+      track->F2[i] += gsl_ran_gaussian(rng_p, sigma);
+#endif
     }
+
+#if 0
+  /*XXX*/
+  gsl_rng_free(rng_p);
+#endif
 
   return GSL_SUCCESS;
 } /* sqfilt_calc_F2() */
