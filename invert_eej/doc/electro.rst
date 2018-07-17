@@ -138,12 +138,80 @@ with
 
 .. math::
 
-   f_1 &= -\frac{c}{\sin{\theta}} \frac{\sigma_{rr}}{\alpha} \\
-   f_2 &= -\frac{c}{\sin{\theta}} \frac{1}{2 r \alpha} \left( \sigma_{r \theta} + \sigma_{\theta r} \right) \\
-   f_3 &= -\frac{c}{\sin{\theta}} \frac{1}{r^2} \frac{\sigma_{\theta \theta}}{\alpha} \\
-   f_4 &= -\frac{c}{\sin{\theta}} \frac{1}{r} \left[ r \frac{\partial}{\partial r} \left( \frac{\sigma_{rr}}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\sigma_{r \theta}}{\alpha} \right) \right] \\
-   f_5 &= -\frac{c}{\sin{\theta}} \frac{1}{r^2} \left[ r^2 \frac{\partial}{\partial r} \left( \frac{1}{r} \frac{\sigma_{\theta r}}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\sigma_{\theta \theta}}{\alpha} \right) \right] \\
-   g &= -\left[ \frac{R}{\sin{\theta}} \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \frac{R}{r} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} - \\
-     & \qquad \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} T_r - \sigma_{rr} T_{\theta} \right) \right] - \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \right) \right]
-   
-.. \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( -\gamma E_{\phi} - \sigma_{\theta r} T_r + \sigma_{rr} T_{\theta} \right) \right] - \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \beta E_{\phi} + \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \right) \right]
+   f_1 &= r^2 \sigma_{rr} \\
+   f_2 &= \frac{1}{2} r \left( \sigma_{r \theta} + \sigma_{\theta r} \right) \\
+   f_3 &= \sigma_{\theta \theta} \\
+   f_4 &= r \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\sigma_{rr}}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\sigma_{r \theta}}{\alpha} \right) \right] \\
+   f_5 &= \alpha \left[ r^2 \frac{\partial}{\partial r} \left( \frac{1}{r} \frac{\sigma_{\theta r}}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\sigma_{\theta \theta}}{\alpha} \right) \right] \\
+   g &= \left[ \frac{R}{c} r^2 \alpha \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \frac{R}{c} r \sin{\theta} \alpha \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} + \\
+     & \qquad \frac{r^2}{c} \alpha \sin{\theta} \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} T_r - \sigma_{rr} T_{\theta} \right) \right] + \frac{r^2}{c} \alpha \sin{\theta} \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \right) \right]
+
+Based on the expression for :math:`g`, we choose the constant :math:`c` to be
+
+.. math:: c = R^2
+
+which gives
+
+.. math::
+
+   g &= \frac{r}{R} \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} + \\
+     & \qquad \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} T_r - \sigma_{rr} T_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \right) \right] \right\}
+
+and also
+
+.. math::
+
+   J_r &= \left( \frac{R}{r} \right)^2 \frac{1}{\sin{\theta}} \partial_{\theta} \psi \\
+   J_{\theta} &= - \left( \frac{R}{r} \right) \frac{R}{\sin{\theta}} \partial_r \psi
+
+This choice of :math:`c` means that :math:`\psi` has units of current density :math:`A/m^2`.
+
+Nondimensionalization
+=====================
+
+To solve the 2D PDE numerically, we first remove the dimensions. Define
+
+.. math::
+
+   \tilde{\sigma}_{xy} &= \frac{\sigma_{xy}}{\sigma_s} \\
+   \tilde{r} &= \frac{r}{r_s} \\
+   \tilde{E}_{\phi_0} &= \frac{E_{\phi_0}}{E_s} \\
+   \tilde{\psi} &= \frac{\psi}{\psi_s}
+
+where :math:`\sigma_s, r_s, E_s, \psi_s` are constants carrying physical units and the
+:math:`\tilde{x}` quantities are dimensionless. With these definitions, we find
+
+.. math::
+
+   f_1 &= r_s^2 \sigma_s \tilde{f}_1 \\
+   f_2 &= r_s \sigma_s \tilde{f}_2 \\
+   f_3 &= \sigma_s \tilde{f}_3 \\
+   f_4 &= r_s \sigma_s \tilde{f}_4 \\
+   f_5 &= \sigma_s \tilde{f}_5 \\
+   g &= \sigma_s^2 E_s \tilde{g}
+
+The nondimensionalized equation
+
+.. math::
+
+   \tilde{f}_1 \frac{\partial^2 \tilde{\psi}}{\partial \tilde{r}^2} + 2 \tilde{f}_2 \frac{\partial^2 \tilde{\psi}}{\partial \tilde{r} \partial \theta} + \tilde{f}_3 \frac{\partial^2 \tilde{\psi}}{\partial \theta^2} + \tilde{f}_4 \frac{\partial \tilde{\psi}}{\partial \tilde{r}} + \tilde{f}_5 \frac{\partial \tilde{\psi}}{\partial \theta} = \tilde{g}
+
+will be satisfied, provided the following relationship holds:
+
+.. math:: \frac{\sigma_s E_s}{\psi_s} = 1
+
+This means, we have the freedom to choose :math:`r_s` and any two of :math:`\sigma_s,E_s,\psi_s` as we want.
+Then the fourth scale is automatically determined by the equation above. Since
+:math:`\mathbf{T} = \sigma \mathbf{u} \times \mathbf{B}_0` appears in the right hand side
+:math:`g`, we can also define
+
+.. math::
+
+   \tilde{\mathbf{u}} &= \frac{\mathbf{u}}{u_s} \\
+   \tilde{\mathbf{B}_0} &= \frac{\mathbf{B}_0}{B_s}
+
+These factors are constrained by the relation
+
+.. math:: u_s B_s = E_s
+
+so we have the freedom to choose one of :math:`u_s,B_s`.
