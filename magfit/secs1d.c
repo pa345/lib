@@ -441,7 +441,7 @@ secs1d_fit(double * rnorm, double * snorm, void * vstate)
   lambda_l = 1.0e-3*s0;
 
   lambda = lambda_l;
-  lambda = 1.0e-3*s0; /*XXX*/
+  lambda = 5.0e-3*s0; /*XXX*/
 
   /* solve regularized system with lambda */
   gsl_multifit_linear_solve(lambda, &As.matrix, &bs.vector, &cs.vector, rnorm, snorm, state->multifit_p);
