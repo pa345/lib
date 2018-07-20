@@ -116,11 +116,11 @@ pde_thidx(double theta, pde_workspace *w)
 inline static double
 E_phi(size_t i, size_t j, pde_workspace *w)
 {
-  double r = pde_r_km(i, w);
-  double theta = pde_theta(j, w);
+  const double r = pde_r_m(i, w);
+  const double theta = pde_theta(j, w);
   double Ep;
 
-  Ep = R_BOTTOM * w->E_phi0 / r / sin(theta) / w->E_s;
+  Ep = 1.0 / sin(theta) * (w->R / r) * (w->E_phi0 / w->E_s);
 
   return Ep;
 }

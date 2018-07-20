@@ -110,6 +110,7 @@ mag_alloc(mag_params *params)
     pde_params.theta_max = 115.0 * M_PI / 180.0;
     pde_params.ntheta = 101;
     pde_params.f107_file = params->f107_file;
+    pde_params.R = R_EARTH_M + 110.0e3;
 
     w->pde_workspace_p = pde_alloc(&pde_params);
 
@@ -610,6 +611,7 @@ mag_proc(const mag_params *params, track_workspace *track_p,
 
       /* log electric field and current density grids */
       mag_log_fields(0, w);
+      exit(1);
 
       if (s)
         {

@@ -95,22 +95,22 @@ The two components :math:`J_r` and :math:`J_{\theta}` can be written in terms of
    J_r &= \frac{c}{r^2 \sin{\theta}} \partial_{\theta} \psi \\
    J_{\theta} &= -\frac{c}{r \sin{\theta}} \partial_r \psi
 
-where :math:`c` is an arbitrary constant. Let :math:`\mathbf{T} = \sigma \left( \mathbf{u} \times \mathbf{B}_0 \right)`. Then
+where :math:`c` is an arbitrary constant. Let :math:`\mathbf{W} = \sigma \left( \mathbf{u} \times \mathbf{B}_0 \right)`. Then
 Ohm's law :math:`\mathbf{J} = \sigma \left( \mathbf{E} + \mathbf{u} \times \mathbf{B}_0 \right)` becomes
 
 .. math::
 
-   J_r &= \sigma_{rr} E_r + \sigma_{r\theta} E_{\theta} + \sigma_{r \phi} E_{\phi} + T_r \\
-   J_{\theta} &= \sigma_{\theta r} E_r + \sigma_{\theta \theta} E_{\theta} + \sigma_{\theta \phi} E_{\phi} + T_{\theta} \\
-   J_{\phi} &= \sigma_{\phi r} E_r + \sigma_{\phi \theta} E_{\theta} + \sigma_{\phi \phi} E_{\phi} + T_{\phi}
+   J_r &= \sigma_{rr} E_r + \sigma_{r\theta} E_{\theta} + \sigma_{r \phi} E_{\phi} + W_r \\
+   J_{\theta} &= \sigma_{\theta r} E_r + \sigma_{\theta \theta} E_{\theta} + \sigma_{\theta \phi} E_{\phi} + W_{\theta} \\
+   J_{\phi} &= \sigma_{\phi r} E_r + \sigma_{\phi \theta} E_{\theta} + \sigma_{\phi \phi} E_{\phi} + W_{\phi}
 
 Taking the combinations :math:`\sigma_{\theta \theta} J_r - \sigma_{r \theta} J_{\theta}` and
 :math:`\sigma_{\theta r} J_r - \sigma_{rr} J_{\theta}` yields
 
 .. math::
    
-   \sigma_{\theta \theta} J_r - \sigma_{r \theta} J_{\theta} &= \alpha E_r + \beta E_{\phi} + \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \\
-   \sigma_{\theta r} J_r - \sigma_{rr} J_{\theta} &= -\alpha E_{\theta} + \gamma E_{\phi} + \sigma_{\theta r} T_r - \sigma_{rr} T_{\theta}
+   \sigma_{\theta \theta} J_r - \sigma_{r \theta} J_{\theta} &= \alpha E_r + \beta E_{\phi} + \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \\
+   \sigma_{\theta r} J_r - \sigma_{rr} J_{\theta} &= -\alpha E_{\theta} + \gamma E_{\phi} + \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta}
 
 with
 
@@ -124,8 +124,8 @@ Rearranging slightly gives
 
 .. math::
 
-   E_r &= \frac{1}{\alpha} \left( \sigma_{\theta \theta} J_r - \sigma_{r \theta} J_{\theta} - \beta E_{\phi} - \sigma_{\theta \theta} T_r + \sigma_{r \theta} T_{\theta} \right) \\
-   r E_{\theta} &= -\frac{r}{\alpha} \left( \sigma_{\theta r} J_r - \sigma_{rr} J_{\theta} - \gamma E_{\phi} - \sigma_{\theta r} T_r + \sigma_{rr} T_{\theta} \right)
+   E_r &= \frac{1}{\alpha} \left( \sigma_{\theta \theta} J_r - \sigma_{r \theta} J_{\theta} - \beta E_{\phi} - \sigma_{\theta \theta} W_r + \sigma_{r \theta} W_{\theta} \right) \\
+   E_{\theta} &= -\frac{1}{\alpha} \left( \sigma_{\theta r} J_r - \sigma_{rr} J_{\theta} - \gamma E_{\phi} - \sigma_{\theta r} W_r + \sigma_{rr} W_{\theta} \right)
 
 Finally, the condition :math:`\partial_r(r E_{\theta}) - \partial_{\theta}(E_r) = 0` gives a 2D linear
 partial differential equation for the stream function :math:`\psi`,
@@ -143,8 +143,8 @@ with
    f_3 &= \sigma_{\theta \theta} \\
    f_4 &= r \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\sigma_{rr}}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\sigma_{r \theta}}{\alpha} \right) \right] \\
    f_5 &= \alpha \left[ r^2 \frac{\partial}{\partial r} \left( \frac{1}{r} \frac{\sigma_{\theta r}}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\sigma_{\theta \theta}}{\alpha} \right) \right] \\
-   g &= \left[ \frac{R}{c} r^2 \alpha \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \frac{R}{c} r \sin{\theta} \alpha \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} + \\
-     & \qquad \frac{r^2}{c} \alpha \sin{\theta} \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} T_r - \sigma_{rr} T_{\theta} \right) \right] + \frac{r^2}{c} \alpha \sin{\theta} \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \right) \right]
+   g &= \frac{R}{c} r \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} + \\
+     & \qquad \frac{r^2}{c} \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \right) \right] \right\}
 
 Based on the expression for :math:`g`, we choose the constant :math:`c` to be
 
@@ -155,7 +155,7 @@ which gives
 .. math::
 
    g &= \frac{r}{R} \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} + \\
-     & \qquad \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} T_r - \sigma_{rr} T_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} T_r - \sigma_{r \theta} T_{\theta} \right) \right] \right\}
+     & \qquad \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \right) \right] \right\}
 
 and also
 
@@ -202,7 +202,7 @@ will be satisfied, provided the following relationship holds:
 
 This means, we have the freedom to choose :math:`r_s` and any two of :math:`\sigma_s,E_s,\psi_s` as we want.
 Then the fourth scale is automatically determined by the equation above. Since
-:math:`\mathbf{T} = \sigma \mathbf{u} \times \mathbf{B}_0` appears in the right hand side
+:math:`\mathbf{W} = \sigma \mathbf{u} \times \mathbf{B}_0` appears in the right hand side
 :math:`g`, we can also define
 
 .. math::

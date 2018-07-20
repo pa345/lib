@@ -60,10 +60,6 @@
  */
 #define PDE_USE_LSE
 
-/* r and theta step sizes in meters and radians */
-
-#define R_BOTTOM             (R_EARTH_KM + 80.0)
-
 /* indices of basis variables for matrices */
 #define IDX_R                0
 #define IDX_THETA            1
@@ -77,6 +73,7 @@ typedef struct
   double rmax;       /* maximum radius in m */
   double theta_min;  /* minimum theta in radians */
   double theta_max;  /* maximum theta in radians */
+  double R;          /* reference radius in m */
   char *f107_file;   /* f10.7 data file */
 } pde_parameters;
 
@@ -88,6 +85,7 @@ typedef struct
   double rmin;       /* minimum radius in m */
   double rmax;       /* maximum radius in m */
   double dr;         /* radius step size in m */
+  double R;          /* reference radius in m */
 
   double theta_min;  /* minimum theta in radians */
   double theta_max;  /* maximum theta in radians */
@@ -140,16 +138,19 @@ typedef struct
   double *beta;
   double *gamma;
 
-  /* pde coefficients */
+  /* pde coefficients, size nr*ntheta */
   double *f1;
   double *f2;
   double *f3;
   double *f4;
   double *f5;
-  double *f6;
 
-  /* pde difference coefficients */
-  double *DC[9];
+  /* pde right hand side, size nr*ntheta */
+  double *g;
+
+  /* (r,theta) components of W = sigma * (U x B), size nr*ntheta */
+  double *W_r;
+  double *W_t;
 
   double E_phi0;     /* eastward electric field in V/m */
   int compute_winds; /* use winds in PDE solution? */
@@ -188,6 +189,5 @@ pde_workspace *pde_alloc(pde_parameters *params);
 void pde_free(pde_workspace *w);
 int pde_proc(const time_t t, const double longitude,
              pde_workspace *w);
-int pde_solve(int compute_winds, double E_phi0, pde_workspace *w);
 
 #endif /* INCLUDED_pde_h */

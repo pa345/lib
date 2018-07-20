@@ -668,32 +668,55 @@ mag_log_grids(const int header, const mag_workspace *w)
     {
       /* print header information */
       i = 1;
-      log_proc(w->log_grids, "# Field %zu: radius (km)\n", i++);
       log_proc(w->log_grids, "# Field %zu: latitude (degrees)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: f1(r,theta)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: f2(r,theta)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: f3(r,theta)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: f4(r,theta)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: f5(r,theta)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: f6(r,theta)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: radius (km)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: direct conductivity (S/m)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: Pedersen conductivity (S/m)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: Hall conductivity (S/m)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: meridional wind (u_theta) (m/s)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: zonal wind (u_phi) (m/s)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: alpha(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: beta(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: gamma(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: [sigma U x B]_r (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: [sigma U x B]_t (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f1(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f2(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f3(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f4(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: f5(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: g(r,theta) (dimensionless)\n", i++);
       return s;
     }
 
-  for (i = 0; i < pde_p->nr; ++i)
+  for (j = 0; j < pde_p->ntheta; ++j)
     {
-      for (j = 0; j < pde_p->ntheta; ++j)
+      for (i = 0; i < pde_p->nr; ++i)
         {
           size_t k = PDE_IDX(i, j, pde_p);
+          double s0, s1, s2;
 
-          log_proc(w->log_grids, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e\n",
-                   pde_r_km(i, pde_p) - R_EARTH_KM,
+          sigma_result(i, j, &s0, &s1, &s2, pde_p->sigma_workspace_p);
+
+          log_proc(w->log_grids, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
                    90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
+                   pde_r_km(i, pde_p) - R_EARTH_KM,
+                   s0,
+                   s1,
+                   s2,
+                   pde_p->mwind[k] * pde_p->U_s,
+                   pde_p->zwind[k] * pde_p->U_s,
+                   pde_p->alpha[k],
+                   pde_p->beta[k],
+                   pde_p->gamma[k],
+                   pde_p->W_r[k],
+                   pde_p->W_t[k],
                    pde_p->f1[k],
                    pde_p->f2[k],
                    pde_p->f3[k],
                    pde_p->f4[k],
                    pde_p->f5[k],
-                   pde_p->f6[k]);
+                   pde_p->g[k]);
         }
 
       log_proc(w->log_grids, "\n");
@@ -724,8 +747,8 @@ mag_log_fields(const int header, const mag_workspace *w)
     {
       /* print header information */
       i = 1;
-      log_proc(w->log_fields, "# Field %zu: radius (km)\n", i++);
       log_proc(w->log_fields, "# Field %zu: latitude (degrees)\n", i++);
+      log_proc(w->log_fields, "# Field %zu: radius (km)\n", i++);
       log_proc(w->log_fields, "# Field %zu: psi(r,theta) [A]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_r(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_theta(r,theta) [A/m^2]\n", i++);
@@ -736,13 +759,13 @@ mag_log_fields(const int header, const mag_workspace *w)
       return s;
     }
 
-  for (i = 0; i < pde_p->nr; ++i)
+  for (j = 0; j < pde_p->ntheta; ++j)
     {
-      for (j = 0; j < pde_p->ntheta; ++j)
+      for (i = 0; i < pde_p->nr; ++i)
         {
           log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
-                   pde_r_km(i, pde_p) - R_EARTH_KM,
                    90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
+                   pde_r_km(i, pde_p) - R_EARTH_KM,
                    PSI_GET(pde_p->psi, i, j, pde_p) * pde_p->psi_s,
                    gsl_matrix_get(pde_p->J_r, i, j) * pde_p->J_s,
                    gsl_matrix_get(pde_p->J_theta, i, j) * pde_p->J_s,

@@ -20,12 +20,65 @@
 #include "superlu.h"
 
 void
-test_vectors(double *x, double *x_exact, int n)
+test_vectors(const double tol, const gsl_vector *x, const gsl_vector *x_exact)
 {
-  int i;
+  size_t i;
 
-  for (i = 0; i < n; ++i)
-    gsl_test_rel(x[i], x_exact[i], 1.0e-7, "n = %d, i = %d", n, i);
+  for (i = 0; i < x->size; ++i)
+    {
+      double xi = gsl_vector_get(x, i);
+      double yi = gsl_vector_get(x_exact, i);
+      gsl_test_rel(xi, yi, tol, "n = %zu, i = %d", x->size, i);
+    }
+}
+
+/*
+create_random_sparse()
+  Create a random sparse matrix with approximately
+M*N*density non-zero entries
+
+Inputs: M       - number of rows
+        N       - number of columns
+        density - sparse density \in [0,1]
+                  0 = no non-zero entries
+                  1 = all m*n entries are filled
+        r       - random number generator
+
+Return: pointer to sparse matrix in triplet format (must be freed by caller)
+
+Notes:
+1) non-zero matrix entries are uniformly distributed in [0,1]
+*/
+
+static gsl_spmatrix *
+create_random_sparse(const size_t M, const size_t N, const double density,
+                     const gsl_rng *r)
+{
+  size_t nnzwanted = (size_t) floor(M * N * GSL_MIN(density, 1.0));
+  gsl_spmatrix *m = gsl_spmatrix_alloc_nzmax(M, N,
+                                             nnzwanted,
+                                             GSL_SPMATRIX_TRIPLET);
+  size_t i, j;
+
+  /* set all diagonal elements */
+  for (i = 0; i < M; ++i)
+    {
+      double x = gsl_rng_uniform(r);
+      gsl_spmatrix_set(m, i, i, x);
+    }
+
+  while (gsl_spmatrix_nnz(m) < nnzwanted)
+    {
+      double x = gsl_rng_uniform(r);
+
+      /* generate a random row and column */
+      i = gsl_rng_uniform(r) * M;
+      j = gsl_rng_uniform(r) * N;
+
+      gsl_spmatrix_set(m, i, j, x);
+    }
+
+  return m;
 }
 
 void
@@ -79,68 +132,74 @@ create_random_vector(gsl_vector *v, gsl_rng *r, double lower, double upper)
 }
 
 void
-test_superlu()
+test_superlu(const size_t nrhs)
 {
-  const int N_max = 100;
+  const int N_max = 50;
+  const int nprocs = 1;
   int n, i;
   gsl_rng *r = gsl_rng_alloc(gsl_rng_default);
 
-  for (n = 1; n <= N_max; ++n)
+  for (n = nrhs; n <= N_max; ++n)
     {
-      gsl_spmatrix *S = gsl_spmatrix_alloc(n, n);
-      gsl_spmatrix *C;
       gsl_matrix *A = gsl_matrix_alloc(n, n);
-      gsl_matrix *A_copy = gsl_matrix_alloc(n, n);
-      gsl_vector *rhs = gsl_vector_alloc(n);
-      gsl_permutation *p = gsl_permutation_alloc(n);
-      gsl_vector *x_gsl = gsl_vector_alloc(n);
-      gsl_vector *x_slu = gsl_vector_alloc(n);
-      slu_workspace *w = slu_alloc(n, n, 1);
-      double scale = gsl_rng_uniform(r);
-      int s;
+      gsl_matrix *B = gsl_matrix_alloc(n, nrhs);
+      gsl_matrix *X = gsl_matrix_alloc(n, nrhs);
+      gsl_matrix *T = gsl_matrix_alloc(n, nrhs);
+      slu_workspace *w = slu_alloc(n, n, nprocs, nrhs);
 
-      for (i = 0; i < 50; ++i)
+      for (i = 0; i < 20; ++i)
         {
-          create_random_sparse_matrix(A, r, -10.0, 10.0);
-          create_random_vector(rhs, r, -10.0, 10.0);
+          gsl_spmatrix *S = create_random_sparse(n, n, 0.1, r);
+          gsl_spmatrix *C = gsl_spmatrix_ccs(S);
+          size_t j;
 
-          gsl_matrix_memcpy(A_copy, A);
+          for (j = 0; j < nrhs; ++j)
+            {
+              gsl_vector_view bj = gsl_matrix_column(B, j);
+              create_random_vector(&bj.vector, r, -10.0, 10.0);
+            }
 
-          gsl_linalg_LU_decomp(A, p, &s);
-          gsl_linalg_LU_solve(A, p, rhs, x_gsl);
+          slu_proc(C, B, X, w);
 
-          gsl_matrix_memcpy(A, A_copy);
+          /* form T = A X */
+          gsl_spmatrix_sp2d(A, S);
+          gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, A, X, 0.0, T);
 
-          /* convert dense matrix to sparse (triplet) format */
-          gsl_spmatrix_d2sp(S, A);
+          for (j = 0; j < nrhs; ++j)
+            {
+              gsl_vector_view bj = gsl_matrix_column(B, j);
+              gsl_vector_view tj = gsl_matrix_column(T, j);
+              test_vectors(1.0e-7, &tj.vector, &bj.vector);
+            }
 
-          /* convert to compressed column format */
-          C = gsl_spmatrix_compcol(S);
+          /* T = A X - B */
+          gsl_matrix_sub(T, B);
 
-          gsl_spmatrix_scale(C, scale);
-          slu_proc(C, rhs->data, x_slu->data, w);
-          gsl_vector_scale(x_slu, scale);
+          for (j = 0; j < nrhs; ++j)
+            {
+              gsl_vector_view tj = gsl_matrix_column(T, j);
+              double rnorm = gsl_blas_dnrm2(&tj.vector);
 
-          gsl_test_abs(w->rnorm, 0.0, 1.0e-8, "residual n = %zu, i = %zu cond = %.12e",
-                       n, i, 1.0 / w->rcond);
+              gsl_test_abs(w->rnorm[j], rnorm, 1.0e-8, "residual n = %zu, i = %zu cond = %.12e",
+                           n, i, 1.0 / w->rcond);
 
-          test_vectors(x_slu->data, x_gsl->data, n);
+              gsl_test_abs(w->rnorm[j], 0.0, 1.0e-8, "residual n = %zu, i = %zu cond = %.12e",
+                           n, i, 1.0 / w->rcond);
+            }
 
+          gsl_spmatrix_free(S);
           gsl_spmatrix_free(C);
         }
 
-      gsl_spmatrix_free(S);
       gsl_matrix_free(A);
-      gsl_matrix_free(A_copy);
-      gsl_vector_free(rhs);
-      gsl_vector_free(x_gsl);
-      gsl_vector_free(x_slu);
-      gsl_permutation_free(p);
+      gsl_matrix_free(B);
+      gsl_matrix_free(X);
+      gsl_matrix_free(T);
       slu_free(w);
     }
 
   gsl_rng_free(r);
-} /* test_superlu() */
+}
 
 int
 main()
@@ -152,6 +211,8 @@ main()
   const int n = 5;
   double rhs[m];
   double sol[n];
+  gsl_matrix_view B = gsl_matrix_view_array(rhs, m, 1);
+  gsl_matrix_view X = gsl_matrix_view_array(sol, n, 1);
   int nprocs;
   double s, u, p, e, r, l;
   double min, max;
@@ -169,7 +230,7 @@ main()
   for (i = 0; i < (size_t) n; ++i)
     rhs[i] = 1.0;
 
-  sw = slu_alloc(m, n, nprocs);
+  sw = slu_alloc(m, n, nprocs, 1);
   A = gsl_spmatrix_alloc(m, n);
 
   gsl_spmatrix_set(A, 0, 0, s);
@@ -188,11 +249,15 @@ main()
   gsl_spmatrix_minmax(A, &min, &max);
   fprintf(stderr, "min = %f, max = %f\n", min, max);
 
-  C = gsl_spmatrix_compcol(A);
+  C = gsl_spmatrix_ccs(A);
 
-  slu_proc(C, rhs, sol, sw);
+  slu_proc(C, &B.matrix, &X.matrix, sw);
 
-  test_vectors(sol, x, n);
+  {
+    gsl_vector_view xv = gsl_vector_view_array(x, n);
+    gsl_vector_view solv = gsl_matrix_column(&X.matrix, 0);
+    test_vectors(1.0e-8, &solv.vector, &xv.vector);
+  }
 
   printf("sol = [\n");
   for (i = 0; i < (size_t) n; ++i)
@@ -202,7 +267,10 @@ main()
   printf("residual = %.12e\n", slu_residual(sw));
   printf("cond(A)  = %.12e\n", 1.0 / sw->rcond);
 
-  test_superlu();
+  test_superlu(1);
+  test_superlu(2);
+  test_superlu(3);
+  test_superlu(10);
 
   slu_free(sw);
   gsl_spmatrix_free(A);
