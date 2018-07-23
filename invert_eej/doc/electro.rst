@@ -154,10 +154,12 @@ which gives
 
 .. math::
 
-   g &= \frac{r}{R} \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] E_{\phi_0} + \\
-     & \qquad \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \right) \right] \right\}
+   g &= E_{\phi_0} g_1 + g_2(\mathbf{u}) \\
+   g_1 &= \frac{r}{R} \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] \\
+   g_2(\mathbf{u}) &= \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \right) \right] \right\}
 
-and also
+Recall that :math:`\mathbf{W} = \sigma \left( \mathbf{u} \times \mathbf{B}_0 \right)` and so :math:`g_2(\mathbf{u})` is
+linear in :math:`\mathbf{u}`. Also, we have
 
 .. math::
 
@@ -215,3 +217,22 @@ These factors are constrained by the relation
 .. math:: u_s B_s = E_s
 
 so we have the freedom to choose one of :math:`u_s,B_s`.
+
+Solution
+========
+
+Let
+
+.. math:: \boldsymbol{A} \boldsymbol{\psi} = \boldsymbol{g} = \tilde{E}_{\phi_0} \boldsymbol{g}_1 + \boldsymbol{g}_2
+
+where :math:`\boldsymbol{A}` is the sparse matrix representation of the operator
+
+.. math::
+
+   \tilde{A} = \tilde{f}_1 \frac{\partial^2}{\partial \tilde{r}^2} + 2 \tilde{f}_2 \frac{\partial^2}{\partial \tilde{r} \partial \theta} + \tilde{f}_3 \frac{\partial^2}{\partial \theta^2} + \tilde{f}_4 \frac{\partial}{\partial \tilde{r}} + \tilde{f}_5 \frac{\partial}{\partial \theta}
+
+Then the solution is
+
+.. math:: \boldsymbol{\psi} = \tilde{E}_{\phi_0} \boldsymbol{\psi}_1 + \boldsymbol{\psi}_2
+
+with :math:`\boldsymbol{\psi}_1 = \boldsymbol{A}^{-1} \boldsymbol{g_1}` and :math:`\boldsymbol{\psi}_2 = \boldsymbol{A}^{-1} \boldsymbol{g_2}`.

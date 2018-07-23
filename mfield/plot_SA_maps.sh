@@ -5,9 +5,13 @@ set term pngcairo enh col size 1000,1000
 mapprog="$DATAHOME/palken/msynth-1.0/src/print_map"
 plotprog="$DATAHOME/palken/msynth-1.0/src/plots/genmap.sh"
 
-coefdir="coef_F17"
-outfile="F17.mp4"
-title="DMSP F-17"
+#coefdir="coef_F17"
+#outfile="F17.mp4"
+#title="DMSP F-17"
+
+coefdir="coef"
+outfile="SA"
+title="CHAMP+DMSP+Swarm"
 
 plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
 
@@ -17,7 +21,7 @@ nmax="6"
 idx=1
 for f in $(ls ${coefdir}/coef*.txt); do
   bname=$(basename $f ".txt")
-  istr=$(seq -f "%02g" $idx $idx)
+  istr=$(seq -f "%03g" $idx $idx)
   outfile="${coefdir}/map.${istr}.png"
 
   # extract epoch and round to 2 decimal places
@@ -33,4 +37,4 @@ for f in $(ls ${coefdir}/coef*.txt); do
   idx=$((idx+1))
 done
 
-#ffmpeg -framerate 4 -i map.%02d.png -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf fps=25 ${outfile}
+#ffmpeg -framerate 4 -i map.%03d.png -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf fps=25 ${outfile}

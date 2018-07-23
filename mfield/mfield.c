@@ -180,6 +180,9 @@ mfield_alloc(const mfield_parameters *params)
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
           double t0, t1, dt;
 
+          if (!(mptr->global_flags & MAGDATA_GLOBFLG_EULER))
+            continue;
+
           magdata_t(&t0, &t1, mptr);
           dt = (t1 - t0) / 86400000.0; /* convert to days */
 

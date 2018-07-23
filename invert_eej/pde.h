@@ -19,6 +19,7 @@
 #include "mageq.h"
 
 #include "sigma.h"
+#include "superlu.h"
 
 /*****************************************
  * PDE solution parameters               *
@@ -64,6 +65,10 @@
 #define IDX_R                0
 #define IDX_THETA            1
 #define IDX_PHI              2
+
+/* PDE flags */
+#define PDE_FLG_RHS_G1       (1 << 0) /* compute g1 part of rhs */
+#define PDE_FLG_RHS_G2       (1 << 1) /* compute g2 part of rhs */
 
 typedef struct
 {
@@ -115,11 +120,13 @@ typedef struct
   double *Bf_main;  /* total main field intensity in T */
 
   gsl_spmatrix *S; /* sparse pde matrix */
-  gsl_vector *b;   /* rhs vector */
+  gsl_matrix *B;   /* rhs vectors, nr*ntheta-by-nrhs; B(:,1) = g1, B(:,2) = g2 */
+  gsl_matrix *X;   /* PDE solution, nr*ntheta-by-nrhs */
   gsl_vector *psi; /* pde solution, size nr*ntheta */
   double residual; /* residual ||A*psi - b|| */
   double rrnorm;   /* relative residual ||b - A*psi|| / ||b|| */
   double rcond;    /* reciprical condition number */
+  size_t nrhs;     /* number of right hand sides */
 
   gsl_matrix *J_r;     /* J_r current solution (A/m^2) */
   gsl_matrix *J_theta; /* J_theta current solution (A/m^2) */
@@ -147,6 +154,8 @@ typedef struct
 
   /* pde right hand side, size nr*ntheta */
   double *g;
+  double *g1; /* term multiplying E_phi0 */
+  double *g2; /* wind term */
 
   /* (r,theta) components of W = sigma * (U x B), size nr*ntheta */
   double *W_r;
@@ -167,12 +176,15 @@ typedef struct
   double psi_s;
   double J_s;
 
+  size_t flags; /* PDE_FLG_xxx */
+
   int myid;   /* MPI id */
 
   hwm_workspace *hwm_workspace_p;
   mageq_workspace *mageq_workspace_p;
   msynth_workspace *msynth_workspace_p;
   sigma_workspace *sigma_workspace_p;
+  slu_workspace *superlu_workspace_p;
   gsl_pde2d_workspace *gsl_pde2d_workspace_p;
 } pde_workspace;
 
