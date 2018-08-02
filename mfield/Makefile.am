@@ -7,7 +7,7 @@ common_libs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libt
 mfield_SOURCES = mfield.c mfield_data.c mfield_error.c mfield_green.c mfield_main.c mfield_residual.c mfield_synth.c
 mfield_CFLAGS = -fopenmp
 mfield_LDFLAGS = -fopenmp
-mfield_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lfftw3 -lconfig ${common_libs}
+mfield_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lfftw3 -lconfig -lspatwt ${common_libs}
 
 mfield_emag_SOURCES = mfield_emag.c
 mfield_emag_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/track/libtrack.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lcommon -lmsynth -lm -llapack -lcdf -lsatdata -lindices -lfftw3 -lgfortran -lpthread -L/home/palken/usr/lib -lgsl -lptcblas -lptf77blas -latlas -lz

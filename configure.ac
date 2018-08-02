@@ -18,6 +18,7 @@ AC_SUBST(DATAHOME)
 
 AC_CONFIG_FILES([            \
   Makefile                   \
+  backus/Makefile            \
   champ/Makefile             \
   cond/Makefile              \
   curvefit/Makefile          \

@@ -1,6 +1,7 @@
 # The order of these directories is important, as some
 # directories need to be built before others
 SUBDIRS =         \
+  backus          \
   curvefit        \
   efi             \
   ephemeris       \

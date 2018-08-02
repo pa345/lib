@@ -8,6 +8,7 @@
 #include <gsl/gsl_filter.h>
 
 #include "peak.h"
+#include "track.h"
 
 typedef struct
 {
@@ -29,5 +30,7 @@ jump_workspace *jump_alloc(const size_t n, const size_t K);
 void jump_free(jump_workspace * w);
 int jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_idx, size_t njump[3],
               satdata_mag * data, jump_workspace * w);
+int jump_proc2(const int header, FILE *fp, size_t njump[3], track_data *tptr,
+               satdata_mag * data, jump_workspace * w);
 
 #endif /* INCLUDED_jump_h */

@@ -611,11 +611,16 @@ mfield_init_nonlinear(mfield_workspace *w)
             if (MAGDATA_Discarded(mptr->flags[j]))
               continue;
 
+#if 0
             track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
 
             /* XXX: spatial weighting for observatories gives nan values */
             if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
               wt = 1.0;
+#else
+            spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwt_workspace_p);
+            wt = 1.0;
+#endif
 
             if (MAGDATA_ExistX(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_X * wt);

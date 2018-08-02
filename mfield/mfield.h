@@ -16,6 +16,8 @@
 #include <gsl/gsl_histogram.h>
 #include <gsl/gsl_eigen.h>
 
+#include <spatwt/spatwt.h>
+
 #include "mfield_data.h"
 #include "mfield_green.h"
 
@@ -239,6 +241,7 @@ typedef struct
   mfield_green_workspace *green_workspace_p;
   mfield_data_workspace *data_workspace_p;
   track_weight_workspace *weight_workspace_p;
+  spatwt_workspace *spatwt_workspace_p;
   green_workspace *green_workspace_p2;
   gsl_eigen_symm_workspace *eigen_workspace_p;
 } mfield_workspace;

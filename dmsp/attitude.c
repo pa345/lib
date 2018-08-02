@@ -1,3 +1,13 @@
+/*
+ * attitude.c
+ *
+ * Perform a rough attitude correction for the X/Y components of DMSP data
+ *
+ * For each track, the following model is fitted:
+ *
+ * delta = c1 * sin(c2 * theta + c3)
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>

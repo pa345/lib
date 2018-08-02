@@ -942,7 +942,12 @@ pde_scales(sigma_workspace *sigma_p, pde_workspace *w)
   w->B_s = 5.0e-5;  /* T */
 
   sigma_max(&s0_max, &s1_max, &s2_max, sigma_p);
+
+#if 1
   w->sigma_s = GSL_MAX(s1_max, s2_max);
+#else
+  w->sigma_s = pow(10.0, 0.5*(log10(s0_max) + log10(GSL_MAX(s1_max, s2_max))));
+#endif
 
   w->U_s = w->E_s / w->B_s;
 

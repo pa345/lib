@@ -25,6 +25,7 @@
 
 #include "jump.h"
 #include "peak.h"
+#include "track.h"
 
 #include "yuen.c"
 
@@ -223,6 +224,7 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
     {
       i = 1;
       fprintf(fp, "# Field %zu: timestamp (UT seconds since 1970-01-01 00:00:00 UTC)\n", i++);
+      fprintf(fp, "# Field %zu: geocentric latitude (degrees)\n", i++);
       fprintf(fp, "# Field %zu: QD latitude (degrees)\n", i++);
       fprintf(fp, "# Field %zu: original X VFM residual (nT)\n", i++);
       fprintf(fp, "# Field %zu: original Y VFM residual (nT)\n", i++);
@@ -291,13 +293,18 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
           double *B_VFM = &(data->B_VFM[3 * didx]);
           double B_model[4], B_model_VFM[3];
 
+          /* separate tracks with newlines */
+          if (didx > 0 && data->flags[didx] & SATDATA_FLG_TRACK_START)
+            fprintf(fp, "\n\n");
+
           satdata_mag_model(didx, B_model, data);
 
           /* rotate B_model into VFM frame */
           quat_apply_inverse(q, B_model, B_model_VFM);
 
-          fprintf(fp, "%ld %8.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %d %d %d %10.4f %10.4f %10.4f\n",
+          fprintf(fp, "%ld %8.4f %8.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %d %d %d %10.4f %10.4f %10.4f\n",
                   satdata_epoch2timet(data->t[didx]),
+                  data->latitude[didx],
                   data->qdlat[didx],
                   gsl_vector_get(&input[0].vector, i),
                   gsl_vector_get(&input[1].vector, i),
@@ -312,8 +319,6 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
                   B_VFM[1] - B_model_VFM[1],
                   B_VFM[2] - B_model_VFM[2]);
         }
-
-      fprintf(fp, "\n\n");
     }
 
   for (i = 0; i < 3; ++i)

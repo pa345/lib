@@ -1186,6 +1186,9 @@ main(int argc, char *argv[])
   if (!mfield_params.fit_mf)
     {
       data_params.fit_X = data_params.fit_Y = data_params.fit_Z = data_params.fit_F = 0;
+      data_params.fit_Z_highlat = data_params.fit_F_highlat = 0;
+      data_params.fit_DZ_NS_highlat = data_params.fit_DF_NS_highlat = 0;
+      data_params.fit_DZ_EW_highlat = data_params.fit_DF_EW_highlat = 0;
       data_params.fit_DX_NS = data_params.fit_DY_NS = data_params.fit_DZ_NS = data_params.fit_DF_NS = 0;
       data_params.fit_DX_EW = data_params.fit_DY_EW = data_params.fit_DZ_EW = data_params.fit_DF_EW = 0;
     }

@@ -2,7 +2,7 @@
 
 /*
 stage2_calibrate()
-  Perform scalar calibration on all unflagged satellite data
+  Calculate scalar calibration parameters for all unflagged satellite data
 
 Inputs: data    - satellite data
         track_p - track workspace
@@ -13,6 +13,8 @@ Return: success/error
 
 Notes:
 1) All unflagged points in 'data' are input to the scalar calibration
+
+2) Satellite dataset is left unmodified (calibration is not applied to data)
 */
 
 int

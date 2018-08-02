@@ -187,24 +187,24 @@ print_parameters(FILE *fp, const int header, const gsl_vector *c, const time_t t
       fprintf(fp, "# Field %zu: offset X\n", i++);
       fprintf(fp, "# Field %zu: offset Y\n", i++);
       fprintf(fp, "# Field %zu: offset Z\n", i++);
-      fprintf(fp, "# Field %zu: angle AXY (degrees)\n", i++);
-      fprintf(fp, "# Field %zu: angle AXZ (degrees)\n", i++);
-      fprintf(fp, "# Field %zu: angle AYZ (degrees)\n", i++);
+      fprintf(fp, "# Field %zu: angle U1 (degrees)\n", i++);
+      fprintf(fp, "# Field %zu: angle U2 (degrees)\n", i++);
+      fprintf(fp, "# Field %zu: angle U3 (degrees)\n", i++);
       return s;
     }
 
   fprintf(fp, "%ld %f %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
           t,
           rms,
-          gsl_vector_get(c, MAGCAL_IDX_SX),
-          gsl_vector_get(c, MAGCAL_IDX_SY),
-          gsl_vector_get(c, MAGCAL_IDX_SZ),
-          gsl_vector_get(c, MAGCAL_IDX_OX),
-          gsl_vector_get(c, MAGCAL_IDX_OY),
-          gsl_vector_get(c, MAGCAL_IDX_OZ),
-          gsl_vector_get(c, MAGCAL_IDX_AXY) * 180.0 / M_PI,
-          gsl_vector_get(c, MAGCAL_IDX_AXZ) * 180.0 / M_PI,
-          gsl_vector_get(c, MAGCAL_IDX_AYZ) * 180.0 / M_PI);
+          gsl_vector_get(c, FLUXCAL_IDX_SX),
+          gsl_vector_get(c, FLUXCAL_IDX_SY),
+          gsl_vector_get(c, FLUXCAL_IDX_SZ),
+          gsl_vector_get(c, FLUXCAL_IDX_OX),
+          gsl_vector_get(c, FLUXCAL_IDX_OY),
+          gsl_vector_get(c, FLUXCAL_IDX_OZ),
+          gsl_vector_get(c, FLUXCAL_IDX_U1) * 180.0 / M_PI,
+          gsl_vector_get(c, FLUXCAL_IDX_U2) * 180.0 / M_PI,
+          gsl_vector_get(c, FLUXCAL_IDX_U3) * 180.0 / M_PI);
 
   fflush(fp);
 
@@ -496,6 +496,148 @@ preclean_proc(FILE *fp_spike, FILE *fp_jump, const size_t start_idx, const size_
 }
 
 /*
+preclean_jumps()
+  Detect and remove jumps due to spacecraft fields in all 3 components in VFM frame
+*/
+
+int
+preclean_jumps(const char *jump_file, satdata_mag * data, track_workspace *track_p)
+{
+  int s = 0;
+  FILE *fp_jump = NULL;
+  const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
+  const size_t jump_K = 11; /* filter window size for jump detection */
+  jump_workspace *jump_p = jump_alloc(86400 * 5, jump_K);
+  size_t njump[3] = { 0, 0, 0 };
+  size_t start_idx = track_p->tracks[0].start_idx;
+  size_t ngap = 0;            /* number of data gaps larger than gap_threshold */
+  time_t max_gap = 0;         /* maximum data gap found */
+  time_t tcur = satdata_epoch2timet(data->t[0]);
+  size_t i;
+
+  if (jump_file)
+    {
+      fp_jump = fopen(jump_file, "w");
+      jump_proc(1, fp_jump, 0, 0, NULL, NULL, NULL);
+    }
+
+  /* flag positions of track starts in data */
+  for (i = 0; i < track_p->n; ++i)
+    {
+      track_data *tptr = &(track_p->tracks[i]);
+      data->flags[tptr->start_idx] |= SATDATA_FLG_TRACK_START;
+    }
+
+  for (i = start_idx; i < data->n - 1; ++i)
+    {
+      time_t tnext = satdata_epoch2timet(data->t[i + 1]);
+      time_t tdiff = tnext - tcur;
+
+      if (tdiff > gap_threshold)
+        {
+          jump_proc(0, fp_jump, start_idx, i, njump, data, jump_p);
+          start_idx = i + 1;
+
+          ++ngap;
+          if (tdiff > max_gap)
+            max_gap = tdiff;
+        }
+
+      tcur = tnext;
+    }
+
+  if (track_p->tracks[track_p->n - 1].end_idx > start_idx)
+    jump_proc(0, fp_jump, start_idx, track_p->tracks[track_p->n - 1].end_idx, njump, data, jump_p);
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "\t preclean_jumps: total data gaps found: %zu (maximum gap: %ld [sec])\n", ngap, max_gap);
+
+  fprintf(stderr, "\t preclean_jumps: total jumps found and corrected: %zu (X), %zu (Y), %zu (Z)\n",
+          njump[0], njump[1], njump[2]);
+
+  if (fp_jump)
+    fclose(fp_jump);
+
+  jump_free(jump_p);
+
+  return s;
+}
+
+/*
+preclean_spikes()
+  Detect and remove spikes due to spacecraft fields in all 3 components in VFM frame
+*/
+
+int
+preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *track_p)
+{
+  int s = 0;
+  FILE *fp_spike = NULL;
+  const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
+  const size_t spike_K = 15;  /* window size for impulse detection filter */
+  const double nsigma[3] = { 8.0, 5.0, 5.0 }; /* tuning parameters for impulse rejection filter in each component */
+  size_t nspikes[3] = { 0, 0, 0 };
+  double min_spike[3] = { 1.0e6, 1.0e6, 1.0e6 };
+  double max_spike[3] = { -1.0e6, -1.0e6, -1.0e6 };
+  size_t start_idx = track_p->tracks[0].start_idx;
+  size_t ngap = 0;            /* number of data gaps larger than gap_threshold */
+  time_t max_gap = 0;         /* maximum data gap found */
+  time_t tcur = satdata_epoch2timet(data->t[0]);
+  size_t i;
+
+  if (spike_file)
+    {
+      fp_spike = fopen(spike_file, "w");
+      stage2_correct_spikes(1, fp_spike, 0, NULL, 0, 0, NULL, NULL, NULL, NULL);
+    }
+
+  /* flag positions of track starts in data */
+  for (i = 0; i < track_p->n; ++i)
+    {
+      track_data *tptr = &(track_p->tracks[i]);
+      data->flags[tptr->start_idx] |= SATDATA_FLG_TRACK_START;
+    }
+
+  for (i = start_idx; i < data->n - 1; ++i)
+    {
+      time_t tnext = satdata_epoch2timet(data->t[i + 1]);
+      time_t tdiff = tnext - tcur;
+
+      if (tdiff > gap_threshold)
+        {
+          stage2_correct_spikes(0, fp_spike, spike_K, nsigma, start_idx, i, nspikes, min_spike, max_spike, data);
+          start_idx = i + 1;
+
+          ++ngap;
+          if (tdiff > max_gap)
+            max_gap = tdiff;
+        }
+
+      tcur = tnext;
+    }
+
+  if (track_p->tracks[track_p->n - 1].end_idx > start_idx)
+    stage2_correct_spikes(0, fp_spike, spike_K, nsigma, start_idx, track_p->tracks[track_p->n - 1].end_idx, nspikes, min_spike, max_spike, data);
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "\t preclean_spikes: total data gaps found: %zu (maximum gap: %ld [sec])\n", ngap, max_gap);
+
+  fprintf(stderr, "\t preclean_spikes: total spikes found: %zu (X), %zu (Y), %zu (Z)\n",
+          nspikes[0], nspikes[1], nspikes[2]);
+
+  fprintf(stderr, "\t preclean_spikes: minimum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
+          min_spike[0], min_spike[1], min_spike[2]);
+
+  fprintf(stderr, "\t preclean_spikes: maximum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
+          max_spike[0], max_spike[1], max_spike[2]);
+
+  if (fp_spike)
+    fclose(fp_spike);
+
+  return s;
+}
+
+/*
 preclean()
   Clean data prior to scalar calibration by detecting and
 removing spikes and jumps. Also check for data gaps and
@@ -504,7 +646,7 @@ routines
 */
 
 int
-preclean(const char *spike_file, const char *jump_file, satdata_mag * data)
+preclean(const char *spike_file, const char *jump_file, satdata_mag * data, track_workspace *track_p)
 {
   int s = 0;
   const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
@@ -617,7 +759,7 @@ main(int argc, char *argv[])
   size_t nbins = 1;     /* number of time bins for fitting calibration parameters */
   double *t;            /* array of timestamps, size nbins */
   track_workspace *track_p;
-  gsl_vector *coef = gsl_vector_alloc(MAGCAL_P);
+  gsl_vector *coef = gsl_vector_alloc(FLUXCAL_P);
   FILE *fp_param = NULL;
   struct timeval tv0, tv1;
   double rms;
@@ -730,7 +872,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv0, NULL);
   attitude_correct(attitude_file, data, track_p);
   gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+  fprintf(stderr, "done (%g seconds, output file = %s)\n", time_diff(tv0, tv1), attitude_file);
 
 #if 0
   fprintf(stderr, "main: applying initial scalar calibration and Euler angles to dataset...");
@@ -740,19 +882,21 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 #endif
 
-  fprintf(stderr, "main: precleaning data for spikes and jumps...");
+  fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
-  preclean(spike_file, jump_file, data);
+  preclean_jumps(jump_file, data, track_p);
   gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-  exit(1);
+  fprintf(stderr, "done (%g seconds, output jump file = %s)\n",
+          time_diff(tv0, tv1), jump_file);
 
-#if 0
-  fprintf(stderr, "main: fixing track jumps...");
-  stage2_correct_jumps(jump_file, data);
-  fprintf(stderr, "done\n");
-#endif
+  fprintf(stderr, "main: precleaning data for impulse spikes...");
+  gettimeofday(&tv0, NULL);
+  preclean_spikes(spike_file, data, track_p);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds, output spike file = %s)\n",
+          time_diff(tv0, tv1), spike_file);
 
+  /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
   stage2_filter(track_p, data);
@@ -768,10 +912,12 @@ main(int argc, char *argv[])
   /* now do a scalar calibration separately for each time bin */
   if (nbins == 1)
     {
-      stage2_scalar_calibrate(scal_file, data, track_p, coef, &rms);
+      /*stage2_scalar_calibrate(scal_file, data, track_p, coef, &rms);*/
+      stage2_calibrate(scal_file, data, track_p, coef, &rms);
 
       fprintf(stderr, "main: applying calibration parameters to data...");
-      magcal_apply(coef, data);
+      /*magcal_apply(coef, data);*/
+      fluxcal_apply(coef, data);
       fprintf(stderr, "done\n");
 
       if (fp_param)
@@ -806,6 +952,8 @@ main(int argc, char *argv[])
             }
         }
     }
+
+  exit(1);
 
 #if 1
   fprintf(stderr, "main: correcting quaternions for satellite drift...");
