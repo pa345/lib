@@ -1016,6 +1016,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
   fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
+  fprintf(stderr, "\t --lambda_mf | -v lambda_mf      - main field damping parameter\n");
   fprintf(stderr, "\t --lambda_sv | -v lambda_sv      - secular variation damping parameter\n");
   fprintf(stderr, "\t --lambda_sa | -a lambda_sa      - secular acceleration damping parameter\n");
 } /* print_help() */
@@ -1046,6 +1047,7 @@ main(int argc, char *argv[])
   int print_data = 0;         /* print data for MF modeling */
   int print_map = 0;          /* print data maps */
   int print_residuals = 0;    /* print residuals at each iteration */
+  double lambda_mf = -1.0;    /* MF damping parameter */
   double lambda_sv = -1.0;    /* SV damping parameter */
   double lambda_sa = -1.0;    /* SA damping parameter */
   double sigma = -1.0;        /* sigma for artificial noise */
@@ -1076,12 +1078,13 @@ main(int argc, char *argv[])
           { "config_file", required_argument, NULL, 'C' },
           { "lambda_sa", required_argument, NULL, 'a' },
           { "lambda_sv", required_argument, NULL, 'v' },
+          { "lambda_mf", required_argument, NULL, 'M' },
           { "sigma", required_argument, NULL, 'S' },
           { "bias", required_argument, NULL, 'B' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:b:B:c:C:de:l:mn:o:p:rv:S:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:b:B:c:C:de:l:mM:n:o:p:rv:S:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -1093,6 +1096,10 @@ main(int argc, char *argv[])
 
           case 'v':
             lambda_sv = atof(optarg);
+            break;
+
+          case 'M':
+            lambda_mf = atof(optarg);
             break;
 
           case 'b':
@@ -1173,6 +1180,8 @@ main(int argc, char *argv[])
     mfield_params.euler_period = euler_period;
   if (maxit > 0)
     mfield_params.max_iter = maxit;
+  if (lambda_mf >= 0.0)
+    mfield_params.lambda_mf = lambda_mf;
   if (lambda_sv >= 0.0)
     mfield_params.lambda_sv = lambda_sv;
   if (lambda_sa >= 0.0)

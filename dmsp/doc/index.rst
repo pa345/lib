@@ -13,6 +13,8 @@ Welcome to DMSP's documentation!
    stage0.rst
    stage1.rst
    stage2.rst
+   stage2b.rst
+   erroneous.rst
 
 Indices and tables
 ==================

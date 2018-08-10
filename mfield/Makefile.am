@@ -15,12 +15,12 @@ mfield_emag_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/track/
 mfield_preproc_SOURCES = mfield_preproc.c
 mfield_preproc_CFLAGS = -fopenmp
 mfield_preproc_LDFLAGS = -fopenmp
-mfield_preproc_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
+mfield_preproc_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
 
 mfield_preproc_obs_SOURCES = mfield_preproc_obs.c
 mfield_preproc_obs_CFLAGS = -fopenmp
 mfield_preproc_obs_LDFLAGS = -fopenmp
-mfield_preproc_obs_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
+mfield_preproc_obs_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
 
 mfield_compare_SOURCES = mfield_compare.c
 mfield_compare_LDADD = $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la -lapex -lcommon -lmsynth -lm -lgsl -lptcblas -lptf77blas -latlas -lindices -lpthread -lgfortran -L/home/palken/usr/lib

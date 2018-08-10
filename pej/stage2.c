@@ -184,9 +184,10 @@ make_grid(const size_t nMLT, const size_t nQD, const magdata * data, bin2d_works
 int
 main_proc(const char *data_file, magdata * data)
 {
+  const char *data_file_surface = "data_surface.txt";
   const size_t nMLT = 360; /* 1 degree bin spacing */
   const size_t nQD = 180;  /* 1 degree bin spacing */
-  const magfit_type *T = magfit_gauss;
+  const magfit_type *T = magfit_sheet;
   magfit_parameters params = magfit_default_parameters();
   magfit_workspace *w;
   bin2d_workspace *bin[3];
@@ -270,6 +271,10 @@ main_proc(const char *data_file, magdata * data)
 
   fprintf(stderr, "main_proc: printing model map to %s...", data_file);
   print_model(data_file, r, bin, w);
+  fprintf(stderr, "done\n");
+
+  fprintf(stderr, "main_proc: printing model map at Earth surface to %s...", data_file_surface);
+  print_model(data_file_surface, R_EARTH_KM, bin, w);
   fprintf(stderr, "done\n");
 
   magfit_free(w);

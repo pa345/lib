@@ -48,7 +48,7 @@
 #include "stage2_quaternions.c"
 #include "stage2_spikes.c"
 
-#define WRITE_JUMP_DATA                   1
+#define WRITE_JUMP_DATA                   0
 
 size_t
 stage2_flag_time(const double tmin, const double tmax, satdata_mag *data)
@@ -247,7 +247,7 @@ print_data(const char *filename, const satdata_mag *data, const track_workspace 
           double theta = M_PI / 2.0 - data->latitude[j] * M_PI / 180.0;
           double phi = data->longitude[j] * M_PI / 180.0;
           double *q = &(data->q[4*j]);
-          double B_model[4], B_model_VFM[3], B_model_ell[3], r_ECEF[3];
+          double B_model[4], B_model_VFM[3], r_ECEF[3];
 
           sph2ecef(data->r[j], theta, phi, r_ECEF);
 
@@ -256,9 +256,6 @@ print_data(const char *filename, const satdata_mag *data, const track_workspace 
 
           /* rotate model vector to VFM frame */
           quat_apply_inverse(q, B_model, B_model_VFM);
-
-          /* convert B_model into ellipsoid NEC */
-          ellipsoid_nec2ell(r_ECEF, B_model, B_model_ell);
 
           fprintf(fp, "%ld %10.4f %10.4f %12.4f %12.4f %12.4f %12.4f %12.4f %12.4f %12.4f %d\n",
                   satdata_epoch2timet(data->t[j]),
@@ -468,33 +465,6 @@ precalibrate(const char * scal_file, const char * euler_file, const satdata_mag 
   return data_cal;
 }
 
-int
-preclean_proc(FILE *fp_spike, FILE *fp_jump, const size_t start_idx, const size_t end_idx, size_t njump[3], size_t nspikes[3],
-              double min_spike[3], double max_spike[3], jump_workspace * jump_p, satdata_mag * data)
-{
-  int s = 0;
-  const size_t nsamp = end_idx - start_idx + 1;
-  const size_t impulse_K = 15;                    /* window size for impulse detection filter */
-  const size_t min_samp = GSL_MAX(10, impulse_K); /* minimum samples needed for spike/jump processing */
-  const double nsigma[3] = { 1.0e6, 1.0e6, 8.0 };     /* tuning parameters for Hampel filter in each component */
-
-  if (nsamp < min_samp)
-    {
-      /* insufficient number of samples for processing */
-      return -1;
-    }
-
-#if 0
-  stage2_correct_spikes(0, fp_spike, impulse_K, nsigma, start_idx, end_idx, nspikes, min_spike, max_spike, data);
-#endif
-
-#if 1 /*XXX*/
-  jump_proc(0, fp_jump, start_idx, end_idx, njump, data, jump_p);
-#endif
-
-  return s;
-}
-
 /*
 preclean_jumps()
   Detect and remove jumps due to spacecraft fields in all 3 components in VFM frame
@@ -507,13 +477,20 @@ preclean_jumps(const char *jump_file, satdata_mag * data, track_workspace *track
   FILE *fp_jump = NULL;
   const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
   const size_t jump_K = 11; /* filter window size for jump detection */
-  jump_workspace *jump_p = jump_alloc(86400 * 5, jump_K);
+  jump_workspace *jump_p;
   size_t njump[3] = { 0, 0, 0 };
   size_t start_idx = track_p->tracks[0].start_idx;
   size_t ngap = 0;            /* number of data gaps larger than gap_threshold */
   time_t max_gap = 0;         /* maximum data gap found */
   time_t tcur = satdata_epoch2timet(data->t[0]);
+  struct timeval tv0, tv1;
   size_t i;
+
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "\t preclean_jumps: allocating workspace...");
+  jump_p = jump_alloc(86400 * 90, jump_K);
+  fprintf(stderr, "done\n");
 
   if (jump_file)
     {
@@ -522,11 +499,18 @@ preclean_jumps(const char *jump_file, satdata_mag * data, track_workspace *track
     }
 
   /* flag positions of track starts in data */
+  fprintf(stderr, "\t preclean_jumps: flagging track start positions...");
+
   for (i = 0; i < track_p->n; ++i)
     {
       track_data *tptr = &(track_p->tracks[i]);
       data->flags[tptr->start_idx] |= SATDATA_FLG_TRACK_START;
     }
+
+  fprintf(stderr, "done\n");
+
+  fprintf(stderr, "\t preclean_jumps: finding and correcting jumps...");
+  gettimeofday(&tv0, NULL);
 
   for (i = start_idx; i < data->n - 1; ++i)
     {
@@ -549,7 +533,9 @@ preclean_jumps(const char *jump_file, satdata_mag * data, track_workspace *track
   if (track_p->tracks[track_p->n - 1].end_idx > start_idx)
     jump_proc(0, fp_jump, start_idx, track_p->tracks[track_p->n - 1].end_idx, njump, data, jump_p);
 
-  fprintf(stderr, "\n");
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
   fprintf(stderr, "\t preclean_jumps: total data gaps found: %zu (maximum gap: %ld [sec])\n", ngap, max_gap);
 
   fprintf(stderr, "\t preclean_jumps: total jumps found and corrected: %zu (X), %zu (Y), %zu (Z)\n",
@@ -583,7 +569,10 @@ preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *tra
   size_t ngap = 0;            /* number of data gaps larger than gap_threshold */
   time_t max_gap = 0;         /* maximum data gap found */
   time_t tcur = satdata_epoch2timet(data->t[0]);
+  struct timeval tv0, tv1;
   size_t i;
+
+  fprintf(stderr, "\n");
 
   if (spike_file)
     {
@@ -592,11 +581,18 @@ preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *tra
     }
 
   /* flag positions of track starts in data */
+  fprintf(stderr, "\t preclean_spikes: flagging track start positions...");
+
   for (i = 0; i < track_p->n; ++i)
     {
       track_data *tptr = &(track_p->tracks[i]);
       data->flags[tptr->start_idx] |= SATDATA_FLG_TRACK_START;
     }
+
+  fprintf(stderr, "done\n");
+
+  fprintf(stderr, "\t preclean_spikes: finding and correcting impulse spikes...");
+  gettimeofday(&tv0, NULL);
 
   for (i = start_idx; i < data->n - 1; ++i)
     {
@@ -619,7 +615,9 @@ preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *tra
   if (track_p->tracks[track_p->n - 1].end_idx > start_idx)
     stage2_correct_spikes(0, fp_spike, spike_K, nsigma, start_idx, track_p->tracks[track_p->n - 1].end_idx, nspikes, min_spike, max_spike, data);
 
-  fprintf(stderr, "\n");
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
   fprintf(stderr, "\t preclean_spikes: total data gaps found: %zu (maximum gap: %ld [sec])\n", ngap, max_gap);
 
   fprintf(stderr, "\t preclean_spikes: total spikes found: %zu (X), %zu (Y), %zu (Z)\n",
@@ -637,111 +635,19 @@ preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *tra
   return s;
 }
 
-/*
-preclean()
-  Clean data prior to scalar calibration by detecting and
-removing spikes and jumps. Also check for data gaps and
-feed only continuous data streams into the spike/jump correction
-routines
-*/
-
-int
-preclean(const char *spike_file, const char *jump_file, satdata_mag * data, track_workspace *track_p)
-{
-  int s = 0;
-  const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
-#if 1
-  const size_t jump_hampel_K = 11; /* Hampel filter window size for jump detection */
-#else
-  const size_t jump_hampel_K = 61; /* impulse detecting filter window size */
-#endif
-  FILE *fp_spike = NULL;
-  FILE *fp_jump = NULL;
-  time_t tcur = satdata_epoch2timet(data->t[0]);
-  size_t njump[3] = { 0, 0, 0 };
-  size_t nspikes[3] = { 0, 0, 0 };
-  double min_spike[3] = { 1.0e6, 1.0e6, 1.0e6 };
-  double max_spike[3] = { -1.0e6, -1.0e6, -1.0e6 };
-  jump_workspace *jump_p = jump_alloc(86400 * 5, jump_hampel_K);
-  size_t start_idx = 0;
-  size_t ngap = 0;            /* number of data gaps larger than gap_threshold */
-  time_t max_gap = 0;         /* maximum data gap found */
-  size_t i;
-
-  fprintf(stderr, "\n");
-
-  if (spike_file)
-    {
-      fp_spike = fopen(spike_file, "w");
-      stage2_correct_spikes(1, fp_spike, 0, NULL, 0, 0, NULL, NULL, NULL, NULL);
-    }
-
-  if (jump_file)
-    {
-      fp_jump = fopen(jump_file, "w");
-      jump_proc(1, fp_jump, 0, 0, NULL, NULL, NULL);
-    }
-
-  for (i = 0; i < data->n - 1; ++i)
-    {
-      time_t tnext = satdata_epoch2timet(data->t[i + 1]);
-      time_t tdiff = tnext - tcur;
-
-      if (tdiff > gap_threshold)
-        {
-          preclean_proc(fp_spike, fp_jump, start_idx, i, njump, nspikes, min_spike, max_spike, jump_p, data);
-          start_idx = i + 1;
-
-          ++ngap;
-          if (tdiff > max_gap)
-            max_gap = tdiff;
-        }
-
-      tcur = tnext;
-    }
-
-  /* process end of data */
-  preclean_proc(fp_spike, fp_jump, start_idx, data->n - 1, njump, nspikes, min_spike, max_spike, jump_p, data);
-
-  fprintf(stderr, "\t preclean: total data gaps found: %zu (maximum gap: %ld [sec])\n", ngap, max_gap);
-
-  fprintf(stderr, "\t preclean: total jumps found and corrected: %zu (X), %zu (Y), %zu (Z)\n",
-          njump[0], njump[1], njump[2]);
-
-#if 0
-  fprintf(stderr, "\t preclean: minimum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
-          min_spike[0], min_spike[1], min_spike[2]);
-
-  fprintf(stderr, "\t preclean: maximum spike amplitudes: %.2f [nT] X, %.2f [nT] Y, %.2f [nT] Z\n",
-          max_spike[0], max_spike[1], max_spike[2]);
-
-  fprintf(stderr, "\t preclean: total spikes found: %zu (X), %zu (Y), %zu (Z)\n",
-          nspikes[0], nspikes[1], nspikes[2]);
-#endif
-
-  if (fp_spike)
-    fclose(fp_spike);
-
-  if (fp_jump)
-    fclose(fp_jump);
-
-  jump_free(jump_p);
-
-  return s;
-}
-
 int
 main(int argc, char *argv[])
 {
   const char *track_file = "track_data.dat";
   const char *quat_file = "stage2_quat.dat";
-  const char *attitude_file = "stage2_attitude.dat";
 #if WRITE_JUMP_DATA
+  const char *attitude_file = "stage2_attitude.dat";
   const char *scal_file = "stage2_scal.dat";
   const char *euler_file = "stage2_euler.dat";
   const char *spike_file = "stage2_spikes.dat";
   const char *jump_file = "stage2_jumps.dat";
 #else
+  const char *attitude_file = NULL;
   const char *scal_file = NULL;
   const char *euler_file = NULL;
   const char *spike_file = NULL;
@@ -757,7 +663,7 @@ main(int argc, char *argv[])
   double period = -1.0; /* period in days for fitting scalar calibration parameters */
   double period_ms = -1.0; /* period in ms for fitting scalar calibration parameters */
   size_t nbins = 1;     /* number of time bins for fitting calibration parameters */
-  double *t;            /* array of timestamps, size nbins */
+  double *t;            /* array of timestamps of bin centers, size nbins */
   track_workspace *track_p;
   gsl_vector *coef = gsl_vector_alloc(FLUXCAL_P);
   FILE *fp_param = NULL;
@@ -838,11 +744,14 @@ main(int argc, char *argv[])
       const double tmax = data->t[data->n - 1];
       const double dt = (tmax - tmin) / 8.64e7; /* convert to days */
 
-      nbins = dt / period;
+      nbins = (size_t) (dt / period) + 1;
     }
 
-  /* convert to ms */
-  period_ms = period * 8.64e7;
+  /*
+   * this could be different than original period if time interval is not an exact multiple of
+   * the original period
+   */
+  period_ms = (data->t[data->n - 1] - data->t[0]) / (double) nbins;
 
   /* build array of timestamps for each calibration bin */
   t = malloc(nbins * sizeof(double));
@@ -857,7 +766,7 @@ main(int argc, char *argv[])
         t[i] = data->t[0] + period_ms * (i + 0.5);
     }
 
-  fprintf(stderr, "main: period for calibration:  %.1f [days]\n", period);
+  fprintf(stderr, "main: period for calibration:  %.1f [days]\n", period_ms / 8.64e7);
   fprintf(stderr, "main: number of temporal bins: %zu\n", nbins);
 
   track_p = track_alloc();
@@ -873,14 +782,6 @@ main(int argc, char *argv[])
   attitude_correct(attitude_file, data, track_p);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, output file = %s)\n", time_diff(tv0, tv1), attitude_file);
-
-#if 0
-  fprintf(stderr, "main: applying initial scalar calibration and Euler angles to dataset...");
-  gettimeofday(&tv0, NULL);
-  data2 = precalibrate(scal_file, euler_file, data, track_p, coef, &rms);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-#endif
 
   fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
@@ -912,11 +813,9 @@ main(int argc, char *argv[])
   /* now do a scalar calibration separately for each time bin */
   if (nbins == 1)
     {
-      /*stage2_scalar_calibrate(scal_file, data, track_p, coef, &rms);*/
       stage2_calibrate(scal_file, data, track_p, coef, &rms);
 
       fprintf(stderr, "main: applying calibration parameters to data...");
-      /*magcal_apply(coef, data);*/
       fluxcal_apply(coef, data);
       fprintf(stderr, "done\n");
 
@@ -930,17 +829,17 @@ main(int argc, char *argv[])
     {
       for (i = 0; i < nbins; ++i)
         {
-          double tmin = t[i] - 0.5 * period_ms;
-          double tmax = t[i] + 0.5 * period_ms;
+          double tmin = (i == 0) ? data->t[0] : (t[i] - 0.5 * period_ms);
+          double tmax = (i == nbins - 1) ? data->t[data->n - 1] : (t[i] + 0.5 * period_ms);
 
           /* flag points outside of our time window */
           stage2_flag_time(tmin, tmax, data);
 
           /* calibrate points inside the time window [tmin,tmax] */
-          stage2_scalar_calibrate(scal_file, data, track_p, coef, &rms);
+          stage2_calibrate(scal_file, data, track_p, coef, &rms);
 
           /* apply calibration to data inside time window */
-          magcal_apply(coef, data);
+          fluxcal_apply(coef, data);
 
           /* remove time flag */
           stage2_unflag_time(data);
@@ -953,19 +852,10 @@ main(int argc, char *argv[])
         }
     }
 
-  exit(1);
-
-#if 1
+#if 0
   fprintf(stderr, "main: correcting quaternions for satellite drift...");
   stage2_correct_quaternions(quat_file, data, track_p);
   fprintf(stderr, "done (data written to %s)\n", quat_file);
-#endif
-
-#if 0
-  {
-    print_data2("data2.txt", data, track_p);
-    exit(1);
-  }
 #endif
 
   fprintf(stderr, "main: computing B_NEC...");

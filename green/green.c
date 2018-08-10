@@ -671,3 +671,53 @@ green_k2g(const double b, const gsl_vector *k, gsl_vector *g,
 
   return 0;
 }
+
+/*
+green_g2k()
+  Convert internal Gauss coefficients gnm to external coefficients
+knm using the relation
+
+knm = -(n+1)/n (R/b)^{2n + 1} gnm
+
+Inputs: b - radius of current shell (km)
+        g - gnm, size nnm
+        k - (output) knm, size nnm
+        w - workspace
+
+Return: success/error
+
+Notes:
+1) It is allowed for k = g for an in-place transform
+*/
+
+int
+green_g2k(const double b, const gsl_vector *g, gsl_vector *k,
+          const green_workspace *w)
+{
+  const size_t nmax = w->nmax;
+  const size_t mmax = w->mmax;
+  const double ratio = w->R / b;
+  const double ratio_sq = ratio * ratio;
+  double rfac = ratio * ratio_sq; /* (R/b)^3 */
+  size_t n;
+
+  for (n = 1; n <= nmax; ++n)
+    {
+      int M = (int) GSL_MIN(n, mmax);
+      int m;
+      double nfac = -(n + 1.0) / (double) n;
+
+      for (m = -M; m <= M; ++m)
+        {
+          size_t cidx = green_nmidx(n, m, w);
+          double gnm = gsl_vector_get(g, cidx);
+
+          gsl_vector_set(k, cidx, nfac * rfac * gnm);
+        }
+
+      /* (R/b)^{2n + 1} */
+      rfac *= ratio_sq;
+    }
+
+  return 0;
+}

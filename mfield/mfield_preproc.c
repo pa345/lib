@@ -47,7 +47,6 @@
 
 #include "euler.h"
 #include "magdata.h"
-#include "magfit.h"
 #include "track.h"
 
 #include "mfield.h"
@@ -807,6 +806,8 @@ calc_main(satdata_mag *data)
   return 0;
 }
 
+#if 0 /*XXX*/
+
 static int
 subtract_RC(const char *filename, satdata_mag *data, track_workspace *w)
 {
@@ -909,6 +910,8 @@ subtract_RC(const char *filename, satdata_mag *data, track_workspace *w)
 
   return s;
 }
+
+#endif
 
 /*
 mfield_fill_polar_gap()
@@ -1381,6 +1384,7 @@ main(int argc, char *argv[])
       track_p2 = preprocess_data(&params, magdata_flags2, data2);
     }
 
+#if 0
   if (params.fit_track_RC)
     {
       fprintf(stderr, "main: subtracting RC model from satellite 1...");
@@ -1394,6 +1398,7 @@ main(int argc, char *argv[])
           fprintf(stderr, "done\n");
         }
     }
+#endif
 
 #if 0 /* XXX */
   print_unflagged_data("data1.dat", data);

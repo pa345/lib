@@ -302,6 +302,8 @@ int magdata_copy_track_EW(const magdata_params *params, const size_t track_idx,
                           magdata *mdata, size_t ntype[6]);
 int magdata_copy_station_SV(const magdata_params *params, const obsdata_station * station,
                             magdata *mdata, size_t ntype[6]);
+int magdata_copy_station_means(const magdata_params *params, const obsdata_station * station,
+                               magdata *mdata, size_t ntype[6]);
 int magdata_copy_station(const magdata_params *params, const obsdata_station * station,
                          magdata *mdata, size_t ntype[6]);
 satdata_mag *magdata_mag2sat(const magdata *mdata);

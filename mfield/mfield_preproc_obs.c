@@ -42,7 +42,6 @@
 #include <msynth/msynth.h>
 
 #include "magdata.h"
-#include "magfit.h"
 #include "track.h"
 
 #include "mfield.h"
@@ -232,7 +231,7 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
 
   mdata->global_flags = magdata_flags;
 
-  magdata_copy_station(&params, station, mdata, npts);
+  magdata_copy_station_means(&params, station, mdata, npts);
 
   /* now determine which points in mdata will be used for MF modeling */
   for (i = 0; i < mdata->n; ++i)

@@ -25,7 +25,9 @@ outdir="$DATAHOME/DMSP/MAG/Stage1"
 prog="$MYLIBHOME/track/stage1"
 
 # Extra flags (such as use CHAOS)
-extra_flags="-h"
+# Aug 6 2018: CHAOS-6 has a bug in the external field coefficients for years 2011-2013 due
+# to lack of satellite data
+#extra_flags="-h"
 
 echo "==== PROCESSING YEAR ${year} ===="
 

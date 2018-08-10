@@ -1,8 +1,8 @@
 /*
- * gauss.c
+ * sheet.c
  *
- * Fit internal and external potential field based on Gauss coefficients
- * to magnetic vector data
+ * Fit magnetic field measurements due to a spherical sheet current at a
+ * specified altitude.
  */
 
 #include <stdio.h>
@@ -21,8 +21,6 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_test.h>
 #include <gsl/gsl_statistics.h>
-#include <gsl/gsl_multifit.h>
-#include <gsl/gsl_multilarge.h>
 #include <gsl/gsl_blas.h>
 
 #include <common/common.h>
@@ -42,15 +40,12 @@ typedef struct
   size_t n;         /* total number of measurements in system */
   size_t p;         /* number of coefficients */
   size_t nmax;      /* maximum number of measurements in LS system */
+  double b;         /* shell radius (km) */
 
   size_t lmax_int;  /* maximum spherical harmonic degree for internal field */
   size_t mmax_int;  /* maximum spherical harmonic order for internal field */
-  size_t lmax_ext;  /* maximum spherical harmonic degree for external field */
-  size_t mmax_ext;  /* maximum spherical harmonic order for external field */
 
   size_t p_int;     /* number of internal coefficients */
-  size_t p_ext;     /* number of external coefficients */
-  size_t ext_offset; /* offset of external coefficients in solution vector 'c' */
 
   gsl_matrix *X;    /* LS matrix, nmax-by-p */
   gsl_vector *XTy;  /* X^T y */
@@ -58,36 +53,35 @@ typedef struct
   gsl_vector *rhs;  /* rhs vector */
   gsl_vector *wts;  /* weight vector */
   gsl_matrix *cov;  /* covariance matrix */
-  gsl_vector *c;    /* solution vector c = [ c_int ; c_ext ] */
+  gsl_vector *c;    /* solution vector gnm */
+
+  gsl_vector *k;    /* klm coefficients for magnetic field below current shell */
 
   size_t flags;     /* fitting flags */
 
-  gsl_multifit_linear_workspace *multifit_p;
-  gsl_multilarge_linear_workspace *multilarge_p;
-  green_workspace *green_int_p;
-  green_workspace *green_ext_p;
-} gauss_state_t;
+  green_workspace *green_p;
+} sheet_state_t;
 
-static void *gauss_alloc(const void * params);
-static void gauss_free(void * vstate);
-static int gauss_reset(void * vstate);
-static size_t gauss_ncoeff(void * vstate);
-static int gauss_add_datum(const double t, const double r, const double theta, const double phi,
+static void *sheet_alloc(const void * params);
+static void sheet_free(void * vstate);
+static int sheet_reset(void * vstate);
+static size_t sheet_ncoeff(void * vstate);
+static int sheet_add_datum(const double t, const double r, const double theta, const double phi,
                            const double qdlat, const double B[3], void * vstate);
-static int gauss_fit(double * rnorm, double * snorm, void * vstate);
-static int gauss_eval_B(const double t, const double r, const double theta, const double phi,
+static int sheet_fit(double * rnorm, double * snorm, void * vstate);
+static int sheet_eval_B(const double t, const double r, const double theta, const double phi,
                         double B[3], void * vstate);
-static int gauss_eval_J(const double r, const double theta, const double phi,
+static int sheet_eval_J(const double r, const double theta, const double phi,
                         double J[3], void * vstate);
-static double gauss_eval_chi(const double theta, const double phi, void * vstate);
+static double sheet_eval_chi(const double theta, const double phi, void * vstate);
 
 static int build_matrix_row(const double r, const double theta, const double phi,
                             gsl_vector *X, gsl_vector *Y, gsl_vector *Z,
-                            gauss_state_t *state);
+                            sheet_state_t *state);
 
 /*
-gauss_alloc()
-  Allocate gauss workspace
+sheet_alloc()
+  Allocate sheet workspace
 
 Inputs: params - parameters
 
@@ -95,43 +89,32 @@ Return: pointer to workspace
 */
 
 static void *
-gauss_alloc(const void * params)
+sheet_alloc(const void * params)
 {
   const magfit_parameters *mparams = (const magfit_parameters *) params;
   const size_t max_observations = 50000;
-  gauss_state_t *state;
+  sheet_state_t *state;
 
-  state = calloc(1, sizeof(gauss_state_t));
+  state = calloc(1, sizeof(sheet_state_t));
   if (!state)
     return 0;
 
+  state->b = mparams->b;
   state->lmax_int = mparams->nmax_int;
   state->mmax_int = mparams->mmax_int;
-  state->lmax_ext = mparams->nmax_ext;
-  state->mmax_ext = mparams->mmax_ext;
   state->nmax = 3 * max_observations;
   state->flags = mparams->flags;
   state->n = 0;
 
   if (state->lmax_int > 0)
     {
-      state->green_int_p = green_alloc(state->lmax_int, state->mmax_int, R_EARTH_KM);
-      state->p_int = green_nnm(state->green_int_p);
+      state->green_p = green_alloc(state->lmax_int, state->mmax_int, R_EARTH_KM);
+      state->p_int = green_nnm(state->green_p);
     }
   else
     state->p_int = 0;
 
-  if (state->lmax_ext > 0)
-    {
-      state->green_ext_p = green_alloc(state->lmax_ext, state->mmax_ext, R_EARTH_KM);
-      state->p_ext = green_nnm(state->green_ext_p);
-    }
-  else
-    state->p_ext = 0;
-
-  state->ext_offset = state->p_int;
-
-  state->p = state->p_int + state->p_ext;
+  state->p = state->p_int;
 
   state->X = gsl_matrix_alloc(state->nmax, state->p);
   state->XTX = gsl_matrix_calloc(state->p, state->p);
@@ -140,17 +123,14 @@ gauss_alloc(const void * params)
   state->rhs = gsl_vector_alloc(state->nmax);
   state->wts = gsl_vector_alloc(state->nmax);
   state->cov = gsl_matrix_alloc(state->p, state->p);
-  state->multifit_p = gsl_multifit_linear_alloc(state->nmax, state->p);
-
-  state->multilarge_p = gsl_multilarge_linear_alloc(gsl_multilarge_linear_normal, state->p);
 
   return state;
 }
 
 static void
-gauss_free(void * vstate)
+sheet_free(void * vstate)
 {
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
 
   if (state->X)
     gsl_matrix_free(state->X);
@@ -167,26 +147,17 @@ gauss_free(void * vstate)
   if (state->cov)
     gsl_matrix_free(state->cov);
 
-  if (state->multifit_p)
-    gsl_multifit_linear_free(state->multifit_p);
-
-  if (state->multilarge_p)
-    gsl_multilarge_linear_free(state->multilarge_p);
-
-  if (state->green_int_p)
-    green_free(state->green_int_p);
-
-  if (state->green_ext_p)
-    green_free(state->green_ext_p);
+  if (state->green_p)
+    green_free(state->green_p);
 
   free(state);
 }
 
 /* reset workspace to work on new data set */
 static int
-gauss_reset(void * vstate)
+sheet_reset(void * vstate)
 {
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
   gsl_matrix_set_zero(state->XTX);
   gsl_vector_set_zero(state->XTy);
   state->n = 0;
@@ -194,14 +165,14 @@ gauss_reset(void * vstate)
 }
 
 static size_t
-gauss_ncoeff(void * vstate)
+sheet_ncoeff(void * vstate)
 {
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
   return state->p;
 }
 
 /*
-gauss_add_datum()
+sheet_add_datum()
   Add single vector measurement to LS system
 
 Inputs: t      - timestamp (CDF_EPOCH)
@@ -219,10 +190,10 @@ Notes:
 */
 
 static int
-gauss_add_datum(const double t, const double r, const double theta, const double phi,
+sheet_add_datum(const double t, const double r, const double theta, const double phi,
                    const double qdlat, const double B[3], void * vstate)
 {
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
   size_t rowidx = state->n;
   double wi = 1.0;
   gsl_vector_view vx = NULL_VECTOR_VIEW;
@@ -264,8 +235,6 @@ gauss_add_datum(const double t, const double r, const double theta, const double
   if (state->n >= state->nmax)
     {
       /* fold observations into XTX and XTy */
-      gsl_multilarge_linear_accumulate(state->X, state->rhs, state->multilarge_p);
-
       gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, state->X, 1.0, state->XTX);
       gsl_blas_dgemv(CblasTrans, 1.0, state->X, state->rhs, 1.0, state->XTy);
 
@@ -276,7 +245,7 @@ gauss_add_datum(const double t, const double r, const double theta, const double
 }
 
 /*
-gauss_fit()
+sheet_fit()
   Fit model to previously added tracks
 
 Inputs: rnorm  - residual norm || y - A x ||
@@ -286,14 +255,14 @@ Inputs: rnorm  - residual norm || y - A x ||
 Return: success/error
 
 Notes:
-1) Data must be added to workspace via gauss_add_datum()
+1) Data must be added to workspace via sheet_add_datum()
 */
 
 static int
-gauss_fit(double * rnorm, double * snorm, void * vstate)
+sheet_fit(double * rnorm, double * snorm, void * vstate)
 {
-  gauss_state_t *state = (gauss_state_t *) vstate;
-  double rcond, chisq;
+  sheet_state_t *state = (sheet_state_t *) vstate;
+  double rcond;
 
   if (state->n < state->p)
     return -1;
@@ -304,8 +273,6 @@ gauss_fit(double * rnorm, double * snorm, void * vstate)
       gsl_vector_view yv = gsl_vector_subvector(state->rhs, 0, state->n);
 
       /* fold observations into XTX and XTy */
-      gsl_multilarge_linear_accumulate(&Xv.matrix, &yv.vector, state->multilarge_p);
-
       gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &Xv.matrix, 1.0, state->XTX);
       gsl_blas_dgemv(CblasTrans, 1.0, &Xv.matrix, &yv.vector, 1.0, state->XTy);
 
@@ -315,36 +282,22 @@ gauss_fit(double * rnorm, double * snorm, void * vstate)
   fprintf(stderr, "\n");
   fprintf(stderr, "\t p = %zu\n", state->p);
 
-#if 0
-  /* solve system */
-  {
-    gsl_matrix_view A = gsl_matrix_submatrix(state->X, 0, 0, state->n, state->p);
-    gsl_vector_view b = gsl_vector_subvector(state->rhs, 0, state->n);
-    gsl_vector_view wts = gsl_vector_subvector(state->wts, 0, state->n);
-
-    gsl_multifit_wlinear(&A.matrix, &wts.vector, &b.vector, state->c, state->cov, &chisq, state->multifit_p);
-    rcond = gsl_multifit_linear_rcond(state->multifit_p);
-    *rnorm = sqrt(chisq);
-    *snorm = gsl_blas_dnrm2(state->c);
-  }
-#elif 0
-  gsl_multilarge_linear_solve(0.0, state->c, rnorm, snorm, state->multilarge_p);
-  gsl_multilarge_linear_rcond(&rcond, state->multilarge_p);
-#else
   lapack_cholesky_solve(state->XTX, state->XTy, state->c, &rcond, NULL);
   *rnorm = 0.0;
   *snorm = gsl_blas_dnrm2(state->c);
-#endif
 
   fprintf(stderr, "\t rnorm = %g\n", *rnorm);
   fprintf(stderr, "\t snorm = %g\n", *snorm);
   fprintf(stderr, "\t cond(X) = %g\n", 1.0 / rcond);
 
+  /* store knm coefficients */
+  green_g2k(state->b, state->c, state->k, state->green_p);
+
   return 0;
 }
 
 /*
-gauss_eval_B()
+sheet_eval_B()
   Evaluate magnetic field at a given (r,theta,phi) using
 previously computed coefficients
 
@@ -360,28 +313,35 @@ Notes:
 */
 
 static int
-gauss_eval_B(const double t, const double r, const double theta, const double phi,
-                double B[3], void * vstate)
+sheet_eval_B(const double t, const double r, const double theta, const double phi,
+             double B[3], void * vstate)
 {
   int status = GSL_SUCCESS;
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
   gsl_vector_view vx = gsl_matrix_row(state->X, 0);
   gsl_vector_view vy = gsl_matrix_row(state->X, 1);
   gsl_vector_view vz = gsl_matrix_row(state->X, 2);
 
   (void) t;
 
-  build_matrix_row(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, state);
+  if (r >= state->b)
+    {
+      green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data, state->green_p);
 
-  gsl_blas_ddot(&vx.vector, state->c, &B[0]);
-  gsl_blas_ddot(&vy.vector, state->c, &B[1]);
-  gsl_blas_ddot(&vz.vector, state->c, &B[2]);
+      gsl_blas_ddot(&vx.vector, state->c, &B[0]);
+      gsl_blas_ddot(&vy.vector, state->c, &B[1]);
+      gsl_blas_ddot(&vz.vector, state->c, &B[2]);
+    }
+  else
+    {
+      green_calc_ext(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data, state->green_p);
+    }
 
   return status;
 }
 
 /*
-gauss_eval_J()
+sheet_eval_J()
   Evaluate current density at a given (r,theta,phi) using
 previously computed coefficients
 
@@ -396,22 +356,22 @@ Notes:
 */
 
 static int
-gauss_eval_J(const double r, const double theta, const double phi,
+sheet_eval_J(const double r, const double theta, const double phi,
                 double J[3], void * vstate)
 {
   int status;
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
 
   (void) r; /* unused parameter */
 
   status = green_eval_sheet_int(R_EARTH_KM + 110.0, theta, phi, state->c, J,
-                                state->green_int_p);
+                                state->green_p);
 
   return status;
 }
 
 /*
-gauss_eval_chi()
+sheet_eval_chi()
   Evaluate current stream function at a given (theta,phi) using
 previously computed coefficients
 
@@ -426,12 +386,12 @@ Notes:
 */
 
 static double
-gauss_eval_chi(const double theta, const double phi, void * vstate)
+sheet_eval_chi(const double theta, const double phi, void * vstate)
 {
-  gauss_state_t *state = (gauss_state_t *) vstate;
+  sheet_state_t *state = (sheet_state_t *) vstate;
   double chi;
 
-  chi = green_eval_chi_int(R_EARTH_KM + 110.0, theta, phi, state->c, state->green_int_p);
+  chi = green_eval_chi_int(R_EARTH_KM + 110.0, theta, phi, state->c, state->green_p);
 
   return chi;
 }
@@ -439,7 +399,7 @@ gauss_eval_chi(const double theta, const double phi, void * vstate)
 static int
 build_matrix_row(const double r, const double theta, const double phi,
                  gsl_vector *X, gsl_vector *Y, gsl_vector *Z,
-                 gauss_state_t *state)
+                 sheet_state_t *state)
 {
   int s = 0;
  
@@ -458,27 +418,7 @@ build_matrix_row(const double r, const double theta, const double phi,
       if (Z->data)
         zv = gsl_vector_subvector(Z, 0, state->p_int);
 
-      s = green_calc_int(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_int_p);
-      if (s)
-        return s;
-    }
-
-  if (state->p_ext > 0)
-    {
-      gsl_vector_view xv = NULL_VECTOR_VIEW;
-      gsl_vector_view yv = NULL_VECTOR_VIEW;
-      gsl_vector_view zv = NULL_VECTOR_VIEW;
-
-      if (X->data)
-        xv = gsl_vector_subvector(X, state->ext_offset, state->p_ext);
-
-      if (Y->data)
-        yv = gsl_vector_subvector(Y, state->ext_offset, state->p_ext);
-
-      if (Z->data)
-        zv = gsl_vector_subvector(Z, state->ext_offset, state->p_ext);
-
-      s = green_calc_ext(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_ext_p);
+      s = green_calc_int(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_p);
       if (s)
         return s;
     }
@@ -486,18 +426,18 @@ build_matrix_row(const double r, const double theta, const double phi,
   return s;
 }
 
-static const magfit_type gauss_type =
+static const magfit_type sheet_type =
 {
-  "gauss",
-  gauss_alloc,
-  gauss_reset,
-  gauss_ncoeff,
-  gauss_add_datum,
-  gauss_fit,
-  gauss_eval_B,
-  gauss_eval_J,
-  gauss_eval_chi,
-  gauss_free
+  "sheet",
+  sheet_alloc,
+  sheet_reset,
+  sheet_ncoeff,
+  sheet_add_datum,
+  sheet_fit,
+  sheet_eval_B,
+  sheet_eval_J,
+  sheet_eval_chi,
+  sheet_free
 };
 
-const magfit_type *magfit_gauss = &gauss_type;
+const magfit_type *magfit_sheet = &sheet_type;

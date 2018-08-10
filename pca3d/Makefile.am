@@ -12,7 +12,7 @@ print_SOURCES = print.c
 print_LDADD = libpca3d.la -lcommon -lm -lgsl -lnetcdf ${common_libs}
 
 print_magfield_SOURCES = print_magfield.c
-print_magfield_LDADD = libpca3d.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la  $(top_builddir)/mageq/libmageq.la -lcommon -lm -lmagfield -lmsynth -lgsl -lnetcdf ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+print_magfield_LDADD = libpca3d.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la  $(top_builddir)/mageq/libmageq.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la  -lcommon -lm -lmagfield -lmsynth -lgsl -lnetcdf ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 print_fft_SOURCES = print_fft.c
 print_fft_LDADD = libpca3d.la -lcommon -lm -lmagfield -lgsl -lshtns_omp -lfftw3 -lfftw3_omp -lnetcdf ${common_libs}

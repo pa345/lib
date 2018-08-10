@@ -29,6 +29,9 @@ typedef struct
   size_t nmax_ext;       /* spherical harmonic degree for external field */
   size_t mmax_ext;       /* spherical harmonic order for external field */
 
+  /* sheet */
+  double b;              /* shell radius (km) */
+
   /* SECS parameters */
   double lat_spacing1d;  /* latitude pole spacing for 1D SECS (degrees) */
   double lat_spacing2d;  /* latitude pole spacing for 2D SECS (degrees) */
@@ -37,8 +40,8 @@ typedef struct
   double lon_spacing;    /* longitude pole spacing for 2D SECS (degrees) */
   double lon_min;        /* minimum longitude for SECS poles (degrees) */
   double lon_max;        /* maximum longitude for SECS poles (degrees) */
-  double R;              /* reference radius (km) */
   size_t lmax;           /* maximum spherical harmonic degree for 1D SECS expansion */
+  double R;              /* reference radius (km) */
 
   /* PCA parameters */
   size_t pca_modes;      /* number of PCA modes to use */
@@ -80,6 +83,7 @@ const magfit_type * magfit_secs2d;
 const magfit_type * magfit_pca;
 const magfit_type * magfit_gaussint;
 const magfit_type * magfit_gauss;
+const magfit_type * magfit_sheet;
 const magfit_type * magfit_rc;
 
 /*

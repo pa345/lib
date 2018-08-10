@@ -48,6 +48,8 @@ int green_print_spectrum_azim(const char *filename, const gsl_vector * c,
                               const green_workspace *w);
 int green_k2g(const double b, const gsl_vector *k, gsl_vector *g,
               const green_workspace *w);
+int green_g2k(const double b, const gsl_vector *g, gsl_vector *k,
+              const green_workspace *w);
 
 /* current.c */
 int green_eval_sheet_int(const double b, const double theta, const double phi,

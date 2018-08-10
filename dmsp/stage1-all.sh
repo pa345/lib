@@ -7,6 +7,6 @@ if test -n "$1"; then
   dmsp_sat="$1"
 fi
 
-for year in `seq 2009 2015`; do
+for year in `seq 2009 2016`; do
   screen -d -m -S p${dmsp_sat}_${year} sh stage1.sh ${dmsp_sat} ${year}
 done

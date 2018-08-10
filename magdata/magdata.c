@@ -1927,8 +1927,8 @@ magdata_copy_station_SV(const magdata_params *params, const obsdata_station * st
 }
 
 /*
-magdata_copy_station()
-  Copy a single observatory station (SV data) into magdata structure, discarding
+magdata_copy_station_means()
+  Copy means from a single observatory station into magdata structure, discarding
 bad data, and flagging when scalar/vector measurements are
 available.
 
@@ -1948,11 +1948,13 @@ Notes:
 1) ntype should be initialized by the calling function
 
 2) mdata->global_flags is modified to include MAGDATA_GLOBFLG_OBSERVATORY
+
+3) station mean arrays must be initialized prior to calling this function
 */
 
 int
-magdata_copy_station(const magdata_params *params, const obsdata_station * station,
-                     magdata *mdata, size_t ntype[6])
+magdata_copy_station_means(const magdata_params *params, const obsdata_station * station,
+                           magdata *mdata, size_t ntype[6])
 {
   magdata_datum datum;
   size_t i;
@@ -2006,6 +2008,96 @@ magdata_copy_station(const magdata_params *params, const obsdata_station * stati
       datum.qdlat = interp1d(station->t[idx], station->t[idx + 1],
                              station->qdlat[idx], station->qdlat[idx + 1],
                              datum.t);
+
+      s = magdata_add(&datum, mdata);
+      if (s)
+        return s;
+    }
+
+  mdata->global_flags |= MAGDATA_GLOBFLG_OBSERVATORY;
+
+  return 0;
+}
+
+/*
+magdata_copy_station()
+  Copy a single observatory station into magdata structure, discarding
+bad data, and flagging when scalar/vector measurements are
+available.
+
+Inputs: params    - parameters
+        station   - observatory station data
+        mdata     - (output) where to store data
+        ntype     - (output) counts of different data stored in mdata
+                    ntype[0]   - number of scalar measurements
+                    ntype[1]   - number of vector measurements (both VFM and NEC)
+                    ntype[2]   - number of along-track scalar measurements
+                    ntype[3]   - number of along-track vector measurements (both VFM and NEC)
+                    ntype[4-5] - unused
+
+Return: success/error
+
+Notes:
+1) ntype should be initialized by the calling function
+
+2) mdata->global_flags is modified to include MAGDATA_GLOBFLG_OBSERVATORY
+*/
+
+int
+magdata_copy_station(const magdata_params *params, const obsdata_station * station,
+                     magdata *mdata, size_t ntype[6])
+{
+  magdata_datum datum;
+  size_t i;
+
+  /* initialize */
+  magdata_datum_init(&datum);
+  snprintf(datum.name, MAGDATA_NAME_LENGTH, "%s", station->name);
+
+  for (i = 0; i < station->n; ++i)
+    {
+      int s;
+      size_t flags = 0;
+      size_t idx;
+
+      if (OBSDATA_ExistX(station->flags[i]))
+        flags |= MAGDATA_FLG_X;
+
+      if (OBSDATA_ExistY(station->flags[i]))
+        flags |= MAGDATA_FLG_Y;
+
+      if (OBSDATA_ExistZ(station->flags[i]))
+        flags |= MAGDATA_FLG_Z;
+
+      if (flags == 0)
+        continue;
+
+      datum.t = station->t[i];
+      datum.r = station->radius;
+      datum.theta = M_PI / 2.0 - station->latitude * M_PI / 180.0;
+      datum.phi = station->longitude * M_PI / 180.0;
+      datum.flags = flags;
+      datum.lt = get_localtime(epoch2timet(datum.t), datum.phi);
+      datum.qdlat = station->qdlat[i];
+      datum.MLT = station->MLT[i];
+      datum.B_nec[0] = station->X[i];
+      datum.B_nec[1] = station->Y[i];
+      datum.B_nec[2] = station->Z[i];
+
+      datum.B_model[0] = 0.0;
+      datum.B_model[1] = 0.0;
+      datum.B_model[2] = 0.0;
+
+      /* store crustal biases as a priori model if given */
+      if (params->model_crust)
+        {
+          if (station->station_flags & OBSDATA_STATFLG_BIAS_X)
+            datum.B_model[0] = station->bias_X;
+          if (station->station_flags & OBSDATA_STATFLG_BIAS_Y)
+            datum.B_model[1] = station->bias_Y;
+          if (station->station_flags & OBSDATA_STATFLG_BIAS_Z)
+            datum.B_model[2] = station->bias_Z;
+        }
 
       s = magdata_add(&datum, mdata);
       if (s)
