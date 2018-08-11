@@ -123,6 +123,7 @@ sheet_alloc(const void * params)
   state->rhs = gsl_vector_alloc(state->nmax);
   state->wts = gsl_vector_alloc(state->nmax);
   state->cov = gsl_matrix_alloc(state->p, state->p);
+  state->k = gsl_vector_alloc(state->p);
 
   return state;
 }
@@ -146,6 +147,9 @@ sheet_free(void * vstate)
 
   if (state->cov)
     gsl_matrix_free(state->cov);
+
+  if (state->k)
+    gsl_vector_free(state->k);
 
   if (state->green_p)
     green_free(state->green_p);
@@ -335,6 +339,10 @@ sheet_eval_B(const double t, const double r, const double theta, const double ph
   else
     {
       green_calc_ext(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data, state->green_p);
+
+      gsl_blas_ddot(&vx.vector, state->k, &B[0]);
+      gsl_blas_ddot(&vy.vector, state->k, &B[1]);
+      gsl_blas_ddot(&vz.vector, state->k, &B[2]);
     }
 
   return status;

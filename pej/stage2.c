@@ -203,10 +203,9 @@ main_proc(const char *data_file, magdata * data)
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, mean radius = %g [km])\n", time_diff(tv0, tv1), r);
 
+  params.b = R_EARTH_KM + 110.0;
   /*params.nmax_int = 10;
   params.mmax_int = 10;*/
-  params.nmax_ext = 0;
-  params.mmax_ext = 0;
 
   /* don't fit Y component since it is mostly influenced by FAC */
   params.flags = MAGFIT_FLG_FIT_X | MAGFIT_FLG_FIT_Z;
