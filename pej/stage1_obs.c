@@ -265,7 +265,7 @@ main(int argc, char *argv[])
   {
 #if 1
     obsdata_station *station = obsdata_station_find("KOU0", data);
-    obsdata_station_print("kou.txt", station);
+    obsdata_station_print("kou.txt", station, data);
 #else
     obsdata_station *station = obsdata_station_find("RES0", data);
     obsdata_station_print("res.txt", station);
