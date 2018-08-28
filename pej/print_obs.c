@@ -21,7 +21,68 @@
 #include <common/common.h>
 #include <common/bin2d.h>
 
+#include <gsl/gsl_math.h>
+#include <gsl/gsl_statistics.h>
+#include <gsl/gsl_sort.h>
+
 #include "magdata.h"
+
+int
+my_bin2d_print(const char *filename, const bin2d_workspace *w)
+{
+  int s = 0;
+  size_t i, j;
+  FILE *fp;
+  double array[MAX_DATA_PER_BIN];
+  double work[3 * MAX_DATA_PER_BIN];
+  int work_int[5 * MAX_DATA_PER_BIN];
+
+  fp = fopen(filename, "w");
+  if (!fp)
+    {
+      fprintf(stderr, "bin2d_print: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return -1;
+    }
+
+  i = 1;
+  fprintf(fp, "# Field %zu: x\n", i++);
+  fprintf(fp, "# Field %zu: y\n", i++);
+  fprintf(fp, "# Field %zu: mean\n", i++);
+  fprintf(fp, "# Field %zu: median\n", i++);
+  fprintf(fp, "# Field %zu: stddev\n", i++);
+  fprintf(fp, "# Field %zu: Q_n\n", i++);
+  fprintf(fp, "# Field %zu: number of data points in bin\n", i++);
+
+  for (i = 0; i < w->nx; ++i)
+    {
+      for (j = 0; j < w->ny; ++j)
+        {
+          size_t ndata = bin2d_fill(i, j, array, w);
+          double x, y;
+          double mean, sd, median, Qn;
+          size_t n;
+
+          bin2d_xyval(i, j, &x, &y, w);
+
+          mean = bin2d_mean(x, y, w);
+          sd = bin2d_sd(x, y, w);
+          median = bin2d_median(x, y, w);
+          n = bin2d_n(x, y, w);
+
+          gsl_sort(array, 1, ndata);
+          Qn = gsl_stats_Qn_from_sorted_data(array, 1, ndata, work, work_int);
+
+          fprintf(fp, "%f %f %.12e %.12e %.12e %.12e %zu\n", x, y, mean, median, sd, Qn, n);
+        }
+
+      fprintf(fp, "\n");
+    }
+
+  fclose(fp);
+
+  return s;
+}
 
 /*
 print_grid()
@@ -39,7 +100,7 @@ int
 print_grid(const char *filename, const magdata *data)
 {
   int s = 0;
-  const size_t nMLT = 180;
+  const size_t nMLT = 24;
   const size_t nqd = 90;
   size_t i;
   bin2d_workspace *bin2d_X = bin2d_alloc(-180.0, 180.0, nMLT, -90.0, 90.0, nqd);
@@ -56,9 +117,9 @@ print_grid(const char *filename, const magdata *data)
       bin2d_add_element(MLT_deg, data->qdlat[i], data->Bz_nec[i], bin2d_Z);
     }
 
-  bin2d_print("data_X.txt", bin2d_X);
-  bin2d_print("data_Y.txt", bin2d_Y);
-  bin2d_print("data_Z.txt", bin2d_Z);
+  my_bin2d_print("data_X.txt", bin2d_X);
+  my_bin2d_print("data_Y.txt", bin2d_Y);
+  my_bin2d_print("data_Z.txt", bin2d_Z);
 
   bin2d_free(bin2d_X);
   bin2d_free(bin2d_Y);

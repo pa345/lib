@@ -199,6 +199,7 @@ size_t
 mfield_data_filter_comp(mfield_data_workspace *w)
 {
   const mfield_data_parameters *params = &(w->params);
+  const double qdlat_cutoff = params->fit_seplat ? params->qdlat_fit_cutoff : 100.0;
   size_t cnt = 0;
   size_t i, j;
 
@@ -210,7 +211,7 @@ mfield_data_filter_comp(mfield_data_workspace *w)
         {
           double qdlat = mptr->qdlat[j];
 
-          if (fabs(qdlat) <= params->qdlat_fit_cutoff)
+          if (fabs(qdlat) <= qdlat_cutoff)
             {
               /* select components for mid/low latitudes */
 

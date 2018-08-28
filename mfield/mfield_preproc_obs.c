@@ -49,11 +49,7 @@
 
 typedef struct
 {
-  size_t downsample;      /* downsampling factor */
-  double min_LT;          /* minimum local time for field modeling */
-  double max_LT;          /* maximum local time for field modeling */
   double qdlat_preproc_cutoff; /* QD latitude cutoff for high-latitudes */
-  double min_zenith;      /* minimum zenith angle for high-latitude data selection */
 
   int subtract_B_main;    /* subtract a-priori main field from data */
   int subtract_B_crust;   /* subtract a-priori crustal field from data */
@@ -62,11 +58,6 @@ typedef struct
   double max_kp;          /* maximum kp */
   double max_dRC;         /* maximum dRC/dt (nT/hour) */
 } preprocess_parameters;
-
-static int mfield_check_LT(const double lt, const double lt_min, const double lt_max);
-static size_t model_flags(const size_t magdata_flags, const double t,
-                          const double theta, const double phi, const double qdlat,
-                          const preprocess_parameters * params);
 
 #define MFIELD_IDX_X              0
 #define MFIELD_IDX_Y              1
@@ -88,12 +79,6 @@ check_parameters(preprocess_parameters * params)
 {
   int s = 0;
 
-  if (params->downsample == 0)
-    {
-      fprintf(stderr, "check_parameters: downsample must be > 0\n");
-      ++s;
-    }
-
   if (params->max_kp <= 0.0)
     {
       fprintf(stderr, "check_parameters: max_kp must be > 0\n");
@@ -106,27 +91,9 @@ check_parameters(preprocess_parameters * params)
       ++s;
     }
 
-  if (params->min_LT < 0.0)
-    {
-      fprintf(stderr, "check_parameters: min_LT must be > 0\n");
-      ++s;
-    }
-
-  if (params->max_LT < 0.0)
-    {
-      fprintf(stderr, "check_parameters: max_LT must be > 0\n");
-      ++s;
-    }
-
   if (params->qdlat_preproc_cutoff < 0.0)
     {
       fprintf(stderr, "check_parameters: qdlat_preproc_cutoff must be > 0\n");
-      ++s;
-    }
-
-  if (params->min_zenith < 0.0)
-    {
-      fprintf(stderr, "check_parameters: min_zenith must be > 0\n");
       ++s;
     }
 
@@ -153,7 +120,7 @@ check_parameters(preprocess_parameters * params)
 
 /* convert observatory SV data to magdata format */
 magdata *
-copy_data_SV(const size_t magdata_flags, const obsdata_station *station, preprocess_parameters * preproc_params)
+copy_data_SV(const size_t magdata_flags, const obsdata_station *station)
 {
   size_t ndata = station->n_sv_tot;
   magdata *mdata;
@@ -176,29 +143,12 @@ copy_data_SV(const size_t magdata_flags, const obsdata_station *station, preproc
 
   magdata_copy_station_SV(&params, station, mdata, npts);
 
-  /* now determine which points in mdata will be used for MF modeling */
+  /*
+   * the calculation of daily means and SV values already performed extensive data
+   * selection (LT, MLT, etc). So just flag all mean/SV values for main field modeling
+   */
   for (i = 0; i < mdata->n; ++i)
-    {
-      size_t fitting_flags = 0;
-
-      if (fabs(mdata->qdlat[i]) <= preproc_params->qdlat_preproc_cutoff)
-        {
-          /* mid-latitude point: check local time to determine whether to fit MF model */
-
-          double LT = mdata->lt[i];
-          int fit_MF = mfield_check_LT(LT, preproc_params->min_LT, preproc_params->max_LT);
-
-          if (fit_MF)
-            fitting_flags |= MAGDATA_FLG_FIT_MF;
-        }
-      else
-        {
-          /* high-latitude point - fit field model */
-          fitting_flags |= MAGDATA_FLG_FIT_MF;
-        }
-
-      mdata->flags[i] |= fitting_flags;
-    }
+    mdata->flags[i] |= MAGDATA_FLG_FIT_MF;
 
   return mdata;
 }
@@ -231,66 +181,17 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
 
   mdata->global_flags = magdata_flags;
 
+  /* copy daily means into magdata struct */
   magdata_copy_station_means(&params, station, mdata, npts);
 
-  /* now determine which points in mdata will be used for MF modeling */
+  /*
+   * the calculation of daily means and SV values already performed extensive data
+   * selection (LT, MLT, etc). So just flag all mean/SV values for main field modeling
+   */
   for (i = 0; i < mdata->n; ++i)
-    {
-      size_t fitting_flags = 0;
-
-      if (fabs(mdata->qdlat[i]) <= preproc_params->qdlat_preproc_cutoff)
-        {
-          /* mid-latitude point: check local time to determine whether to fit MF model */
-
-          double LT = mdata->lt[i];
-          int fit_MF = mfield_check_LT(LT, preproc_params->min_LT, preproc_params->max_LT);
-
-          if (fit_MF)
-            fitting_flags |= MAGDATA_FLG_FIT_MF;
-        }
-      else
-        {
-          /* high-latitude point - fit field model */
-          fitting_flags |= MAGDATA_FLG_FIT_MF;
-        }
-
-      mdata->flags[i] |= fitting_flags;
-    }
+    mdata->flags[i] |= MAGDATA_FLG_FIT_MF;
 
   return mdata;
-}
-
-/*
-mfield_check_LT()
-  Check if a given LT is within [lt_min,lt_max] accounting for mod 24. So it
-is possible to have input lt_min < lt_max in order to select data across midnight.
-
-Example: [lt_min,lt_max] = [6,18] will select daytime data between 6am and 6pm
-         [lt_min,lt_max] = [18,6] will select nighttime data between 6pm and 6am
-         [lt_min,lt_max] = [22,5] will select nighttime data between 10pm and 5am
-         [lt_min,lt_max] = [0,5] will select data between midnight and 5am
-
-Return: 1 if LT \in [lt_min,lt_max] (mod 24); 0 otherwise
-*/
-
-static int
-mfield_check_LT(const double lt, const double lt_min, const double lt_max)
-{
-  double a, b;
-
-  b = fmod(lt_max - lt_min, 24.0);
-  if (b < 0.0)
-    b += 24.0;
-
-  a = fmod(lt - lt_min, 24.0);
-  if (a < 0.0)
-    a += 24.0;
-
-  if (a > b)
-    return 0; /* invalid local time */
-
-  /* valid local time */
-  return 1;
 }
 
 /*
@@ -298,15 +199,13 @@ preprocess_data()
   Compute daily means and SV data for observatories
 
 Inputs: params - preprocess parameters
-          downsample - downsampling factor
         data   - observatory data
 
 Return: pointer to sorted track workspace (should be freed by caller)
 */
 
 int
-preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
-                obsdata *data)
+preprocess_data(const preprocess_parameters *params, obsdata *data)
 {
   const double interval_SV = 0.5 * 365.25; /* interval for SV differences (days) */
   const size_t min_samples = 1;            /* minimum samples needed for daily means */
@@ -330,6 +229,7 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
               time_diff(tv0, tv1), nflagged, station->n, (double) nflagged / (double) station->n * 100.0);
 
       fprintf(stderr, "\t\t flagged data due to LT:        %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_LT], (double) nflagged_array[OBSDATA_IDX_LT] / (double) station->n * 100.0);
+      fprintf(stderr, "\t\t flagged data due to MLT:       %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_MLT], (double) nflagged_array[OBSDATA_IDX_MLT] / (double) station->n * 100.0);
       fprintf(stderr, "\t\t flagged data due to kp:        %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_KP], (double) nflagged_array[OBSDATA_IDX_KP] / (double) station->n * 100.0);
       fprintf(stderr, "\t\t flagged data due to dRC/dt:    %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_DRC], (double) nflagged_array[OBSDATA_IDX_DRC] / (double) station->n * 100.0);
       fprintf(stderr, "\t\t flagged data due to SMDL:      %zu (%.1f%%)\n", nflagged_array[OBSDATA_IDX_SMDL], (double) nflagged_array[OBSDATA_IDX_SMDL] / (double) station->n * 100.0);
@@ -351,30 +251,6 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
     }
 
   fprintf(stderr, "done\n");
-
-#if 0
-  /* select geomagnetically quiet data */
-  fprintf(stderr, "preprocess_data: selecting geomagnetically quiet data...");
-  mfield_preprocess_filter(magdata_flags, params, track_p, data);
-  fprintf(stderr, "done\n");
-#endif
-
-#if 0
-  /* downsample data */
-  {
-    size_t i;
-
-    fprintf(stderr, "preprocess_data: downsampling data by factor %zu...", params->downsample);
-
-    for (i = 0; i < data->n; ++i)
-      {
-        if (i % params->downsample != 0)
-          data->flags[i] |= SATDATA_FLG_DOWNSAMPLE;
-      }
-
-    fprintf(stderr, "done\n");
-  }
-#endif
 
   return 0;
 }
@@ -404,17 +280,8 @@ parse_config_file(const char *filename, preprocess_parameters *params)
     params->max_kp = fval;
   if (config_lookup_float(&cfg, "max_dRC", &fval))
     params->max_dRC = fval;
-  if (config_lookup_float(&cfg, "min_LT", &fval))
-    params->min_LT = fval;
-  if (config_lookup_float(&cfg, "max_LT", &fval))
-    params->max_LT = fval;
   if (config_lookup_float(&cfg, "qdlat_preproc_cutoff", &fval))
     params->qdlat_preproc_cutoff = fval;
-  if (config_lookup_float(&cfg, "min_zenith", &fval))
-    params->min_zenith = fval;
-
-  if (config_lookup_int(&cfg, "downsample", &ival))
-    params->downsample = (size_t) ival;
 
   if (config_lookup_int(&cfg, "subtract_B_main", &ival))
     params->subtract_B_main = (size_t) ival;
@@ -434,7 +301,6 @@ print_help(char *argv[])
   fprintf(stderr, "Usage: %s [options]\n", argv[0]);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "\t --obs_data_file   | -O                        - Observatory data file (%s)\n", OBSDATA_BINARY_FILE);
-  fprintf(stderr, "\t --downsample      | -d downsample             - downsampling factor\n");
   fprintf(stderr, "\t --config_file     | -C config_file            - configuration file\n");
 }
 
@@ -444,25 +310,18 @@ main(int argc, char *argv[])
   int status;
   const char *path_dir = "/data/palken/lib/mfield/data/obs";
   char *datamap_file = "datamap.dat";
-  char *data_file = "data.dat";
   char *config_file = "OBS.cfg";
   obsdata *data = NULL;
   struct timeval tv0, tv1;
   preprocess_parameters params;
-  size_t downsample = 0;     /* downsample factor */
   size_t magdata_flags = 0;  /* MAGDATA_GLOBFLG_xxx */
-  int flag_vec_rms = 1;
   char output_file[2048];
   size_t i;
 
   /* initialize parameters */
-  params.downsample = 0;
   params.max_kp = -1.0;
   params.max_dRC = -1.0;
-  params.min_LT = -1.0;
-  params.max_LT = -1.0;
   params.qdlat_preproc_cutoff = -1.0;
-  params.min_zenith = -1.0;
   params.subtract_B_main = -1;
   params.subtract_B_crust = -1;
   params.subtract_B_ext = -1;
@@ -474,12 +333,11 @@ main(int argc, char *argv[])
       static struct option long_options[] =
         {
           { "obs_file", no_argument, NULL, 'O' },
-          { "downsample", required_argument, NULL, 'd' },
           { "config_file", required_argument, NULL, 'C' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "C:d:O", long_options, &option_index);
+      c = getopt_long(argc, argv, "C:O", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -487,10 +345,6 @@ main(int argc, char *argv[])
         {
           case 'C':
             config_file = optarg;
-            break;
-
-          case 'd':
-            downsample = (size_t) atoi(optarg);
             break;
 
           case 'O':
@@ -510,10 +364,6 @@ main(int argc, char *argv[])
   /* parse configuration file */
   parse_config_file(config_file, &params);
 
-  /* replace config values with command-line arguments */
-  if (downsample > 0)
-    params.downsample = downsample;
-
   /* check parameters */
   status = check_parameters(&params);
   if (status)
@@ -525,12 +375,8 @@ main(int argc, char *argv[])
       exit(1);
     }
 
-  fprintf(stderr, "main: downsample       = %zu\n", params.downsample);
-  fprintf(stderr, "main: LT minimum       = %.1f\n", params.min_LT);
-  fprintf(stderr, "main: LT maximum       = %.1f\n", params.max_LT);
-
   fprintf(stderr, "main: === PREPROCESSING OBSERVATORY DATA ===\n");
-  preprocess_data(&params, magdata_flags, data);
+  preprocess_data(&params, data);
 
   for (i = 0; i < data->nstation; ++i)
     {
@@ -539,36 +385,38 @@ main(int argc, char *argv[])
 
       /* copy SV data */
 
-      mdata = copy_data_SV(magdata_flags, station, &params);
+      mdata = copy_data_SV(magdata_flags, station);
 
-      if (mdata == NULL)
+      if (mdata != NULL)
+        {
+          sprintf(output_file, "%s/%s_SV.dat", path_dir, station->name);
+          fprintf(stderr, "main: writing data to %s...", output_file);
+          magdata_write(output_file, mdata);
+          fprintf(stderr, "done\n");
+
+          magdata_free(mdata);
+        }
+      else
         {
           fprintf(stderr, "main: WARNING: station %s has no usable SV data\n", station->name);
-          continue;
         }
-
-      sprintf(output_file, "%s/%s_SV.dat", path_dir, station->name);
-      fprintf(stderr, "main: writing data to %s...", output_file);
-      magdata_write(output_file, mdata);
-      fprintf(stderr, "done\n");
-
-      magdata_free(mdata);
 
       /* copy daily mean data */
       mdata = copy_data(magdata_flags, station, &params);
 
-      if (mdata == NULL)
+      if (mdata != NULL)
+        {
+          sprintf(output_file, "%s/%s.dat", path_dir, station->name);
+          fprintf(stderr, "main: writing data to %s...", output_file);
+          magdata_write(output_file, mdata);
+          fprintf(stderr, "done\n");
+
+          magdata_free(mdata);
+        }
+      else
         {
           fprintf(stderr, "main: WARNING: station %s has no usable daily mean data\n", station->name);
-          continue;
         }
-
-      sprintf(output_file, "%s/%s.dat", path_dir, station->name);
-      fprintf(stderr, "main: writing data to %s...", output_file);
-      magdata_write(output_file, mdata);
-      fprintf(stderr, "done\n");
-
-      magdata_free(mdata);
     }
 
   /* free data after copying arrays to free up memory */
@@ -586,10 +434,6 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
 #if 0
-  fprintf(stderr, "main: writing data to %s...", data_file);
-  magdata_print(data_file, mdata);
-  fprintf(stderr, "done\n");
-
   fprintf(stderr, "main: writing data map to %s...", datamap_file);
   magdata_map(datamap_file, mdata);
   fprintf(stderr, "done\n");

@@ -15,6 +15,13 @@ typedef struct
   double epoch;          /* model epoch in decimal years */
   double qdlat_fit_cutoff; /* QD latitude cutoff separating high-latitudes for fitting components (degrees) */
 
+  /*
+   * separate fitted components into mid/high latitudes; if 0, use the fit_xxx flags
+   * below for all latitudes; if 1, the fit_xxx are for mid/low latitudes, and the fit_xxx_highlat
+   * are for high latitudes
+   */
+  int fit_seplat;
+
   /* mid/low latitude components for fitting */
 
   int fit_X;             /* fit X vector component */

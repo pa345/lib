@@ -1978,6 +1978,30 @@ magdata_copy_station_means(const magdata_params *params, const obsdata_station *
       if (OBSDATA_ExistZ(station->flags_mean[i]))
         flags |= MAGDATA_FLG_Z;
 
+      datum.B_model[0] = 0.0;
+      datum.B_model[1] = 0.0;
+      datum.B_model[2] = 0.0;
+
+      /* store crustal biases as a priori model if given; if no bias is
+       * available for this station, don't store the mean data */
+      if (params->model_crust)
+        {
+          if (station->station_flags & OBSDATA_STATFLG_BIAS_X)
+            datum.B_model[0] = station->bias_X;
+          else
+            flags &= ~MAGDATA_FLG_X;
+
+          if (station->station_flags & OBSDATA_STATFLG_BIAS_Y)
+            datum.B_model[1] = station->bias_Y;
+          else
+            flags &= ~MAGDATA_FLG_Y;
+
+          if (station->station_flags & OBSDATA_STATFLG_BIAS_Z)
+            datum.B_model[2] = station->bias_Z;
+          else
+            flags &= ~MAGDATA_FLG_Z;
+        }
+
       datum.t = station->t_mean[i];
       datum.r = station->radius;
       datum.theta = M_PI / 2.0 - station->latitude * M_PI / 180.0;
@@ -1987,21 +2011,6 @@ magdata_copy_station_means(const magdata_params *params, const obsdata_station *
       datum.B_nec[0] = station->X_mean[i];
       datum.B_nec[1] = station->Y_mean[i];
       datum.B_nec[2] = station->Z_mean[i];
-
-      datum.B_model[0] = 0.0;
-      datum.B_model[1] = 0.0;
-      datum.B_model[2] = 0.0;
-
-      /* store crustal biases as a priori model if given */
-      if (params->model_crust)
-        {
-          if (station->station_flags & OBSDATA_STATFLG_BIAS_X)
-            datum.B_model[0] = station->bias_X;
-          if (station->station_flags & OBSDATA_STATFLG_BIAS_Y)
-            datum.B_model[1] = station->bias_Y;
-          if (station->station_flags & OBSDATA_STATFLG_BIAS_Z)
-            datum.B_model[2] = station->bias_Z;
-        }
 
       idx = bsearch_double(station->t, datum.t, 0, station->n - 1);
 

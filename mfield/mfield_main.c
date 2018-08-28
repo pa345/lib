@@ -941,6 +941,9 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
   if (config_lookup_float(&cfg, "weight_DZ", &fval))
     mfield_params->weight_DZ = fval;
 
+  if (config_lookup_int(&cfg, "fit_seplat", &ival))
+    data_params->fit_seplat = ival;
+
   if (config_lookup_int(&cfg, "fit_X", &ival))
     data_params->fit_X = ival;
   if (config_lookup_int(&cfg, "fit_Y", &ival))
@@ -1379,11 +1382,7 @@ main(int argc, char *argv[])
       if (print_residuals)
         {
           fprintf(stderr, "main: printing residuals to %s...", residual_prefix);
-#if 0
-          mfield_print_residual(residual_prefix, iter, mfield_workspace_p);
-#else
           mfield_residual_print(residual_prefix, iter, mfield_workspace_p);
-#endif
           fprintf(stderr, "done\n");
         }
 
