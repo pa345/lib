@@ -91,6 +91,57 @@ track_synth_int(satdata_mag *data, msynth_workspace *msynth_core_p, msynth_works
 }
 
 /*
+track_synth_core()
+  Synthesize main field along satellite track, with
+parallelized implementation
+
+Inputs: data      - satellite data output
+        msynth_p  - msynth core workspace (degrees 1 to 15)
+*/
+
+int
+track_synth_core(satdata_mag *data, msynth_workspace *msynth_p)
+{
+  int s = 0;
+  const size_t nmax = msynth_p->eval_nmax;
+  size_t i;
+  const size_t max_threads = (size_t) omp_get_max_threads();
+  msynth_workspace **core_p = malloc(max_threads * sizeof(msynth_workspace *));
+
+  for (i = 0; i < max_threads; ++i)
+    {
+      core_p[i] = msynth_copy(msynth_p);
+      msynth_set(1, nmax, core_p[i]);
+    }
+
+#pragma omp parallel for private(i)
+  for (i = 0; i < data->n; ++i)
+    {
+      int thread_id = omp_get_thread_num();
+      double tyr = satdata_epoch2year(data->t[i]);
+      double r = data->r[i];
+      double theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
+      double phi = data->longitude[i] * M_PI / 180.0;
+      double B_core[4];
+
+      /* compute core field */
+      msynth_eval(tyr, r, theta, phi, B_core, core_p[thread_id]);
+
+      /* store vector core field */
+      SATDATA_VEC_X(data->B_main, i) = B_core[0];
+      SATDATA_VEC_Y(data->B_main, i) = B_core[1];
+      SATDATA_VEC_Z(data->B_main, i) = B_core[2];
+    }
+
+  for (i = 0; i < max_threads; ++i)
+    msynth_free(core_p[i]);
+
+  free(core_p);
+
+  return s;
+}
+
+/*
 track_synth_QD()
   Compute QD latitudes along track
 

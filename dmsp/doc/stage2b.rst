@@ -99,3 +99,20 @@ corrected with an impulse rejection filter.
 
    Spike removal procedure for VFM X, Y and Z components. Blue squares indicate detected
    impulses, which are replaced by the window median.
+
+Along-track RMS Filtering
+=========================
+
+After the jumps and spikes are corrected, the root-mean-square (rms) of the scalar residual
+is calculated along each half orbit. Orbits with an rms larger than some threshold are
+flagged and are not used in the scalar calibration step. The current rms threshold is
+:code:`50 nT`. :numref:`fig_rms` shows an example scalar rms plot versus longitude for 1 year
+of F-17 data (2015).
+
+.. _fig_rms:
+
+.. figure:: /images/rms_lon.png
+   :scale: 60%
+
+Scalar Calibration
+==================

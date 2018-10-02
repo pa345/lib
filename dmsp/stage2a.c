@@ -2,10 +2,11 @@
  * stage2a.c
  *
  * 1. Read DMSP file(s)
- * 2. Correct single point spikes with median filter
+ * 2. Correct VFM X/Y attitude quaternions using main field model
  * 3. Correct jumps
- * 4. Select quiet-time tracks (stage2_filter)
- * 5. Calculate scalar calibration parameters (scale factors, offsets, non-orthogonality angles)
+ * 4. Correct spikes
+ * 5. Select quiet tracks
+ * 6. Calculate scalar calibration parameters (scale factors, offsets, non-orthogonality angles)
  *
  * Usage: ./stage2a <-i dmsp_index_file> <-o dmsp_output_file> [-p parameter_file]
  */
@@ -77,6 +78,34 @@ stage2_unflag_time(satdata_mag *data)
     data->flags[i] &= ~SATDATA_FLG_TIME;
 
   return 0;
+}
+
+double
+stage2_scalar_rms(const satdata_mag * data)
+{
+  size_t i;
+  double rms = 0.0;
+  double n = 0.0;
+
+  for (i = 0; i < data->n; ++i)
+    {
+      double B_model[4], ri;
+
+      if (fabs(data->qdlat[i]) > 50.0)
+        continue;
+
+      satdata_mag_model(i, B_model, data);
+
+      ri = data->F[i] - B_model[3];
+
+      rms += ri * ri;
+      n += 1.0;
+    }
+
+  if (n > 0.0)
+    rms = sqrt(rms / n);
+
+  return rms;
 }
 
 /*
@@ -635,6 +664,21 @@ preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *tra
   return s;
 }
 
+void
+print_help(char *argv[])
+{
+  fprintf(stderr, "Usage: %s <-i dmsp_index_file> <-b bowman_ephemeris_file> [-o output_file] [-p param_file] [-r residual_file] [-d data_file] [-t period]\n",
+          argv[0]);
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  -i dmsp_index_file     - Input DMSP index file\n");
+  fprintf(stderr, "  -o output_file         - Output calibrated CDF file\n");
+  fprintf(stderr, "  -p param_file          - Output ASCII file containing time series of calibration parameters\n");
+  fprintf(stderr, "  -r residual_file       - Output ASCII file of residuals\n");
+  fprintf(stderr, "  -d data_file           - Output ASCII file of data\n");
+  fprintf(stderr, "  -t period              - Period in days of calibration parameter bins\n");
+  fprintf(stderr, "  -h swarm_shc_file      - Replacement core field model in Swarm SHC format\n");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -660,11 +704,13 @@ main(int argc, char *argv[])
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   eph_data *eph = NULL;
+  double rms0, rms1;    /* initial and final scalar rms for whole dataset (at low-latitudes) */
   double period = -1.0; /* period in days for fitting scalar calibration parameters */
   double period_ms = -1.0; /* period in ms for fitting scalar calibration parameters */
   size_t nbins = 1;     /* number of time bins for fitting calibration parameters */
   double *t;            /* array of timestamps of bin centers, size nbins */
   track_workspace *track_p;
+  msynth_workspace *msynth_p = NULL;
   gsl_vector *coef = gsl_vector_alloc(FLUXCAL_P);
   FILE *fp_param = NULL;
   struct timeval tv0, tv1;
@@ -680,7 +726,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "d:i:o:b:p:r:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "d:h:i:o:b:p:r:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -722,6 +768,10 @@ main(int argc, char *argv[])
             period = atof(optarg);
             break;
 
+          case 'h':
+            msynth_p = msynth_swarm_read(optarg);
+            break;
+
           default:
             break;
         }
@@ -729,8 +779,7 @@ main(int argc, char *argv[])
 
   if (!data)
     {
-      fprintf(stderr, "Usage: %s <-i dmsp_index_file> <-b bowman_ephemeris_file> [-o output_file] [-p param_file] [-r residual_file] [-d data_file] [-t period]\n",
-              argv[0]);
+      print_help(argv);
       exit(1);
     }
 
@@ -768,6 +817,18 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: period for calibration:  %.1f [days]\n", period_ms / 8.64e7);
   fprintf(stderr, "main: number of temporal bins: %zu\n", nbins);
+
+  if (msynth_p != NULL)
+    {
+      fprintf(stderr, "main: recalculating main field...");
+      gettimeofday(&tv0, NULL);
+      track_synth_core(data, msynth_p);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+    }
+
+  /* calculate scalar rms of unmodified dataset */
+  rms0 = stage2_scalar_rms(data);
 
   track_p = track_alloc();
 
@@ -883,11 +944,20 @@ main(int argc, char *argv[])
       fprintf(stderr, "done\n");
     }
 
+  /* calculate scalar rms of final dataset */
+  rms1 = stage2_scalar_rms(data);
+
+  fprintf(stderr, "main: INITIAL SCALAR RMS = %.2f [nT]\n", rms0);
+  fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
+
   gsl_vector_free(coef);
   track_free(track_p);
   satdata_mag_free(data);
   eph_data_free(eph);
   free(t);
+
+  if (msynth_p)
+    msynth_free(msynth_p);
 
   if (data2)
     satdata_mag_free(data2);

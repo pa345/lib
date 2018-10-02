@@ -1019,7 +1019,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
   fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
-  fprintf(stderr, "\t --lambda_mf | -v lambda_mf      - main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_mf | -M lambda_mf      - main field damping parameter\n");
   fprintf(stderr, "\t --lambda_sv | -v lambda_sv      - secular variation damping parameter\n");
   fprintf(stderr, "\t --lambda_sa | -a lambda_sa      - secular acceleration damping parameter\n");
 } /* print_help() */

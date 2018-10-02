@@ -611,19 +611,12 @@ mfield_init_nonlinear(mfield_workspace *w)
             if (MAGDATA_Discarded(mptr->flags[j]))
               continue;
 
-#if 0
-            track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
-
-            /* XXX: spatial weighting for observatories gives nan values */
-            if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
-              wt = 1.0;
-#else
-            spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwt_workspace_p);
-
-            /*XXX*/
-            if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
-              wt = 1.0;
-#endif
+            if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+              spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtMF_workspace_p);
+            else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
+              spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtSV_workspace_p);
+            else /* satellite data */
+              track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
 
             if (MAGDATA_ExistX(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_X * wt);
@@ -2224,14 +2217,14 @@ mfield_nonlinear_regularize(gsl_vector *diag, mfield_workspace *w)
 } /* mfield_nonlinear_regularize() */
 
 static int
-mfield_robust_print_stat(const char *str, const double sigma, const gsl_rstat_workspace *rstat_p)
+mfield_robust_print_stat(const char *str, const double value, const gsl_rstat_workspace *rstat_p)
 {
   const size_t n = gsl_rstat_n(rstat_p);
 
   if (n > 0)
     {
       const double mean = gsl_rstat_mean(rstat_p);
-      fprintf(stderr, "\t %18s = %.2f [nT], Robust weight mean = %.4f\n", str, sigma, mean);
+      fprintf(stderr, "\t %18s = %.2f [nT], Robust weight mean = %.4f\n", str, value, mean);
     }
 
   return 0;
@@ -2273,7 +2266,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
   gsl_rstat_workspace *rstat_dxdt = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_dydt = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_dzdt = gsl_rstat_alloc();
+  double mean_OBS_X, mean_OBS_Y, mean_OBS_Z;
   double sigma_OBS_X, sigma_OBS_Y, sigma_OBS_Z;
+  double mean_DXDT, mean_DYDT, mean_DZDT;
   double sigma_DXDT, sigma_DYDT, sigma_DZDT;
 
   for (i = 0; i < w->nsat; ++i)
@@ -2437,6 +2432,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
 
   assert(idx == w->nres);
 
+  mean_OBS_X = gsl_rstat_mean(rstat_obs_x);
+  mean_OBS_Y = gsl_rstat_mean(rstat_obs_y);
+  mean_OBS_Z = gsl_rstat_mean(rstat_obs_z);
   sigma_OBS_X = gsl_rstat_sd(rstat_obs_x);
   sigma_OBS_Y = gsl_rstat_sd(rstat_obs_y);
   sigma_OBS_Z = gsl_rstat_sd(rstat_obs_z);
@@ -2444,6 +2442,9 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
   gsl_rstat_reset(rstat_obs_y);
   gsl_rstat_reset(rstat_obs_z);
 
+  mean_DXDT = gsl_rstat_mean(rstat_dxdt);
+  mean_DYDT = gsl_rstat_mean(rstat_dydt);
+  mean_DZDT = gsl_rstat_mean(rstat_dzdt);
   sigma_DXDT = gsl_rstat_sd(rstat_dxdt);
   sigma_DYDT = gsl_rstat_sd(rstat_dydt);
   sigma_DZDT = gsl_rstat_sd(rstat_dzdt);
@@ -2672,27 +2673,22 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
           mfield_robust_print_stat("sigma low DZ_EW", sigma_low_DZ_EW, rstat_low_dz_ew[i]);
           mfield_robust_print_stat("sigma high DZ_EW", sigma_high_DZ_EW, rstat_high_dz_ew[i]);
         }
-      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
-        {
-          if (!strncasecmp(mptr->name, "KOU0", 4) ||
-              !strncasecmp(mptr->name, "MBO0", 4) ||
-              !strncasecmp(mptr->name, "ASC0", 4) ||
-              !strncasecmp(mptr->name, "RES0", 4) ||
-              !strncasecmp(mptr->name, "THL0", 4) ||
-              !strncasecmp(mptr->name, "MAW0", 4))
-            {
-            }
-        }
     }
 
   fprintf(stderr, "\t === OBSERVATORY (robust sigma) ===\n");
 
+  mfield_robust_print_stat("mean X", mean_OBS_X, rstat_obs_x);
+  mfield_robust_print_stat("mean Y", mean_OBS_Y, rstat_obs_y);
+  mfield_robust_print_stat("mean Z", mean_OBS_Z, rstat_obs_z);
   mfield_robust_print_stat("sigma X", sigma_OBS_X, rstat_obs_x);
   mfield_robust_print_stat("sigma Y", sigma_OBS_Y, rstat_obs_y);
   mfield_robust_print_stat("sigma Z", sigma_OBS_Z, rstat_obs_z);
 
   fprintf(stderr, "\t === OBSERVATORY SV (robust sigma) ===\n");
 
+  mfield_robust_print_stat("mean dX/dt", mean_DXDT, rstat_dxdt);
+  mfield_robust_print_stat("mean dY/dt", mean_DYDT, rstat_dydt);
+  mfield_robust_print_stat("mean dZ/dt", mean_DZDT, rstat_dzdt);
   mfield_robust_print_stat("sigma dX/dt", sigma_DXDT, rstat_dxdt);
   mfield_robust_print_stat("sigma dY/dt", sigma_DYDT, rstat_dydt);
   mfield_robust_print_stat("sigma dZ/dt", sigma_DZDT, rstat_dzdt);

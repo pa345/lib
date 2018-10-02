@@ -105,7 +105,8 @@ mfield_alloc(const mfield_parameters *params)
   w->params = *params;
 
   w->weight_workspace_p = track_weight_alloc(ntheta, nphi);
-  w->spatwt_workspace_p = spatwt_alloc(8, 12);
+  w->spatwtMF_workspace_p = spatwt_alloc(8, 12);
+  w->spatwtSV_workspace_p = spatwt_alloc(8, 12);
 
   w->nbins_euler = calloc(1, w->nsat * sizeof(size_t));
   w->offset_euler = calloc(1, w->nsat * sizeof(size_t));
@@ -513,8 +514,11 @@ mfield_free(mfield_workspace *w)
   if (w->weight_workspace_p)
     track_weight_free(w->weight_workspace_p);
 
-  if (w->spatwt_workspace_p)
-    spatwt_free(w->spatwt_workspace_p);
+  if (w->spatwtMF_workspace_p)
+    spatwt_free(w->spatwtMF_workspace_p);
+
+  if (w->spatwtSV_workspace_p)
+    spatwt_free(w->spatwtSV_workspace_p);
 
   if (w->JTJ_vec)
     gsl_matrix_free(w->JTJ_vec);
@@ -720,6 +724,32 @@ mfield_init(mfield_workspace *w)
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
 
+          if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+            {
+              if (mptr->flags[j] & MAGDATA_FLG_X)
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtMF_workspace_p);
+
+              if (mptr->flags[j] & MAGDATA_FLG_Y)
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtMF_workspace_p);
+
+              if (mptr->flags[j] & MAGDATA_FLG_Z)
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtMF_workspace_p);
+
+              if (MAGDATA_ExistScalar(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtMF_workspace_p);
+            }
+          else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
+            {
+              if (mptr->flags[j] & MAGDATA_FLG_DXDT)
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtSV_workspace_p);
+
+              if (mptr->flags[j] & MAGDATA_FLG_DYDT)
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtSV_workspace_p);
+
+              if (mptr->flags[j] & MAGDATA_FLG_DZDT)
+                spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwtSV_workspace_p);
+            }
+
 #if 1
           if (mptr->flags[j] & MAGDATA_FLG_X)
             track_weight_add_data(mptr->theta[j], mptr->phi[j], w->weight_workspace_p);
@@ -747,33 +777,6 @@ mfield_init(mfield_workspace *w)
 
           if (MAGDATA_ExistDF_EW(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
             track_weight_add_data(mptr->theta[j], mptr->phi[j], w->weight_workspace_p);
-
-          if (mptr->flags[j] & MAGDATA_FLG_X)
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (mptr->flags[j] & MAGDATA_FLG_Y)
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (mptr->flags[j] & MAGDATA_FLG_Z)
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (MAGDATA_ExistScalar(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DY_NS | MAGDATA_FLG_DY_EW))
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DZ_EW))
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (MAGDATA_ExistDF_NS(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
-
-          if (MAGDATA_ExistDF_EW(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
-            spatwt_add_data(mptr->theta[j], mptr->phi[j], w->spatwt_workspace_p);
 #else
           track_weight_add_data(mptr->theta[j], mptr->phi[j], w->weight_workspace_p);
 #endif
@@ -782,9 +785,11 @@ mfield_init(mfield_workspace *w)
 
   /* compute data weights with histogram */
   track_weight_calc(w->weight_workspace_p);
-  spatwt_calc(w->spatwt_workspace_p);
+  spatwt_calc(w->spatwtMF_workspace_p);
+  spatwt_calc(w->spatwtSV_workspace_p);
 
-  spatwt_print("spatwt.txt", w->spatwt_workspace_p);
+  spatwt_print("spatwtMF.txt", w->spatwtMF_workspace_p);
+  spatwt_print("spatwtSV.txt", w->spatwtSV_workspace_p);
 
   mfield_init_nonlinear(w);
 

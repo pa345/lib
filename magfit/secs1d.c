@@ -79,6 +79,7 @@ static size_t secs1d_ncoeff(void * vstate);
 static int secs1d_add_datum(const double t, const double r, const double theta, const double phi,
                             const double qdlat, const double B[3], void * vstate);
 static int secs1d_fit(double * rnorm, double * snorm, void * vstate);
+static int secs1d_dofit(double * rnorm, double * snorm, void * vstate);
 static int secs1d_eval_B(const double t, const double r, const double theta, const double phi,
                          double B[3], void * vstate);
 static int secs1d_eval_J(const double r, const double theta, const double phi,
@@ -373,12 +374,58 @@ Inputs: rnorm  - residual norm || y - A x ||
 Return: success/error
 
 Notes:
-1) Data must be added to workspace via
-secs1d_add_datum()
+1) Data must be added to workspace via secs1d_add_datum()
 */
 
 static int
 secs1d_fit(double * rnorm, double * snorm, void * vstate)
+{
+  int status;
+  secs1d_state_t *state = (secs1d_state_t *) vstate;
+  gsl_matrix_view A = gsl_matrix_submatrix(state->X, 0, 0, state->n, state->p);
+  gsl_vector_view b = gsl_vector_subvector(state->rhs, 0, state->n);
+  gsl_vector_view w = gsl_vector_subvector(state->wts, 0, state->n);
+  gsl_vector *residual = gsl_vector_alloc(state->n);
+  gsl_vector *wts = gsl_vector_alloc(state->n);
+  double rms;
+  size_t i, iter;
+
+  gsl_vector_memcpy(wts, &w.vector);
+
+  for (iter = 0; iter < 5; ++iter)
+    {
+      if (iter > 0)
+        {
+          /* compute residuals from previous iteration */
+          gsl_vector_memcpy(residual, &b.vector);
+          gsl_blas_dgemv(CblasNoTrans, -1.0, &A.matrix, state->c, 1.0, residual);
+
+          /* residual rms */
+          rms = 1.0 / sqrt((double) state->n) * gsl_blas_dnrm2(residual);
+
+          /* update robust weights */
+          for (i = 0; i < state->n; ++i)
+            {
+              double wi = gsl_vector_get(wts, i);
+              double ri = gsl_vector_get(residual, i);
+              double ei = ri / (1.5 * rms);
+              double rwi = GSL_MIN(1.0, 1.0 / fabs(ei));
+
+              gsl_vector_set(state->wts, i, wi * rwi);
+            }
+        }
+
+      secs1d_dofit(rnorm, snorm, vstate);
+    }
+
+  gsl_vector_free(residual);
+  gsl_vector_free(wts);
+
+  return status;
+}
+
+static int
+secs1d_dofit(double * rnorm, double * snorm, void * vstate)
 {
   secs1d_state_t *state = (secs1d_state_t *) vstate;
   const size_t npts = 200;
@@ -387,8 +434,8 @@ secs1d_fit(double * rnorm, double * snorm, void * vstate)
   gsl_vector *rho = gsl_vector_alloc(npts);
   gsl_vector *eta = gsl_vector_alloc(npts);
   gsl_vector *G = gsl_vector_alloc(npts);
-  gsl_matrix_view A = gsl_matrix_submatrix(state->X, 0, 0, state->n, state->p);
-  gsl_vector_view b = gsl_vector_subvector(state->rhs, 0, state->n);
+  gsl_matrix_const_view A = gsl_matrix_const_submatrix(state->X, 0, 0, state->n, state->p);
+  gsl_vector_const_view b = gsl_vector_const_subvector(state->rhs, 0, state->n);
   gsl_vector_view wts = gsl_vector_subvector(state->wts, 0, state->n);
   double lambda_gcv, lambda_l, lambda, G_gcv;
   size_t i;

@@ -2,16 +2,16 @@
 
 set term pngcairo enh col size 1000,1000
 
-mapprog="$DATAHOME/palken/msynth-1.0/src/print_map"
-plotprog="$DATAHOME/palken/msynth-1.0/src/plots/genmap.sh"
+mapprog="$DATAHOME/palken/repo/msynth/src/print_map"
+plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 
 #coefdir="coef_F17"
 #outfile="F17.mp4"
 #title="DMSP F-17"
 
-coefdir="coef"
+coefdir="coef_smooth"
 outfile="SA"
-title="CHAMP+DMSP+Swarm"
+title="Smoothed BOUMME"
 
 plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
 
@@ -36,5 +36,8 @@ for f in $(ls ${coefdir}/coef*.txt); do
   rm -f $tmpfile
   idx=$((idx+1))
 done
+
+# cleanup
+rm -f ${coefdir}/*.eps ${coefdir}/*.ps
 
 #ffmpeg -framerate 4 -i map.%03d.png -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf fps=25 ${outfile}

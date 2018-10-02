@@ -268,13 +268,22 @@ mfield_data_filter_comp(mfield_data_workspace *w)
               mptr->flags[j] &= ~(MAGDATA_FLG_X | MAGDATA_FLG_Y);
               mptr->flags[j] &= ~(MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS);
               mptr->flags[j] &= ~(MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW);
-              mptr->flags[j] &= ~(MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT);
 
               if (!params->fit_Z_highlat)
                 mptr->flags[j] &= ~MAGDATA_FLG_Z;
 
               if (!params->fit_F_highlat)
                 mptr->flags[j] &= ~MAGDATA_FLG_F;
+
+              /*
+               * dX/dt and dY/dt we still fit at high-latitudes (unless toggled off), since the observatory
+               * time series data are still relatively clean
+               */
+              if (!params->fit_DXDT)
+                mptr->flags[j] &= ~MAGDATA_FLG_DXDT;
+
+              if (!params->fit_DYDT)
+                mptr->flags[j] &= ~MAGDATA_FLG_DYDT;
 
               if (!params->fit_DZDT)
                 mptr->flags[j] &= ~MAGDATA_FLG_DZDT;

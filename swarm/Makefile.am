@@ -1,9 +1,9 @@
 bin_PROGRAMS = print print_all print_efi print_lp print_lt print_crust print_alt print_tracks residuals plotsep swarmcdf2fday
 
-commonlibs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la -lm ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libatlas.a -lapex -lcommon -lmsynth -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lgfortran
+commonlibs = $(top_builddir)/curvefit/libcurvefit.la $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la $(top_builddir)/estist/libestist_calc.la -lm ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libatlas.a -lapex -lcommon -lmsynth -lbspline2 -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lgfortran
 
 plotsep_SOURCES = plotsep.c
-plotsep_LDADD = $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la -lapex -lcommon -lmsynth -lm -lgfortran ${commonlibs}
+plotsep_LDADD = $(top_builddir)/track/libtrack.la $(top_builddir)/pomme/libpomme.la -lapex -lcommon -lmsynth -lbspline2 -lm -lgfortran ${commonlibs}
 
 print_SOURCES = print.c
 print_LDADD = -lm ${commonlibs}

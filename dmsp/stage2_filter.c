@@ -215,7 +215,7 @@ stage2_filter(track_workspace *track_p, satdata_mag *data)
 {
   int s = 0;
   const char *rms_file = "satrms.dat";
-  const double thresh[4] = { -1.0, -1.0, -1.0, 200.0 };
+  const double thresh[4] = { -1.0, -1.0, -1.0, 50.0 };
   const double max_kp = 3.0;
   const double max_dRC = 5.0; /* nT/hour */
   const double min_LT = 17.0;
@@ -225,6 +225,7 @@ stage2_filter(track_workspace *track_p, satdata_mag *data)
          nflagged_kp,
          nflagged_dRC,
          nflagged_LT,
+         nflagged_lon,
          nflagged_tot;
   size_t i;
 
@@ -244,6 +245,10 @@ stage2_filter(track_workspace *track_p, satdata_mag *data)
   nflagged_rms = track_flag_rms(rms_file, thresh, NULL, data, track_p);
   fprintf(stderr, "\t stage2_filter: flagged %zu/%zu (%.1f%%) tracks due to scalar rms [%.1f nT]\n",
           nflagged_rms, track_p->n, (double) nflagged_rms / (double) track_p->n * 100.0, thresh[3]);
+
+  nflagged_lon = track_flag_lon(-100.0, 150.0, NULL, data, track_p);
+  fprintf(stderr, "\t stage2_filter: flagged %zu/%zu (%.1f%%) tracks due to longitude\n",
+          nflagged_lon, track_p->n, (double) nflagged_lon / (double) track_p->n * 100.0);
 
 #if 0
   nflagged_kp = filter_kp(0.0, max_kp, data, track_p);

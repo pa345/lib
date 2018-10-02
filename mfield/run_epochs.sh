@@ -2,19 +2,19 @@
 #
 # Run magnetic field model on all epochs
 
-start_epoch="2011.5"
-end_epoch="2015.5"
+start_epoch="2009.0"
+end_epoch="2016.0"
 numit="5"
 
-input_files="data/F18.dat"
+input_files="data/champ*.dat data/F17a.dat data/F17.dat data/swarm*.dat data/obs/*SV.dat"
 
 prog="./mfield"
-coef_dir="$MYLIBHOME/mfield/coef_F18"
+coef_dir="$MYLIBHOME/mfield/coef_GAP"
 cfgfile="MF_dmsp.cfg"
 
 # SV/SA damping parameter
-lambda_sv="0.07"
-lambda_sa="0.9"
+lambda_sv="0.095"
+lambda_sa="1.0"
 
 rm -rf ${coef_dir}
 mkdir ${coef_dir}

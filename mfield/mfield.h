@@ -241,7 +241,8 @@ typedef struct
   mfield_green_workspace *green_workspace_p;
   mfield_data_workspace *data_workspace_p;
   track_weight_workspace *weight_workspace_p;
-  spatwt_workspace *spatwt_workspace_p;
+  spatwt_workspace *spatwtMF_workspace_p; /* spatial weights for observatory MF measurements */
+  spatwt_workspace *spatwtSV_workspace_p; /* spatial weights for observatory SV measurements */
   green_workspace *green_workspace_p2;
   gsl_eigen_symm_workspace *eigen_workspace_p;
 } mfield_workspace;

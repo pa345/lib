@@ -21,6 +21,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
+#include <gsl/gsl_rstat.h>
 
 #include <common/common.h>
 #include <common/bsearch.h>
@@ -29,6 +30,8 @@
 
 #include "magfit.h"
 #include "tiegcm3d.h"
+
+#define MAX_PTS            1000
 
 /*
 print_data()
@@ -166,22 +169,27 @@ print_alt(const char *filename, const tiegcm3d_data *data, const int it, const i
 int
 docalc(magfield_workspace * w)
 {
+  FILE *fp;
+  const size_t nsat = 3;                  /* number of satellites in pearl-on-string */
   const double r_km = R_EARTH_KM + 85.0;
   const double r_m = r_km * 1.0e3;
-  const double lon[4] = { 145.69, 149.32, 150.68, 152.95 };
+  const double fac = 10.0;                /* fudge factor to make TIEGCM B field match better with ground variations */
+  /*const double lon[4] = { 136.5, 141.0, 142.5, 145.5 };*/
+  const double lon[4] = { 143.5, 148.5, 150.0, 152.5 };
   const double dlat = 8.0 / 110.0 * 10.0; /* 8 km/s / 110 km/deg =~ 0.072 degrees latitude per second */
-#if 0
-  const double fac = 1.4;          /* factor to account for missing TIEGCM current below 109km */
-#endif
-  const double fac = 2.7;          /* factor to simulate solar max conditions */
+  const double lat_min = -10.0;
+  const double lat_max = 20.0;
   double phi[4];
   magfit_parameters params = magfit_default_parameters();
   magfit_workspace *magfit_p[4];
   double lat;
-  size_t i, k;
+  size_t i, j, k, lonidx;
   double rnorm, snorm;
   gsl_rng *rng_p = gsl_rng_alloc(gsl_rng_default);
-  const double sigma = 60.0;
+  const double sigma_r = 140.0;
+  const double sigma_t = 64.0;
+  size_t n = 0;                  /* number of points in track */
+  double theta_array[MAX_PTS];   /* colatitudes of along-track positions */
 
   for (i = 0; i < 4; ++i)
     phi[i] = lon[i] * M_PI / 180.0;
@@ -195,18 +203,138 @@ docalc(magfield_workspace * w)
   for (i = 0; i < 4; ++i)
     magfit_p[i] = magfit_alloc(magfit_secs1d, &params);
 
+  /* store latitude points of each position along track */
+  for (lat = lat_min; lat <= lat_max; lat += dlat)
+    theta_array[n++] = M_PI / 2.0 - lat * M_PI / 180.0;
+
+  fp = fopen("signal.dat", "w");
+
+  for (k = 0; k < nsat; ++k)
+    {
+      for (lonidx = 0; lonidx < 4; ++lonidx)
+        {
+          if (k == 0)
+            {
+              i = 1;
+              fprintf(fp, "# Field %zu: geocentric latitude (degrees)\n", i++);
+              fprintf(fp, "# Field %zu: B_r original data for longitude %.2f degrees (nT)\n", i++, lon[lonidx]);
+              fprintf(fp, "# Field %zu: B_r noise-added data for longitude %.2f degrees (nT)\n", i++, lon[lonidx]);
+              fprintf(fp, "# Field %zu: B_t original data for longitude %.2f degrees (nT)\n", i++, lon[lonidx]);
+              fprintf(fp, "# Field %zu: B_t noise-added data for longitude %.2f degrees (nT)\n", i++, lon[lonidx]);
+            }
+
+          for (i = 0; i < n; ++i)
+            {
+              double theta = theta_array[i];
+              double B[4][4], B_noise[4][3], B_noise_nec[4][3];
+
+              magfield_eval_B(r_m, theta, phi[lonidx], B[lonidx], w);
+
+              /* convert to nT */
+              for (j = 0; j < 3; ++j)
+                B[lonidx][j] *= fac * 1.0e9;
+
+              /* add noise */
+              B_noise[lonidx][0] = B[lonidx][0] + gsl_ran_gaussian(rng_p, sigma_r);
+              B_noise[lonidx][1] = B[lonidx][1] + gsl_ran_gaussian(rng_p, sigma_t);
+              B_noise[lonidx][2] = B[lonidx][2];
+
+              /* convert to NEC */
+#if 1
+              /* signal+noise */
+              B_noise_nec[lonidx][0] = -B_noise[lonidx][1];
+              B_noise_nec[lonidx][1] = B_noise[lonidx][2];
+              B_noise_nec[lonidx][2] = -B_noise[lonidx][0];
+#else
+              /* signal, no noise */
+              B_noise_nec[lonidx][0] = -B[lonidx][1];
+              B_noise_nec[lonidx][1] = B[lonidx][2];
+              B_noise_nec[lonidx][2] = -B[lonidx][0];
+#endif
+
+              magfit_add_datum(0.0, r_km, theta, phi[lonidx], 0.0, B_noise_nec[lonidx], magfit_p[lonidx]);
+
+              if (k == 0)
+                {
+                  fprintf(fp, "%8.4f %8.4f %8.4f %8.4f %8.4f\n",
+                          90.0 - theta * 180.0 / M_PI,
+                          B[lonidx][0],
+                          B_noise[lonidx][0],
+                          B[lonidx][1],
+                          B_noise[lonidx][1]);
+                }
+            }
+
+          fprintf(fp, "\n\n");
+        }
+    }
+
+  fclose(fp);
+
+  /* fit EEJ model */
+  for (i = 0; i < 4; ++i)
+    magfit_fit(&rnorm, &snorm, magfit_p[i]);
+
+  fp = fopen("fitted.dat", "w");
+
+  for (lonidx = 0; lonidx < 4; ++lonidx)
+    {
+      i = 1;
+      fprintf(fp, "# Field %zu: geocentric latitude (degrees)\n", i++);
+      fprintf(fp, "# Field %zu: B_r fitted for longitude %.2f degrees (nT)\n", i++, lon[lonidx]);
+      fprintf(fp, "# Field %zu: B_t fitted for longitude %.2f degrees (nT)\n", i++, lon[lonidx]);
+      fprintf(fp, "# Field %zu: J_phi fitted for longitude %.2f degrees (A/m)\n", i++, lon[lonidx]);
+
+      for (i = 0; i < n; ++i)
+        {
+          double theta = theta_array[i];
+          double B1_fit_nec[3];
+          double J1_nec[3];
+
+          magfit_eval_B(0.0, r_km, theta, phi[lonidx], B1_fit_nec, magfit_p[lonidx]);
+          magfit_eval_J(r_km, theta, phi[lonidx], J1_nec, magfit_p[lonidx]);
+
+          fprintf(fp, "%8.4f %8.4f %8.4f %8.4f\n",
+                  90.0 - theta * 180.0 / M_PI,
+                  -B1_fit_nec[2],
+                  -B1_fit_nec[0],
+                  J1_nec[1]);
+        }
+
+      fprintf(fp, "\n\n");
+    }
+
+  fclose(fp);
+
+  exit(1);
+
+#if 0
   i = 1;
   fprintf(stdout, "# Field %zu: geocentric latitude (degrees)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| data for longitude 145.69 degrees (nT)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| data for longitude 149.32 degrees (nT)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| data for longitude 150.68 degrees (nT)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| data for longitude 152.95 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r original data for longitude 145.69 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t original data for longitude 145.69 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r original data for longitude 149.32 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t original data for longitude 149.32 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r original data for longitude 150.68 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t original data for longitude 150.68 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r original data for longitude 152.95 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t original data for longitude 152.95 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r noisy data for longitude 145.69 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t noisy data for longitude 145.69 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r noisy data for longitude 149.32 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t noisy data for longitude 149.32 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r noisy data for longitude 150.68 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t noisy data for longitude 150.68 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r noisy data for longitude 152.95 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t noisy data for longitude 152.95 degrees (nT)\n", i++);
 
+  /* outer loop over number of satellite passes; inner loop over latitude range */
   for (k = 0; k < 3; ++k) {
   for (lat = -10.0; lat <= 20.0; lat += dlat)
     {
       double theta = M_PI / 2.0 - lat * M_PI / 180.0;
       double B1[4], B2[4], B3[4], B4[4];
+      double B1_noise[4], B2_noise[4], B3_noise[4], B4_noise[4];
       double B1_nec[3], B2_nec[3], B3_nec[3], B4_nec[3];
 
       magfield_eval_B(r_m, theta, phi[0], B1, w);
@@ -221,36 +349,42 @@ docalc(magfield_workspace * w)
           B3[i] *= fac * 1.0e9;
           B4[i] *= fac * 1.0e9;
 
-#if 1
-          B1[i] += gsl_ran_gaussian(rng_p, sigma);
-          B2[i] += gsl_ran_gaussian(rng_p, sigma);
-          B3[i] += gsl_ran_gaussian(rng_p, sigma);
-          B4[i] += gsl_ran_gaussian(rng_p, sigma);
-#endif
+          B1_noise[i] = B1[i];
+          B2_noise[i] = B2[i];
+          B3_noise[i] = B3[i];
+          B4_noise[i] = B4[i];
         }
 
-      B1[3] = gsl_hypot3(B1[0], B1[1], B1[2]);
-      B2[3] = gsl_hypot3(B2[0], B2[1], B2[2]);
-      B3[3] = gsl_hypot3(B3[0], B3[1], B3[2]);
-      B4[3] = gsl_hypot3(B4[0], B4[1], B4[2]);
+      /* add noise */
+#if 1
+      B1_noise[0] += gsl_ran_gaussian(rng_p, sigma_Z);
+      B2_noise[0] += gsl_ran_gaussian(rng_p, sigma_Z);
+      B3_noise[0] += gsl_ran_gaussian(rng_p, sigma_Z);
+      B4_noise[0] += gsl_ran_gaussian(rng_p, sigma_Z);
+
+      B1_noise[1] += gsl_ran_gaussian(rng_p, sigma_X);
+      B2_noise[1] += gsl_ran_gaussian(rng_p, sigma_X);
+      B3_noise[1] += gsl_ran_gaussian(rng_p, sigma_X);
+      B4_noise[1] += gsl_ran_gaussian(rng_p, sigma_X);
+#endif
 
       /* convert spherical to NEC */
 
-      B1_nec[0] = -B1[1];
-      B1_nec[1] = B1[2];
-      B1_nec[2] = -B1[0];
+      B1_nec[0] = -B1_noise[1];
+      B1_nec[1] = B1_noise[2];
+      B1_nec[2] = -B1_noise[0];
 
-      B2_nec[0] = -B2[1];
-      B2_nec[1] = B2[2];
-      B2_nec[2] = -B2[0];
+      B2_nec[0] = -B2_noise[1];
+      B2_nec[1] = B2_noise[2];
+      B2_nec[2] = -B2_noise[0];
 
-      B3_nec[0] = -B3[1];
-      B3_nec[1] = B3[2];
-      B3_nec[2] = -B3[0];
+      B3_nec[0] = -B3_noise[1];
+      B3_nec[1] = B3_noise[2];
+      B3_nec[2] = -B3_noise[0];
 
-      B4_nec[0] = -B4[1];
-      B4_nec[1] = B4[2];
-      B4_nec[2] = -B4[0];
+      B4_nec[0] = -B4_noise[1];
+      B4_nec[1] = B4_noise[2];
+      B4_nec[2] = -B4_noise[0];
 
       magfit_add_datum(0.0, r_km, theta, phi[0], 0.0, B1_nec, magfit_p[0]);
       magfit_add_datum(0.0, r_km, theta, phi[1], 0.0, B2_nec, magfit_p[1]);
@@ -259,12 +393,24 @@ docalc(magfield_workspace * w)
 
       if (k == 0)
         {
-          printf("%8.4f %16.4f %16.4f %16.4f %16.4f\n",
+          printf("%8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f\n",
                  lat,
-                 -B1[1],
-                 -B2[1],
-                 -B3[1],
-                 -B4[1]);
+                 B1[0],
+                 B1[1],
+                 B2[0],
+                 B2[1],
+                 B3[0],
+                 B3[1],
+                 B4[0],
+                 B4[1],
+                 B1_noise[0],
+                 B1_noise[1],
+                 B2_noise[0],
+                 B2_noise[1],
+                 B3_noise[0],
+                 B3_noise[1],
+                 B4_noise[0],
+                 B4_noise[1]);
         }
     }
     }
@@ -276,15 +422,18 @@ docalc(magfield_workspace * w)
   i = 1;
   fprintf(stdout, "\n\n");
   fprintf(stdout, "# Field %zu: geocentric latitude (degrees)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| fitted for longitude 145.69 degrees (nT)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| fitted for longitude 149.32 degrees (nT)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| fitted for longitude 150.68 degrees (nT)\n", i++);
-  fprintf(stdout, "# Field %zu: |B| fitted for longitude 152.95 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r fitted for longitude 145.69 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t fitted for longitude 145.69 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r fitted for longitude 149.32 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t fitted for longitude 149.32 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r fitted for longitude 150.68 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t fitted for longitude 150.68 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_r fitted for longitude 152.95 degrees (nT)\n", i++);
+  fprintf(stdout, "# Field %zu: B_t fitted for longitude 152.95 degrees (nT)\n", i++);
   fprintf(stdout, "# Field %zu: J_phi fitted for longitude 145.69 degrees (A/m)\n", i++);
   fprintf(stdout, "# Field %zu: J_phi fitted for longitude 149.32 degrees (A/m)\n", i++);
   fprintf(stdout, "# Field %zu: J_phi fitted for longitude 150.68 degrees (A/m)\n", i++);
   fprintf(stdout, "# Field %zu: J_phi fitted for longitude 152.95 degrees (A/m)\n", i++);
-
 
   for (lat = -10.0; lat <= 20.0; lat += dlat)
     {
@@ -302,24 +451,22 @@ docalc(magfield_workspace * w)
       magfit_eval_J(r_km, theta, phi[2], J3_nec, magfit_p[2]);
       magfit_eval_J(r_km, theta, phi[3], J4_nec, magfit_p[3]);
 
-      printf("%8.4f %16.4f %16.4f %16.4f %16.4f %16.4f %16.4f %16.4f %16.4f\n",
+      printf("%8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f %8.4f\n",
              lat,
-#if 1
-             B1_fit_nec[0],
-             B2_fit_nec[0],
-             B3_fit_nec[0],
-             B4_fit_nec[0],
-#else
-             gsl_hypot3(B1_fit_nec[0], B1_fit_nec[1], B1_fit_nec[2]),
-             gsl_hypot3(B2_fit_nec[0], B2_fit_nec[1], B2_fit_nec[2]),
-             gsl_hypot3(B3_fit_nec[0], B3_fit_nec[1], B3_fit_nec[2]),
-             gsl_hypot3(B4_fit_nec[0], B4_fit_nec[1], B4_fit_nec[2]),
-#endif
+             -B1_fit_nec[2],
+             -B1_fit_nec[0],
+             -B2_fit_nec[2],
+             -B2_fit_nec[0],
+             -B3_fit_nec[2],
+             -B3_fit_nec[0],
+             -B4_fit_nec[2],
+             -B4_fit_nec[0],
              J1_nec[1],
              J2_nec[1],
              J3_nec[1],
              J4_nec[1]);
     }
+#endif
 
   for (i = 0; i < 4; ++i)
     magfit_free(magfit_p[i]);
