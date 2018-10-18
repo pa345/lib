@@ -23,10 +23,10 @@
 #include <common/bsearch.h>
 #include <common/common.h>
 #include <common/interp.h>
+#include <track/track.h>
+#include <track/track_weight.h>
 
 #include "magdata.h"
-#include "track.h"
-#include "track_weight.h"
 
 static int magdata_luhr(const double ne, const double Te, const double Ti,
                         const double B_nec[4], double b_luhr[4]);

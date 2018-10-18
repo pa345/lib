@@ -31,11 +31,11 @@
 
 #include <common/common.h>
 #include <common/oct.h>
+#include <track/track.h>
 
 #include "green.h"
 #include "lapack_wrapper.h"
 #include "magdata_list.h"
-#include "track.h"
 
 #include "poltor.h"
 

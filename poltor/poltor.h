@@ -14,11 +14,11 @@
 
 #include <common/bin2d.h>
 #include <indices/indices.h>
+#include <track/track_weight.h>
 
 #include "green_complex.h"
 #include "lls.h"
 #include "magdata_list.h"
-#include "track_weight.h"
 
 /* use synthetic data for testing */
 #define POLTOR_SYNTH_DATA            0

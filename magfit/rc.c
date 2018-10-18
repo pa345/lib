@@ -36,9 +36,9 @@
 #include <common/common.h>
 #include <common/interp.h>
 #include <msynth/msynth.h>
+#include <track/track.h>
 
 #include "green.h"
-#include "track.h"
 
 #include "magfit.h"
 

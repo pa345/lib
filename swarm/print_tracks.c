@@ -31,7 +31,7 @@
 #include <common/bin3d.h>
 #include <common/common.h>
 #include <msynth/msynth.h>
-#include "track.h"
+#include <track/track.h>
 
 /* define this to allow only 1 camera for data selection */
 #define POLTOR_ONE_CAMERA          0

@@ -37,10 +37,10 @@
 #include <gsl/gsl_statistics.h>
 
 #include <common/common.h>
+#include <track/track.h>
 
 #include "euler.h"
 #include "magdata.h"
-#include "track.h"
 
 static size_t check_data_point(const size_t magdata_flags, const size_t idx,
                                const satdata_mag *data);

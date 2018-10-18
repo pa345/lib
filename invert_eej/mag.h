@@ -14,7 +14,9 @@
 
 #include <msynth/msynth.h>
 #include <apex/apex.h>
+#include <track/track.h>
 
+#include "pomme.h"
 #include "estist_calc.h"
 #include "green.h"
 #include "log.h"
@@ -22,8 +24,6 @@
 #include "mageq.h"
 #include "magfit.h"
 #include "pde.h"
-#include "pomme.h"
-#include "track.h"
 
 /* maximum data in one track */
 #define MAG_MAX_TRACK          4000

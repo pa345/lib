@@ -28,10 +28,10 @@
 #include <common/common.h>
 #include <common/interp.h>
 #include <common/oct.h>
+#include <track/track.h>
 
 #include "green.h"
 #include "lapack_wrapper.h"
-#include "track.h"
 
 #include "magfit.h"
 

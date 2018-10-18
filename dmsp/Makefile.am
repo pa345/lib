@@ -9,7 +9,7 @@ stage0_LDADD = $(top_builddir)/ephemeris/libephemeris.la -lcommon -lm -lcdf ${co
 
 stage2a_SOURCES = attitude.c jump.c fluxcal.c magcal.c stage2a.c
 stage2a_LDFLAGS = -fopenmp
-stage2a_LDADD = $(top_builddir)/track/libtrack.la $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
+stage2a_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -ltrack -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
 
 stage2b_SOURCES = stage2b.c magcal.c
 stage2b_LDADD = -lcommon -lm ${commonlibs}
@@ -18,4 +18,4 @@ print_SOURCES = print.c
 print_LDADD = -lcommon -lm -lcdf ${commonlibs}
 
 print_LTAN_SOURCES = print_LTAN.c
-print_LTAN_LDADD = $(top_builddir)/track/libtrack.la $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la -lcommon -lbspline2 -lmsynth -lm -lgfortran ${commonlibs} -lz
+print_LTAN_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la -ltrack -lcommon -lbspline2 -lmsynth -lm -lgfortran ${commonlibs} -lz

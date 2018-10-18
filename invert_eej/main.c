@@ -11,11 +11,11 @@
 
 #include <satdata/satdata.h>
 #include <common/common.h>
+#include <track/track.h>
 
 #include "cfg.h"
 #include "mag.h"
 #include "mag_grad.h"
-#include "track.h"
 
 static int
 fill_parameters(mag_params *params)

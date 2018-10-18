@@ -19,10 +19,9 @@
 
 #include <libconfig.h>
 #include <common/common.h>
+#include <track/track.h>
 
 #include "magdata.h"
-
-#include "track.h"
 
 static int print_track_stats(const satdata_mag *data, const track_workspace *track_p);
 static int polar_damp_apply(const magdata_preprocess_parameters *params, track_workspace *track_p, satdata_mag *data);

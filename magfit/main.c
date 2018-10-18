@@ -24,9 +24,9 @@
 #include <common/common.h>
 #include <common/oct.h>
 #include <msynth/msynth.h>
+#include <track/track.h>
 
 #include "mageq.h"
-#include "track.h"
 
 #include "magfit.h"
 

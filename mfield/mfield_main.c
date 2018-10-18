@@ -42,6 +42,7 @@
 #include <common/common.h>
 #include <common/oct.h>
 #include <msynth/msynth.h>
+#include <track/track.h>
 
 #include "euler.h"
 #include "magdata.h"
@@ -49,7 +50,6 @@
 #include "mfield_error.h"
 #include "mfield_residual.h"
 #include "mfield_synth.h"
-#include "track.h"
 
 #define MAX_BUFFER           2048
 

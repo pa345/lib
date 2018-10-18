@@ -8,8 +8,8 @@
 #include <satdata/satdata.h>
 #include <obsdata/obsdata.h>
 
-#include "track.h"
-#include "track_weight.h"
+#include <track/track.h>
+#include <track/track_weight.h>
 
 #define MAGDATA_NAME_LENGTH           128
 

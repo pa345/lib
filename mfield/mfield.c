@@ -49,12 +49,12 @@
 
 #include <common/common.h>
 #include <common/oct.h>
+#include <track/track_weight.h>
 
 #include "euler.h"
 #include "lls.h"
 #include "lapack_wrapper.h"
 #include "mfield.h"
-#include "track_weight.h"
 
 static int mfield_green(const double r, const double theta, const double phi,
                         mfield_workspace *w);

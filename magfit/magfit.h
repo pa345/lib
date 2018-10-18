@@ -6,8 +6,7 @@
 #define INCLUDED_magfit_h
 
 #include <satdata/satdata.h>
-
-#include "track.h"
+#include <track/track.h>
 
 /* mu_0 in units of: nT / (kA km^{-1}) */
 #define MAGFIT_MU_0                       (400.0 * M_PI)

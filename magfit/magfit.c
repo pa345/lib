@@ -34,9 +34,9 @@
 
 #include <common/common.h>
 #include <common/interp.h>
+#include <track/track.h>
 
 #include "magfit.h"
-#include "track.h"
 
 /* define to subtract a mean value from each component of a track */
 #define MAGFIT_SUBTRACT_MEAN           1

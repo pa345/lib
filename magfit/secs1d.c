@@ -24,8 +24,8 @@
 
 #include <common/common.h>
 #include <common/interp.h>
+#include <track/track.h>
 
-#include "track.h"
 #include "magfit.h"
 
 /* weight factor for low-latitude EEJ region */

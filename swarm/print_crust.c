@@ -26,7 +26,6 @@
 
 #include <common/common.h>
 #include "euler.h"
-#include "pomme.h"
 
 #define CALC_VFM2NEC    0
 

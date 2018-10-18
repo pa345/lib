@@ -42,7 +42,6 @@
 #include <msynth/msynth.h>
 
 #include "magdata.h"
-#include "track.h"
 
 #include "mfield.h"
 #include "mfield_data.h"

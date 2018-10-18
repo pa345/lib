@@ -17,12 +17,12 @@
 #include <gsl/gsl_eigen.h>
 
 #include <spatwt/spatwt.h>
+#include <track/track_weight.h>
 
 #include "mfield_data.h"
 #include "mfield_green.h"
 
 #include "green.h"
-#include "track_weight.h"
 
 #define MFIELD_SYNTH_HIGH_LAT_ONLY 0
 

@@ -27,7 +27,7 @@
 
 #include <common/common.h>
 #include <msynth/msynth.h>
-#include "track.h"
+#include <track/track.h>
 
 /* find track closest in time to t */
 size_t

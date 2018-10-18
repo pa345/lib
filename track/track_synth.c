@@ -20,8 +20,7 @@
 #include <common/common.h>
 #include <magcoord/magcoord.h>
 #include <msynth/msynth.h>
-
-#include "pomme.h"
+#include <pomme/pomme.h>
 
 #include "track.h"
 

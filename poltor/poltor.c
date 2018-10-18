@@ -38,14 +38,13 @@
 
 #include <common/common.h>
 #include <common/oct.h>
-
 #include <indices/indices.h>
+#include <track/track_weight.h>
 
 #include "green.h"
 #include "lls.h"
 #include "magdata_list.h"
 #include "poltor.h"
-#include "track_weight.h"
 
 static int poltor_row(const double r, const double theta, const double phi,
                       const double r_ns, const double theta_ns, const double phi_ns,

@@ -17,7 +17,7 @@ lpdir="$DATAHOME/SWARM/EFI/LP_Unzipped"
 extra_flags="-h"
 #extra_flags=""
 
-prog="$MYLIBHOME/track/stage1"
+prog="/home/palken/usr/bin/stage1"
 
 sat=""
 if test -n "$1"; then

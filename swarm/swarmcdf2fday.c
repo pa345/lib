@@ -28,7 +28,6 @@
 #include <indices/indices.h>
 
 #include <common/common.h>
-#include "pomme.h"
 
 int
 main(int argc, char *argv[])

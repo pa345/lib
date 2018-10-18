@@ -26,7 +26,7 @@
 
 #include <common/common.h>
 #include <msynth/msynth.h>
-#include "pomme.h"
+#include <pomme/pomme.h>
 
 typedef struct
 {

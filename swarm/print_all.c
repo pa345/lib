@@ -25,8 +25,8 @@
 #include <indices/indices.h>
 
 #include <common/common.h>
+#include <pomme/pomme.h>
 #include "euler.h"
-#include "pomme.h"
 
 /*
 print_data()

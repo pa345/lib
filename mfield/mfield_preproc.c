@@ -44,10 +44,10 @@
 #include <common/common.h>
 #include <common/solarpos.h>
 #include <msynth/msynth.h>
+#include <track/track.h>
 
 #include "euler.h"
 #include "magdata.h"
-#include "track.h"
 
 #include "mfield.h"
 #include "mfield_data.h"
