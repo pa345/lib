@@ -160,7 +160,7 @@ main(int argc, char *argv[])
     }
 
   if (t < 0.0)
-    t = msynth1->epochs[msynth1->n_snapshot - 1];
+    t = msynth1->epochs[msynth1->n_epochs - 1];
 
   if (!msynth2)
     compare_pomme(msynth1);
