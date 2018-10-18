@@ -79,7 +79,7 @@ main(int argc, char *argv[])
     int year;
     char filename[2048];
 
-    for (i = 0; i < msynth_p->n_snapshot; ++i)
+    for (i = 0; i < msynth_p->n_epochs; ++i)
       {
         year = START_YEAR + i;
 

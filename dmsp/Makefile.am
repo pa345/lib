@@ -18,4 +18,4 @@ print_SOURCES = print.c
 print_LDADD = -lcommon -lm -lcdf ${commonlibs}
 
 print_LTAN_SOURCES = print_LTAN.c
-print_LTAN_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la -ltrack -lcommon -lbspline2 -lmsynth -lm -lgfortran ${commonlibs} -lz
+print_LTAN_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la -ltrack -lcommon -lbspline2 -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
