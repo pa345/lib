@@ -19,8 +19,7 @@
 #include <satdata/satdata.h>
 #include <indices/indices.h>
 #include <common/common.h>
-
-#include "track.h"
+#include <track/track.h>
 
 int
 main(int argc, char *argv[])

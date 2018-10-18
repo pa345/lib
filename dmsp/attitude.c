@@ -21,8 +21,7 @@
 #include <satdata/satdata.h>
 #include <common/common.h>
 #include <common/quat.h>
-
-#include "track.h"
+#include <track/track.h>
 
 #include "attitude.h"
 

@@ -28,7 +28,6 @@
 
 #include "magdata.h"
 #include "magfit.h"
-#include "track.h"
 
 int
 print_data(const char *filename, const magdata *data)

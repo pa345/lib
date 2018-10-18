@@ -21,7 +21,6 @@ SUBDIRS =         \
   hwm             \
   cond            \
   pomme           \
-  track           \
   magdata         \
   euler           \
 	emm             \

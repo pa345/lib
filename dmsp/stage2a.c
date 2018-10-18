@@ -36,12 +36,12 @@
 #include <common/common.h>
 #include <common/quat.h>
 #include <msynth/msynth.h>
+#include <track/track.h>
 
 #include "attitude.h"
 #include "eph.h"
 #include "jump.h"
 #include "magcal.h"
-#include "track.h"
 
 #include "stage2_calibrate.c"
 #include "stage2_euler.c"

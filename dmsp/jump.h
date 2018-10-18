@@ -6,9 +6,9 @@
 #define INCLUDED_jump_h
 
 #include <gsl/gsl_filter.h>
+#include <track/track.h>
 
 #include "peak.h"
-#include "track.h"
 
 typedef struct
 {

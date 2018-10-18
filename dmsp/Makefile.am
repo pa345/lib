@@ -2,7 +2,7 @@ bin_PROGRAMS = print print_LTAN stage0 stage2a stage2b
 
 commonlibs = -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lm -lcdf
 
-AM_CPPFLAGS = -I$(top_builddir)/ephemeris -I$(top_builddir)/chaos -I$(top_builddir)/track -I$(top_builddir)/estist -I$(top_builddir)/pomme -I$(top_builddir)/euler -I$(top_builddir)/magdata -I$(top_builddir)/peak
+AM_CPPFLAGS = -I$(top_builddir)/ephemeris -I$(top_builddir)/euler -I$(top_builddir)/magdata -I$(top_builddir)/peak
 
 stage0_SOURCES = stage0.c
 stage0_LDADD = $(top_builddir)/ephemeris/libephemeris.la -lcommon -lm -lcdf ${commonlibs} -lz

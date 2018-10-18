@@ -6,8 +6,7 @@
 #define INCLUDED_attitude_h
 
 #include <satdata/satdata.h>
-
-#include "track.h"
+#include <track/track.h>
 
 /*
  * Prototypes

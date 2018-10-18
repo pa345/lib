@@ -31,9 +31,9 @@
 #include <common/common.h>
 #include <common/bsearch.h>
 #include <common/interp.h>
+#include <track/track.h>
 
 #include "magcal.h"
-#include "track.h"
 
 #define MAX_PARAM             1000
 #define MAX_BUFFER            2048

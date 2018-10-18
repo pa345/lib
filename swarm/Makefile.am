@@ -1,6 +1,6 @@
 bin_PROGRAMS = print print_all print_efi print_lp print_lt print_crust print_alt print_tracks residuals plotsep swarmcdf2fday
 
-commonlibs = $(top_builddir)/estist/libestist_calc.la -lm ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libatlas.a -ltrack -lpomme -lapex -lcommon -lmsynth -lbspline2 -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lgfortran
+commonlibs = -lm ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libatlas.a -ltrack -lpomme -lapex -lcommon -lmsynth -lbspline2 -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lgfortran
 
 plotsep_SOURCES = plotsep.c
 plotsep_LDADD = -lapex -lcommon -lmsynth -lbspline2 -lm -lgfortran ${commonlibs}
@@ -36,4 +36,4 @@ residuals_LDADD = ${commonlibs}
 swarmcdf2fday_SOURCES = swarmcdf2fday.c
 swarmcdf2fday_LDADD = -lm ${commonlibs}
 
-AM_CPPFLAGS = -I$(top_builddir)/euler -I$(top_builddir)/chaos -I$(top_builddir)/magdata -I$(top_builddir)/pca -I$(top_builddir)/green -I$(top_builddir)/estist
+AM_CPPFLAGS = -I$(top_builddir)/euler -I$(top_builddir)/chaos -I$(top_builddir)/magdata -I$(top_builddir)/pca -I$(top_builddir)/green

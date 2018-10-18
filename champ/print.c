@@ -29,7 +29,6 @@
 #include <msynth/msynth.h>
 
 #include "euler.h"
-#include "pomme.h"
 
 typedef struct
 {

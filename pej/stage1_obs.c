@@ -31,9 +31,9 @@
 #include <common/bin3d.h>
 #include <common/common.h>
 #include <msynth/msynth.h>
+#include <track/track.h>
 
 #include "magdata.h"
-#include "track.h"
 
 typedef struct
 {

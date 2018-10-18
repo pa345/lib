@@ -14,4 +14,4 @@ print_lt_LDADD = -lm ${commonlibs}
 print_plp_SOURCES = print_plp.c
 print_plp_LDADD = -lm ${commonlibs}
 
-AM_CPPFLAGS = -I$(top_builddir)/pomme -I$(top_builddir)/track -I$(top_builddir)/euler -I$(top_builddir)/magdata -I$(top_builddir)/estist
+AM_CPPFLAGS = -I$(top_builddir)/euler -I$(top_builddir)/magdata

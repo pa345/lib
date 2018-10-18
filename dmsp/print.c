@@ -28,8 +28,6 @@
 #include <common/ellipsoid.h>
 #include <common/quat.h>
 
-#include "pomme.h"
-
 /* given B in NEC, find component along geodetic vertical */
 double
 calc_mu3(double r, double theta, double phi, double B[3])

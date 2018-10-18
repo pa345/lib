@@ -30,9 +30,9 @@
 
 #include <common/bin3d.h>
 #include <common/common.h>
+#include <track/track.h>
 
 #include "magdata.h"
-#include "track.h"
 
 /* define this to allow only 1 camera for data selection */
 #define PRINT_ONE_CAMERA           1

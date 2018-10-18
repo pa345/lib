@@ -12,8 +12,7 @@
 
 #include <common/common.h>
 #include <msynth/msynth.h>
-
-#include "pomme.h"
+#include <pomme/pomme.h>
 
 int
 compare_pomme(msynth_workspace *msynth_p)
