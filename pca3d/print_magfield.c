@@ -78,7 +78,8 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
           double theta = w->theta[ilat];
           double B[4];
 
-          magfield_eval_B(data->r[ir] * 1.0e3, theta, phi, B, w);
+          /*magfield_eval_B(data->r[ir] * 1.0e3, theta, phi, B, w);*/
+          magfield_eval_B(R_EARTH_KM + 80.0, theta, phi, B, w);
 
           fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glon[ilon],
@@ -597,7 +598,7 @@ main(int argc, char *argv[])
   /* locate index of desired longitude */
   lon_idx = bsearch_double(data->glon, lon, 0, data->nlon - 1);
 
-#if 0
+#if 1
   fprintf(stderr, "main: lon_idx = %d (%.2f [deg])\n", lon_idx, data->glon[lon_idx]);
 
   fprintf(stderr, "main: writing grid data to %s (time idx = %d, r idx = %d)...", outfile_map, time_idx, r_idx);

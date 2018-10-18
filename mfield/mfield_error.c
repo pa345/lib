@@ -37,10 +37,16 @@ mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfie
   fp = fopen(filename, "w");
 
   n = 1;
-  fprintf(fp, "# Field %zu: spherical harmonic degree n\n", n++);
   fprintf(fp, "# Field %zu: spherical harmonic order m\n", n++);
+  fprintf(fp, "# Field %zu: spherical harmonic degree n\n", n++);
+  fprintf(fp, "# Field %zu: g(n,m) (nT)\n", n++);
+  fprintf(fp, "# Field %zu: g(n,m) error (nT)\n", n++);
   fprintf(fp, "# Field %zu: uncertainty in MF g(n,m) (dimensionless)\n", n++);
+  fprintf(fp, "# Field %zu: d/dt g(n,m) (nT)\n", n++);
+  fprintf(fp, "# Field %zu: d/dt g(n,m) error (nT)\n", n++);
   fprintf(fp, "# Field %zu: uncertainty in SV g(n,m) (dimensionless)\n", n++);
+  fprintf(fp, "# Field %zu: (d/dt)^2 g(n,m) (nT)\n", n++);
+  fprintf(fp, "# Field %zu: (d/dt)^2 g(n,m) error (nT)\n", n++);
   fprintf(fp, "# Field %zu: uncertainty in SA g(n,m) (dimensionless)\n", n++);
 
   for (n = 1; n <= w->nmax_max; ++n)
@@ -57,11 +63,17 @@ mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfie
           double err_dgnm = mfield_get_sv(&d.vector, cidx, w);
           double err_ddgnm = mfield_get_sa(&d.vector, cidx, w);
 
-          fprintf(fp, "%5d %5zu %20.4e %20.4e %20.4e\n",
+          fprintf(fp, "%5d %5zu %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                   m,
                   n,
+                  gnm,
+                  err_gnm,
                   fabs(err_gnm / gnm),
+                  dgnm,
+                  err_dgnm,
                   fabs(err_dgnm / dgnm),
+                  ddgnm,
+                  err_ddgnm,
                   fabs(err_ddgnm / ddgnm));
         }
 
