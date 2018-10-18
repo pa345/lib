@@ -1,6 +1,6 @@
 bin_PROGRAMS = print print_all print_efi print_lp print_lt print_crust print_alt print_tracks residuals plotsep swarmcdf2fday
 
-commonlibs = -lm ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libatlas.a -ltrack -lpomme -lapex -lcommon -lmsynth -lbspline2 -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lgfortran
+commonlibs = -lm ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libatlas.a -ltrack -lmagcoord -lpomme -lapex -lcommon -lmsynth -lbspline2 -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lgfortran
 
 plotsep_SOURCES = plotsep.c
 plotsep_LDADD = -lapex -lcommon -lmsynth -lbspline2 -lm -lgfortran ${commonlibs}

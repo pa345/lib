@@ -28,9 +28,10 @@
 
 #include <indices/indices.h>
 #include <common/common.h>
-#include <common/lse.h>
 
 #include "inverteef.h"
+
+#include "lse.c"
 
 static inline size_t inverteef_thidx(double theta, inverteef_workspace *w);
 static int inverteef_interp_pdesol(const gsl_vector *J_sat, const double *theta_pde,
