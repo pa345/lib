@@ -44,10 +44,10 @@
 #include <msynth/msynth.h>
 #include <track/track.h>
 
-#include "fluxcal.h"
 #include "euler.h"
 #include "magdata.h"
 #include "mfield.h"
+#include "mfield_fluxcal.h"
 #include "mfield_error.h"
 #include "mfield_residual.h"
 #include "mfield_synth.h"
