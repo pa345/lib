@@ -18,6 +18,7 @@
 
 #include <spatwt/spatwt.h>
 #include <track/track_weight.h>
+#include <bspline2/gsl_bspline2.h>
 
 #include "mfield_data.h"
 #include "mfield_green.h"
@@ -63,6 +64,7 @@ typedef struct
   size_t nmax_sa;                       /* SA nmax */
   size_t nsat;                          /* number of satellites */
   double euler_period;                  /* time period for Euler angles (decimal days) */
+  double fluxcal_period;                /* knot spacing for fluxgate calibration parameters (decimal days) */
 
   size_t max_iter;                      /* number of robust iterations */
   int fit_mf;                           /* fit MF coefficients */
@@ -70,6 +72,7 @@ typedef struct
   int fit_sa;                           /* fit SA coefficients */
   int fit_euler;                        /* fit Euler angles */
   int fit_ext;                          /* fit external field correction */
+  int fit_fluxcal;                      /* fit VFM calibration parameters */
   int fit_cbias;                        /* fit crustal biases to observatories */
 
   int scale_time;                       /* scale time into dimensionless units */
@@ -98,6 +101,8 @@ typedef struct
   int synth_noise;                      /* add gaussian noise to synthetic model */
   size_t synth_nmin;                    /* minimum spherical harmonic degree for synthetic model */
 
+  size_t fluxcal_spline_order;          /* order of spline for fluxgate calibration parameters */
+
   mfield_data_workspace *mfield_data_p; /* satellite data */
 } mfield_parameters;
 
@@ -117,13 +122,15 @@ typedef struct
   size_t nnm_sa;    /* number of (n,m) coefficients in model for SA */
   size_t neuler;    /* number of Euler angles in model */
   size_t next;      /* number of external coefficients in model */
+  size_t ncal;      /* number of VFM calibration parameters */
   size_t nbias;     /* number of crustal bias coefficients in model */
 
   size_t nnm_max;   /* MAX(nnm_mf, nnm_sv, nnm_sa) */
 
-  size_t *nbins_euler;  /* number of Euler bins for each satellite */
-  size_t *offset_euler; /* start index of each satellite's Euler angles in coefficient vector */
-  size_t *bias_idx;     /* indices of observatory biases in coefficient vector */
+  size_t *nbins_euler;    /* number of Euler bins for each satellite */
+  size_t *offset_euler;   /* start index of each satellite's Euler angles in coefficient vector */
+  size_t *offset_fluxcal; /* start index of each satellite's fluxgate calibration parameters in coefficient vector */
+  size_t *bias_idx;       /* indices of observatory biases in coefficient vector */
 
   int ext_fdayi[3 * 366 + 30]; /* sorted array of daily timestamps with data for that day */
 
@@ -154,7 +161,7 @@ typedef struct
   /*
    * The model coefficients are partitioned as follows:
    *
-   * c = [ MF | SV | SA | Euler | External ]
+   * c = [ MF | SV | SA | Euler | External | fluxcal ]
    */
   gsl_vector *c;       /* model coefficients */
   gsl_vector *c_copy;  /* model coefficients in physical units */
@@ -167,6 +174,7 @@ typedef struct
   size_t sa_offset;    /* offset of SA coefficients in 'c' */
   size_t euler_offset; /* offset of Euler angles in 'c' */
   size_t ext_offset;   /* offset of external coefficients in 'c' */
+  size_t fluxcal_offset; /* offset of fluxcal coefficients in 'c' */
   size_t bias_offset;  /* offset of crustal bias coefficients in 'c' */
 
   gsl_vector *diag; /* diag(D) where D is regularization matrix */
@@ -192,6 +200,7 @@ typedef struct
   double lambda_mf;        /* main field damping */
   double lambda_sv;        /* SV damping */
   double lambda_sa;        /* SA damping */
+  int old_fdf;             /* use multifit instead of multilarge */
 
   /*
    * The Jacobian is organized as follows:
@@ -245,6 +254,8 @@ typedef struct
   spatwt_workspace *spatwtSV_workspace_p; /* spatial weights for observatory SV measurements */
   green_workspace *green_workspace_p2;
   gsl_eigen_symm_workspace *eigen_workspace_p;
+
+  gsl_bspline2_workspace **fluxcal_spline_workspace_p;
 } mfield_workspace;
 
 #define MFIELD_EULER_DERIV_ALPHA       (1 << 0)

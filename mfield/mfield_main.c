@@ -44,6 +44,7 @@
 #include <msynth/msynth.h>
 #include <track/track.h>
 
+#include "fluxcal.h"
 #include "euler.h"
 #include "magdata.h"
 #include "mfield.h"
@@ -159,11 +160,9 @@ are set to 0.
 int
 initial_guess(gsl_vector *c, mfield_workspace *w)
 {
-  gsl_vector_set_zero(c);
+  size_t i;
 
-#if 0 /* crustal field modeling? */
-  return 0; /*XXX*/
-#endif
+  gsl_vector_set_zero(c);
 
   {
     msynth_workspace *msynth_p = msynth_igrf_read(MSYNTH_IGRF_FILE);
@@ -198,8 +197,24 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
     msynth_free(msynth_p);
   }
 
+  /* initialize fluxgate calibration scale factors to 1.0, leaving offsets and angles at 0 */
+  for (i = 0; i < w->nsat; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      int fit_fluxcal = w->params.fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
+
+      if (fit_fluxcal)
+        {
+          size_t ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]);
+          gsl_vector_view tmp = gsl_vector_subvector(c, w->fluxcal_offset + w->offset_fluxcal[i], FLUXCAL_P * ncontrol);
+          gsl_matrix_view control_pts = gsl_matrix_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
+          gsl_matrix_view m = gsl_matrix_submatrix(&control_pts.matrix, FLUXCAL_IDX_SX, 0, 3, ncontrol);
+          gsl_matrix_set_all(&m.matrix, 1.0);
+        }
+    }
+
   return 0;
-} /* initial_guess() */
+}
 
 int
 print_spectrum(const char *filename, mfield_workspace *w)
@@ -885,6 +900,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->R = fval;
   if (config_lookup_float(&cfg, "euler_period", &fval))
     mfield_params->euler_period = fval;
+  if (config_lookup_float(&cfg, "fluxcal_period", &fval))
+    mfield_params->fluxcal_period = fval;
 
   if (config_lookup_int(&cfg, "max_iter", &ival))
     mfield_params->max_iter = (size_t) ival;
@@ -903,8 +920,13 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->fit_euler = ival;
   if (config_lookup_int(&cfg, "fit_ext", &ival))
     mfield_params->fit_ext = ival;
+  if (config_lookup_int(&cfg, "fit_fluxcal", &ival))
+    mfield_params->fit_fluxcal = ival;
   if (config_lookup_int(&cfg, "fit_cbias", &ival))
     mfield_params->fit_cbias = ival;
+
+  if (config_lookup_int(&cfg, "fluxcal_spline_order", &ival))
+    mfield_params->fluxcal_spline_order = ival;
 
   if (config_lookup_int(&cfg, "scale_time", &ival))
     mfield_params->scale_time = ival;
@@ -1231,7 +1253,8 @@ main(int argc, char *argv[])
       fprintf(stderr, "main: SA damping = %g\n", mfield_params.lambda_sa);
     }
 
-  fprintf(stderr, "main: euler period = %g [days]\n", mfield_params.euler_period);
+  fprintf(stderr, "main: euler period   = %g [days]\n", mfield_params.euler_period);
+  fprintf(stderr, "main: fluxcal period = %g [days]\n", mfield_params.fluxcal_period);
   fprintf(stderr, "main: tmin = %g\n", tmin);
   fprintf(stderr, "main: tmax = %g\n", tmax);
   fprintf(stderr, "main: number of robust iterations = %zu\n", mfield_params.max_iter);
@@ -1330,6 +1353,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of secular variation parameters:    %zu\n", mfield_workspace_p->nnm_sv);
   fprintf(stderr, "main: number of secular acceleration parameters: %zu\n", mfield_workspace_p->nnm_sa);
   fprintf(stderr, "main: number of Euler angle parameters:          %zu\n", mfield_workspace_p->neuler);
+  fprintf(stderr, "main: number of fluxgate calibration parameters  %zu\n", mfield_workspace_p->ncal);
   fprintf(stderr, "main: number of external field parameters:       %zu\n", mfield_workspace_p->next);
   fprintf(stderr, "main: number of crustal bias parameters:         %zu\n", mfield_workspace_p->nbias);
 
@@ -1395,18 +1419,21 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
 
   /* calculate covariance matrix */
-  fprintf(stderr, "main: calculating covariance matrix...");
-  gettimeofday(&tv0, NULL);
-  status = mfield_covariance(mfield_workspace_p->covar, mfield_workspace_p);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (status = %d, %g seconds)\n", status, time_diff(tv0, tv1));
+  if (mfield_workspace_p->old_fdf == 0)
+    {
+      fprintf(stderr, "main: calculating covariance matrix...");
+      gettimeofday(&tv0, NULL);
+      status = mfield_covariance(mfield_workspace_p->covar, mfield_workspace_p);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (status = %d, %g seconds)\n", status, time_diff(tv0, tv1));
 
-  /* calculate errors in coefficients */
-  fprintf(stderr, "main: printing coefficient uncertainties to %s...", error_file);
-  gettimeofday(&tv0, NULL);
-  mfield_print_uncertainties(error_file, mfield_workspace_p->covar, mfield_workspace_p);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+      /* calculate errors in coefficients */
+      fprintf(stderr, "main: printing coefficient uncertainties to %s...", error_file);
+      gettimeofday(&tv0, NULL);
+      mfield_print_uncertainties(error_file, mfield_workspace_p->covar, mfield_workspace_p);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+    }
 
   sprintf(buf, "mfield_coeffs.txt");
   fprintf(stderr, "main: writing coefficients to %s...", buf);
@@ -1518,6 +1545,45 @@ main(int argc, char *argv[])
                 fprintf(stderr, "main: satellite %zu: printing Euler angles to %s...", n, filename);
                 mfield_euler_print(filename, n, mfield_workspace_p);
                 fprintf(stderr, "done\n");
+              }
+          }
+      }
+
+    /* print fluxgate calibration parameters */
+    if (mfield_params.fit_fluxcal)
+      {
+        for (n = 0; n < mfield_workspace_p->nsat; ++n)
+          {
+            magdata *mptr = mfield_data_ptr(n, mfield_workspace_p->data_workspace_p);
+
+            if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
+              {
+                double t0 = mptr->t[0];
+                double t1 = mptr->t[mptr->n - 1];
+                size_t ncontrol = gsl_bspline2_nbasis(mfield_workspace_p->fluxcal_spline_workspace_p[n]);
+                size_t fluxcal_idx = mfield_workspace_p->fluxcal_offset + mfield_workspace_p->offset_fluxcal[n];
+                double cal_data[FLUXCAL_P];
+                gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
+
+                /* fluxgate calibration control points for this dataset */
+                gsl_vector_const_view tmp = gsl_vector_const_subvector(coeffs, fluxcal_idx, FLUXCAL_P * ncontrol);
+                gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
+
+                gsl_bspline2_vector_eval(0.5*(t0+t1), &control_pts.matrix, &cal_params.vector, mfield_workspace_p->fluxcal_spline_workspace_p[n]);
+
+                fprintf(stderr, "main: satellite %zu: S = %e %e %e\n",
+                        n,
+                        cal_data[FLUXCAL_IDX_SX],
+                        cal_data[FLUXCAL_IDX_SY],
+                        cal_data[FLUXCAL_IDX_SZ]);
+                fprintf(stderr, "                   O = %e %e %e [nT]\n",
+                        cal_data[FLUXCAL_IDX_OX],
+                        cal_data[FLUXCAL_IDX_OY],
+                        cal_data[FLUXCAL_IDX_OZ]);
+                fprintf(stderr, "                   U = %e %e %e [deg]\n",
+                        cal_data[FLUXCAL_IDX_U1] * 180.0 / M_PI,
+                        cal_data[FLUXCAL_IDX_U2] * 180.0 / M_PI,
+                        cal_data[FLUXCAL_IDX_U3] * 180.0 / M_PI);
               }
           }
       }

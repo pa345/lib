@@ -1,5 +1,5 @@
-#define OLD_FDF     0
-#define DEBUG       0
+#define OLD_FDF     1
+#define DEBUG       1
 
 typedef struct
 {
@@ -60,6 +60,7 @@ static double huber(const double x);
 static double bisquare(const double x);
 static int mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs, mfield_workspace * w);
 
+#include "mfield_fluxcal.c"
 #include "mfield_multifit.c"
 
 
@@ -93,8 +94,8 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
   int s = 0;
   const mfield_parameters *params = &(w->params);
   const size_t max_iter = 50;     /* maximum iterations */
-  const double xtol = 1.0e-4;
-  const double gtol = 1.5e-3;
+  const double xtol = 1.0e-5;
+  const double gtol = 1.0e-6;
   const double ftol = 1.0e-6;
   int info;
   const size_t p = w->p;          /* number of coefficients */
@@ -553,6 +554,8 @@ mfield_init_nonlinear(mfield_workspace *w)
   fprintf(stderr, "mfield_init_nonlinear: %zu total parameters\n", p);
 
 #if OLD_FDF
+
+  w->old_fdf = 1;
 
   /* allocate fit workspace */
   {
@@ -2771,7 +2774,10 @@ mfield_nonlinear_callback(const size_t iter, void *params,
   if (iter % 5 != 0 && iter != 1)
     return;
 
-  fprintf(stderr, "iteration %zu:\n", iter);
+  fprintf(stderr, "iteration %zu (method: %s/%s):\n",
+          iter,
+          gsl_multifit_nlinear_name(multifit_p),
+          gsl_multifit_nlinear_trs_name(multifit_p));
 
   if (w->nnm_mf > 0)
     {
@@ -2807,10 +2813,50 @@ mfield_nonlinear_callback(const size_t iter, void *params,
               double t0 = w->data_workspace_p->t0[i];
               size_t euler_idx = mfield_euler_idx(i, t0, w);
 
-              fprintf(stderr, "\t euler : %12.4f %12.4f %12.4f [deg]\n",
+              fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg]\n",
+                      i,
                       gsl_vector_get(x, euler_idx) * 180.0 / M_PI,
                       gsl_vector_get(x, euler_idx + 1) * 180.0 / M_PI,
                       gsl_vector_get(x, euler_idx + 2) * 180.0 / M_PI);
+            }
+        }
+    }
+
+  if (w->params.fit_fluxcal)
+    {
+      size_t i;
+
+      for (i = 0; i < w->nsat; ++i)
+        {
+          magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+  
+          if (mptr->n == 0)
+            continue;
+
+          if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
+            {
+              size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
+              size_t ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]);
+              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * ncontrol);
+              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
+              double cal_data[FLUXCAL_P];
+              gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
+
+              gsl_bspline2_vector_eval(mptr->t[0], &control_pts.matrix, &cal_params.vector, w->fluxcal_spline_workspace_p[i]);
+
+              fprintf(stderr, "\t fluxcal %zu: S = %12.4f %12.4f %12.4f\n",
+                      i,
+                      cal_data[FLUXCAL_IDX_SX],
+                      cal_data[FLUXCAL_IDX_SY],
+                      cal_data[FLUXCAL_IDX_SZ]);
+              fprintf(stderr, "\t            O = %12.4f %12.4f %12.4f [nT]\n",
+                      cal_data[FLUXCAL_IDX_OX],
+                      cal_data[FLUXCAL_IDX_OY],
+                      cal_data[FLUXCAL_IDX_OZ]);
+              fprintf(stderr, "\t            U = %12.4f %12.4f %12.4f [deg]\n",
+                      cal_data[FLUXCAL_IDX_U1] * 180.0 / M_PI,
+                      cal_data[FLUXCAL_IDX_U2] * 180.0 / M_PI,
+                      cal_data[FLUXCAL_IDX_U3] * 180.0 / M_PI);
             }
         }
     }

@@ -50,6 +50,7 @@
 #include <common/common.h>
 #include <common/oct.h>
 #include <track/track_weight.h>
+#include <bspline2/gsl_bspline2.h>
 
 #include "euler.h"
 #include "lls.h"
@@ -110,7 +111,8 @@ mfield_alloc(const mfield_parameters *params)
 
   w->nbins_euler = calloc(1, w->nsat * sizeof(size_t));
   w->offset_euler = calloc(1, w->nsat * sizeof(size_t));
-  if (!w->nbins_euler || !w->offset_euler)
+  w->offset_fluxcal = calloc(1, w->nsat * sizeof(size_t));
+  if (!w->nbins_euler || !w->offset_euler || !w->offset_fluxcal)
     {
       mfield_free(w);
       return 0;
@@ -200,11 +202,49 @@ mfield_alloc(const mfield_parameters *params)
         }
 
       w->neuler = 3 * sum;
-      /*w->neuler = 3 * w->nsat;*/
     }
   else
     {
       w->neuler = 0;
+    }
+
+  w->ncal = 0;
+  if (params->fit_fluxcal && w->data_workspace_p)
+    {
+      size_t i;
+      size_t sum = 0;
+
+      w->fluxcal_spline_workspace_p = calloc(w->nsat, sizeof(gsl_bspline2_workspace *));
+
+      /* compute total number of fluxgate calibration parameters for each satellite */
+      for (i = 0; i < w->nsat; ++i)
+        {
+          magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+          double t0, t1, dt;
+          size_t nbreak, ncontrol;
+
+          if (!(mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL))
+            continue;
+
+          magdata_t(&t0, &t1, mptr);
+          dt = (t1 - t0) / 86400000.0; /* convert to days */
+
+          if (params->fluxcal_period <= 0.0)
+            nbreak = 2;
+          else
+            nbreak = (size_t) (dt / (params->fluxcal_period - 1.0));
+
+          w->fluxcal_spline_workspace_p[i] = gsl_bspline2_alloc(params->fluxcal_spline_order, nbreak);
+          gsl_bspline2_init_uniform(t0, t1, w->fluxcal_spline_workspace_p[i]);
+          ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]);
+
+          w->offset_fluxcal[i] = sum;
+          sum += 9 * ncontrol;
+
+          fprintf(stderr, "mfield_alloc: number of fluxgate calibration control points satellite %zu: %zu\n", i, ncontrol);
+        }
+
+      w->ncal = sum;
     }
 
   w->next = 0;
@@ -320,7 +360,7 @@ mfield_alloc(const mfield_parameters *params)
         }
     }
 
-  w->p += w->neuler + w->next + w->nbias;
+  w->p += w->neuler + w->ncal + w->next + w->nbias;
 
   if (w->p == 0)
     {
@@ -332,7 +372,8 @@ mfield_alloc(const mfield_parameters *params)
   w->sa_offset = w->sv_offset + w->nnm_sv;
   w->euler_offset = w->sa_offset + w->nnm_sa;
   w->ext_offset = w->euler_offset + w->neuler;
-  w->bias_offset = w->ext_offset + w->next;
+  w->fluxcal_offset = w->ext_offset + w->next;
+  w->bias_offset = w->fluxcal_offset + w->ncal;
 
   w->cosmphi = malloc((w->nmax_max + 1) * sizeof(double));
   w->sinmphi = malloc((w->nmax_max + 1) * sizeof(double));
@@ -430,6 +471,8 @@ mfield_alloc(const mfield_parameters *params)
 void
 mfield_free(mfield_workspace *w)
 {
+  size_t i;
+
   if (w->cosmphi)
     free(w->cosmphi);
 
@@ -496,6 +539,9 @@ mfield_free(mfield_workspace *w)
   if (w->offset_euler)
     free(w->offset_euler);
 
+  if (w->offset_fluxcal)
+    free(w->offset_fluxcal);
+
   if (w->fvec)
     gsl_vector_free(w->fvec);
 
@@ -550,26 +596,33 @@ mfield_free(mfield_workspace *w)
   if (w->eigen_workspace_p)
     gsl_eigen_symm_free(w->eigen_workspace_p);
 
-  {
-    size_t i;
+  for (i = 0; i < w->max_threads; ++i)
+    {
+      green_free(w->green_array_p[i]);
+      gsl_matrix_free(w->omp_J[i]);
+      gsl_matrix_free(w->omp_GTG[i]);
+      gsl_matrix_free(w->omp_JTJ[i]);
+    }
 
-    for (i = 0; i < w->max_threads; ++i)
-      {
-        green_free(w->green_array_p[i]);
-        gsl_matrix_free(w->omp_J[i]);
-        gsl_matrix_free(w->omp_GTG[i]);
-        gsl_matrix_free(w->omp_JTJ[i]);
-      }
+  free(w->green_array_p);
+  free(w->omp_J);
+  free(w->omp_rowidx);
+  free(w->omp_GTG);
+  free(w->omp_JTJ);
 
-    free(w->green_array_p);
-    free(w->omp_J);
-    free(w->omp_rowidx);
-    free(w->omp_GTG);
-    free(w->omp_JTJ);
-  }
+  if (w->fluxcal_spline_workspace_p)
+    {
+      for (i = 0; i < w->nsat; ++i)
+        {
+          if (w->fluxcal_spline_workspace_p[i])
+            gsl_bspline2_free(w->fluxcal_spline_workspace_p[i]);
+        }
+
+      free(w->fluxcal_spline_workspace_p);
+    }
 
   free(w);
-} /* mfield_free() */
+}
 
 /* initialize parameter structure */
 int
@@ -582,12 +635,14 @@ mfield_init_params(mfield_parameters * params)
   params->nmax_sa = 0;
   params->nsat = 0;
   params->euler_period = 0.0;
+  params->fluxcal_period = -1.0;
   params->max_iter = 0;
   params->fit_mf = 0;
   params->fit_sv = 0;
   params->fit_sa = 0;
   params->fit_euler = 0;
   params->fit_ext = 0;
+  params->fit_fluxcal = 0;
   params->fit_cbias = 0;
   params->qdlat_fit_cutoff = -1.0;
   params->scale_time = 0;
@@ -607,6 +662,7 @@ mfield_init_params(mfield_parameters * params)
   params->synth_data = 0;
   params->synth_noise = 0;
   params->synth_nmin = 0;
+  params->fluxcal_spline_order = 3; /* quadratic spline */
 
   return 0;
 }

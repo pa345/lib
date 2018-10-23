@@ -21,6 +21,8 @@
 #include "mfield.h"
 #include "mfield_synth.h"
 
+#include "mfield_fluxcal.c"
+
 static int mfield_synth_calc(const double t, const double r, const double theta, const double phi,
                              const gsl_vector * g, double B[3], mfield_workspace *w);
 static int mfield_synth_calc_dBdt(const double t, const double r, const double theta, const double phi, const gsl_vector * g,
@@ -106,6 +108,10 @@ mfield_synth_replace(mfield_workspace *w)
   const double beta = -5.2 * M_PI / 180.0 * 1.0;
   const double gamma = 3.4 * M_PI / 180.0 * 1.0;
 
+  /* fluxgate calibration parameters */
+  const double cal_data[] = { 1.01, 0.98, 1.03, 40.0, -11.2, 13.2, 0.01 * M_PI / 180.0, -0.02 * M_PI / 180.0, 0.03 * M_PI / 180.0 };
+  gsl_vector_const_view cal_params = gsl_vector_const_view_array(cal_data, FLUXCAL_P);
+
   /* initialize synthetic gauss coefficients */
   mfield_synth_g(g, w);
 
@@ -118,6 +124,8 @@ mfield_synth_replace(mfield_workspace *w)
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      int fit_euler = params->fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
+      int fit_fluxcal = params->fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
 
 #pragma omp parallel for private(j)
       for (j = 0; j < mptr->n; ++j)
@@ -182,12 +190,15 @@ mfield_synth_replace(mfield_workspace *w)
           mptr->Bz_model[j] = 0.0;
 
           /* rotate NEC vector to VFM frame */
-          if (w->params.fit_euler)
+          if (fit_euler)
             {
               double *q = &(mptr->q[4*j]);
               double B_vfm[3];
 
               euler_nec2vfm(mptr->euler_flags, alpha, beta, gamma, q, B, B_vfm);
+
+              if (fit_fluxcal)
+                fluxcal_invapply_datum(&cal_params.vector, B_vfm, B_vfm);
 
               mptr->Bx_vfm[j] = B_vfm[0];
               mptr->By_vfm[j] = B_vfm[1];
@@ -221,7 +232,7 @@ mfield_synth_replace(mfield_workspace *w)
               mptr->Bz_model_ns[j] = 0.0;
 
               /* rotate NEC vector to VFM frame */
-              if (w->params.fit_euler)
+              if (fit_euler)
                 {
                   double *q = &(mptr->q_ns[4*j]);
                   double B_vfm[3];

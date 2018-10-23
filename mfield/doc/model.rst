@@ -11,8 +11,8 @@ Model Parameterization
 .. |partialgp| replace:: :math:`\frac{\partial}{\partial g_{n'm'}}`
 .. |partialdgp| replace:: :math:`\frac{\partial}{\partial \dot{g}_{n'm'}}`
 .. |partialddgp| replace:: :math:`\frac{\partial}{\partial \ddot{g}_{n'm'}}`
-.. |partialeuler| replace:: :math:`\frac{\partial}{\partial (\alpha,\beta,\gamma)}`
-.. |partialeulerp| replace:: :math:`\frac{\partial}{\partial (\alpha',\beta',\gamma')}`
+.. |partialeuler| replace:: :math:`\frac{\partial}{\partial \boldsymbol{\alpha}}`
+.. |partialeulerp| replace:: :math:`\frac{\partial}{\partial \boldsymbol{\alpha}'}`
 .. |partialk| replace:: :math:`\frac{\partial}{\partial k(t)}`
 .. |partialkp| replace:: :math:`\frac{\partial}{\partial k(t')}`
 .. |depsdg| replace:: :math:`-d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
@@ -21,10 +21,10 @@ Model Parameterization
 .. |dfdg| replace:: :math:`\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
 .. |dfdgv| replace:: :math:`\frac{t_i - t_0}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
 .. |dfdga| replace:: :math:`\frac{\frac{1}{2} (t_i - t_0)^2}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |depsdeuler| replace:: :math:`R_q \left[ \frac{\partial}{\partial (\alpha,\beta,\gamma)} R_3(\alpha,\beta,\gamma) \right] \mathbf{B}^{VFM}_i`
+.. |depsdeuler| replace:: :math:`R_q \left[ \frac{\partial}{\partial \boldsymbol{\alpha}} R_3(\boldsymbol{\alpha}) \right] \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdk| replace:: :math:`-d\mathbf{B}^{ext}(\mathbf{r}_i)`
 .. |dfdk| replace:: :math:`\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{ext}(\mathbf{r}_i)`
-.. |ddepsdeuler| replace:: :math:`R_q \left[ \frac{\partial^2}{\partial (\alpha,\beta,\gamma)^2} R_3(\alpha,\beta,\gamma) \right] \mathbf{B}^{VFM}_i`
+.. |ddepsdeuler| replace:: :math:`R_q \left[ \frac{\partial^2}{\partial \boldsymbol{\alpha}^2} R_3(\boldsymbol{\alpha}) \right] \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |ddfdg| replace:: :math:`\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k})||} \left[ (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)) (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i)) + d\mathbf{B}^{int}_{nm}(\mathbf{r}_i) \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i) \right]`
 .. |ddfdgdgv| replace:: :math:`\frac{t_i - t_0}{|| \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k})||} \left[ (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)) (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i)) + d\mathbf{B}^{int}_{nm}(\mathbf{r}_i) \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i) \right]`
 .. |ddfdgdga| replace:: :math:`\frac{\frac{1}{2} (t_i - t_0)^2}{|| \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k})||} \left[ (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)) (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i)) + d\mathbf{B}^{int}_{nm}(\mathbf{r}_i) \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i) \right]`
@@ -43,15 +43,59 @@ where the residuals are
 
 .. math::
 
-   \boldsymbol{\epsilon}_i & = R_q R_3(\alpha,\beta,\gamma) \mathbf{B}^{VFM}_i - \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \\
-   f_i & = || \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) || - F_i \\
+   \boldsymbol{\epsilon}_i & = R_q R_3(\boldsymbol{\alpha}) \mathbf{B}^{VFM}_i(\mathbf{c}) - \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \\
+   f_i & = || \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) || - F_i(\mathbf{c}) \\
    \boldsymbol{\delta}_i &= \dot{\mathbf{B}}_i - \dot{\mathbf{B}}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})
 
-Here, :math:`\mathbf{B}^{VFM}_i` is the vector measurement in the VFM instrument frame, :math:`F_i` is the scalar field
+Data measurements
+=================
+
+:math:`\mathbf{B}^{VFM}_i(\mathbf{c})` is the vector measurement in the VFM instrument frame which may be calibrated using
+the parameters :math:`\mathbf{c} = (\mathbf{s},\mathbf{o},\mathbf{u})`, :math:`F_i(\mathbf{c})` is the calibrated scalar field
 measurement, and :math:`\dot{\mathbf{B}}_i` is a vector secular variation measurement (i.e. derived from ground observatory
-time series). The matrix :math:`R_3(\alpha,\beta,\gamma)` rotates a vector from the VFM frame to the CRF frame defined
-by the star camera using the Euler angles :math:`\alpha,\beta,\gamma`. The matrix :math:`R_q` then rotates from CRF to NEC
-(see Olsen et al, 2013). The vector model is given by
+time series). The fluxgate calibration is as follows,
+
+.. math:: \mathbf{B}^{VFM}_i(\mathbf{c}) = P^{-1}(\mathbf{u}) S(\mathbf{s}) (\mathbf{E}^{VFM}_i - \mathbf{o})
+
+with
+
+.. math::
+   
+   P(\mathbf{u}) &= \begin{pmatrix}
+                      1 & 0 & 0 \\
+                      -\sin{u_1} & \cos{u_1} & 0 \\
+                      \sin{u_2} & \sin{u_3} & w(u_2,u_3)
+                    \end{pmatrix} \\
+   P^{-1}(\mathbf{u}) &= \begin{pmatrix}
+                           1 & 0 & 0 \\
+                           \frac{\sin{u_1}}{\cos{u_1}} & \frac{1}{\cos{u_1}} & 0 \\
+                           -\frac{\sin{u_1} \sin{u_3} + \cos{u_1} \sin{u_2}}{w \cos{u_1}} & -\frac{\sin{u_3}}{w \cos{u_1}} & \frac{1}{w}
+                         \end{pmatrix} \\
+   w(u_2,u_3) &= \sqrt{1 - \sin^2{u_2} - \sin^2{u_3}} \\
+   S(\mathbf{s}) &= \textrm{diag}(s_1, s_2, s_3) \\
+   \mathbf{o} &= \left[ o_1, o_2, o_3 \right]^T
+
+and :math:`\mathbf{E}^{VFM}_i` is the uncalibrated vector measurement in the VFM frame.
+The matrix :math:`R_3(\boldsymbol{\alpha})` rotates a vector from the VFM frame to the CRF frame defined
+by the star camera using the Euler angles :math:`\boldsymbol{\alpha} = (\alpha,\beta,\gamma)`. The matrix :math:`R_q` then rotates from CRF to NEC
+(see Olsen et al, 2013).
+
+The calibration parameters are given a time dependence represented by a B-spline,
+
+.. math:: \mathbf{c}(t) = \sum_i \mathbf{c}_i N_{i,k}(t) =
+                          \sum_i \begin{pmatrix}
+                                   \mathbf{s}_i \\
+                                   \mathbf{o}_i \\
+                                   \mathbf{u}_i
+                                 \end{pmatrix} N_{i,k}(t)
+
+The basis splines :math:`N_{i,k}(t)` are defined by a knot vector which is constructed using
+uniformly spaced knots over the data time period with a spacing of 30 days.
+
+Model
+=====
+
+The vector model is given by
 
 .. math:: \mathbf{B}^{model}(\mathbf{r}, t; \mathbf{g},\mathbf{k}) = \mathbf{B}^{int}(\mathbf{r}, t; \mathbf{g}) + \mathbf{B}^{crust}(\mathbf{r}) + \mathbf{B}^{ext}(\mathbf{r}, t) + \mathbf{B}^{ext,correction}(\mathbf{r}, t; \mathbf{k})
 
@@ -109,13 +153,13 @@ Jacobian
 
 When minimizing :math:`\chi^2` with a nonlinear least squares algorithm, the Jacobian
 is required.
-
-Required derivatives
---------------------
-
 For easy reference, we list the derivatives of the residuals with respect
-to various model parameters, needed for the Jacobian calculation. Here, we
-assume that the internal field model can be expressed as
+to various model parameters, needed for the Jacobian calculation.
+
+Internal field
+--------------
+
+The internal field model can be expressed as
 
 .. math:: \mathbf{B}^{int}(\mathbf{r}, t; \mathbf{g}) = \sum_{nm} g_{nm}(t) d\mathbf{B}^{int}_{nm}(\mathbf{r})
 
@@ -144,6 +188,33 @@ where
    \right) & m < 0
    \end{array}
    \right.
+
+Fluxgate calibration
+--------------------
+
+Let
+
+.. math::
+   
+   s_j(t) &= \sum_k s_{jk} N_k(t) \\
+   o_j(t) &= \sum_k o_{jk} N_k(t) \\
+   u_j(t) &= \sum_k u_{jk} N_k(t)
+
+where :math:`j = 1,2,3` and :math:`k` is summed from :math:`1` to the number of
+control points in each spline. Then,
+
+.. math::
+
+   \frac{\partial \boldsymbol{\epsilon}_i}{\partial s_{jk}}(t) &= N_k(t) \left( E^{VFM}_j - o_j(t) \right) R_q R_3(\boldsymbol{\alpha}(t)) P^{-1}_j(\mathbf{u}(t)) \\
+   \frac{\partial \boldsymbol{\epsilon}_i}{\partial o_{jk}}(t) &= -N_k(t) s_j(t) R_q R_3(\boldsymbol{\alpha}(t)) P^{-1}_j(\mathbf{u}(t)) \\
+   \frac{\partial \boldsymbol{\epsilon}_i}{\partial u_{jk}}(t) &= N_k(t) R_q R_3(\boldsymbol{\alpha}(t)) \left[ \frac{\partial}{\partial u_j} P^{-1}(\mathbf{u}(t))\right] \left( \mathbf{E}^{VFM}_i - \mathbf{o}(t) \right)
+
+where :math:`P^{-1}_j` is the :math:`j`-th column of :math:`P^{-1}`.
+
+First derivatives
+-----------------
+
+The following table summarizes the first derivatives of the residuals needed for the Jacobian.
 
 ============== ========================== =========================== ========================
 Derivative     Vector residual |epsiloni| Scalar residual :math:`f_i` Vector residual |deltai|
@@ -180,7 +251,7 @@ Therefore, the second directional derivative of the vector residual |epsiloni| i
     2 v_{\alpha} v_{\gamma} \partial_{\alpha} \partial_{\gamma} +
     2 v_{\beta} v_{\gamma} \partial_{\beta} \partial_{\gamma}
   \right]
-  R_3(\alpha,\beta,\gamma) \mathbf{B}^{VFM}_i
+  R_3(\boldsymbol{\alpha}) \mathbf{B}^{VFM}_i
 
 For the scalar residuals, we have
 

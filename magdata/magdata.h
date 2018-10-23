@@ -40,6 +40,7 @@
 #define MAGDATA_GLOBFLG_OBSERVATORY     (1 << 2)  /* dataset is from ground observatory main field measurements */
 #define MAGDATA_GLOBFLG_OBSERVATORY_SV  (1 << 3)  /* dataset is from ground observatory secular variation measurements */
 #define MAGDATA_GLOBFLG_SATELLITE       (1 << 4)  /* dataset is from satellite */
+#define MAGDATA_GLOBFLG_FLUXCAL         (1 << 5)  /* fit fluxgate calibration parameters to this dataset */
 
 /* k_b * mu_0 in units of: nT^2 cm^3 / K */
 #define MAGDATA_KB_MU0                (1.73497445090703e-05)
