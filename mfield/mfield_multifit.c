@@ -61,7 +61,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 
       /* fluxgate calibration */
       int fit_fluxcal = mparams->fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
-      size_t ncontrol = fit_fluxcal ? gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]) : 0;
+      size_t ncontrol = fit_fluxcal ? gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]) : 0;
       size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
 
 #pragma omp parallel for private(j)
@@ -76,6 +76,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           double dBdt_model[3];         /* dB/dt (SV of internal model) */
           double dBdt_obs[3];           /* SV observation vector (NEC frame) */
           double F_obs;                 /* scalar field measurement */
+          gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)];
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
@@ -123,7 +124,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                   gsl_vector_const_view tmp = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * ncontrol);
                   gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
 
-                  gsl_bspline2_vector_eval(mptr->t[j], &control_pts.matrix, &cal_params.vector, w->fluxcal_spline_workspace_p[i]);
+                  gsl_bspline2_vector_eval(mptr->t[j], &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
                   fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
                 }
 
@@ -647,7 +648,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
       /* fluxgate calibration */
       int fit_fluxcal = w->params.fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
-      size_t ncontrol = fit_fluxcal ? gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]) : 0;
+      size_t ncontrol = fit_fluxcal ? gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]) : 0;
       size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
 
 #pragma omp parallel for private(j)
@@ -676,13 +677,14 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
           double B_nec_alpha_ns[3], B_nec_beta_ns[3], B_nec_gamma_ns[3];
 
           /* fluxgate calibration parameters */
+          gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)];
           double cal_data[FLUXCAL_P];
           gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
           double jac_fluxcal_data[3 * FLUXCAL_P];
           gsl_matrix_view jac_fluxcal = gsl_matrix_view_array(jac_fluxcal_data, 3, FLUXCAL_P);
           double jac_fluxcal_euler_data[3 * FLUXCAL_P];
           gsl_matrix_view jac_fluxcal_euler = gsl_matrix_view_array(jac_fluxcal_euler_data, 3, FLUXCAL_P);
-          gsl_vector *N_fluxcal = fit_fluxcal ? w->fluxcal_spline_workspace_p[i]->B : NULL;
+          gsl_vector *N_fluxcal = fit_fluxcal ? fluxcal_spline_p->B : NULL;
           size_t istart_fluxcal, iend_fluxcal;
 
 #if MFIELD_FIT_EXTFIELD
@@ -743,7 +745,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                   gsl_vector_const_view tmp = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * ncontrol);
                   gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
 
-                  gsl_bspline2_vector_eval(mptr->t[j], &control_pts.matrix, &cal_params.vector, w->fluxcal_spline_workspace_p[i]);
+                  gsl_bspline2_vector_eval(mptr->t[j], &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
                   /* compute jac_fluxcal := d/dm B_vfm(m) */
                   fluxcal_jac(&cal_params.vector, B_vfm, &jac_fluxcal.matrix);
@@ -755,7 +757,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                   fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
 
                   /* evaluate non-zero basis splines for time t */
-                  gsl_bspline2_eval_basis_nonzero(mptr->t[j], N_fluxcal, &istart_fluxcal, &iend_fluxcal, w->fluxcal_spline_workspace_p[i]);
+                  gsl_bspline2_eval_basis_nonzero(mptr->t[j], N_fluxcal, &istart_fluxcal, &iend_fluxcal, fluxcal_spline_p);
                 }
 
               /* compute alpha derivative of: R_q R_3 B_vfm */
@@ -816,7 +818,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                     {
                       size_t idx;
 
-                      for (k = 0; k < w->fluxcal_spline_workspace_p[i]->spline_order; ++k)
+                      for (k = 0; k < fluxcal_spline_p->spline_order; ++k)
                         {
                           double Nk = gsl_vector_get(N_fluxcal, k);
 
@@ -860,7 +862,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                     {
                       size_t idx;
 
-                      for (k = 0; k < w->fluxcal_spline_workspace_p[i]->spline_order; ++k)
+                      for (k = 0; k < fluxcal_spline_p->spline_order; ++k)
                         {
                           double Nk = gsl_vector_get(N_fluxcal, k);
 
@@ -904,7 +906,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                     {
                       size_t idx;
 
-                      for (k = 0; k < w->fluxcal_spline_workspace_p[i]->spline_order; ++k)
+                      for (k = 0; k < fluxcal_spline_p->spline_order; ++k)
                         {
                           double Nk = gsl_vector_get(N_fluxcal, k);
 
@@ -985,7 +987,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                       /* result = B_vfm(c) . d/dc_i B_vfm(c) */
                       gsl_blas_ddot(&vB_vfm.vector, &dBdc_vfm.vector, &result);
 
-                      for (k = 0; k < w->fluxcal_spline_workspace_p[i]->spline_order; ++k)
+                      for (k = 0; k < fluxcal_spline_p->spline_order; ++k)
                         {
                           double Nk = gsl_vector_get(N_fluxcal, k);
 

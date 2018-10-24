@@ -2835,14 +2835,15 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
+              gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
-              size_t ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]);
+              size_t ncontrol = gsl_bspline2_nbasis(fluxcal_spline_p);
               gsl_vector_const_view tmp = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * ncontrol);
               gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
               double cal_data[FLUXCAL_P];
               gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
 
-              gsl_bspline2_vector_eval(mptr->t[0], &control_pts.matrix, &cal_params.vector, w->fluxcal_spline_workspace_p[i]);
+              gsl_bspline2_vector_eval(mptr->t[0], &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
               fprintf(stderr, "\t fluxcal %zu: S = %12.4f %12.4f %12.4f\n",
                       i,

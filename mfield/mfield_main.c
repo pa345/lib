@@ -205,7 +205,7 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
 
       if (fit_fluxcal)
         {
-          size_t ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]);
+          size_t ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]);
           gsl_vector_view tmp = gsl_vector_subvector(c, w->fluxcal_offset + w->offset_fluxcal[i], FLUXCAL_P * ncontrol);
           gsl_matrix_view control_pts = gsl_matrix_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
           gsl_matrix_view m = gsl_matrix_submatrix(&control_pts.matrix, FLUXCAL_IDX_SX, 0, 3, ncontrol);
@@ -1560,7 +1560,8 @@ main(int argc, char *argv[])
               {
                 double t0 = mptr->t[0];
                 double t1 = mptr->t[mptr->n - 1];
-                size_t ncontrol = gsl_bspline2_nbasis(mfield_workspace_p->fluxcal_spline_workspace_p[n]);
+                gsl_bspline2_workspace *fluxcal_spline_p = mfield_workspace_p->fluxcal_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
+                size_t ncontrol = gsl_bspline2_nbasis(fluxcal_spline_p);
                 size_t fluxcal_idx = mfield_workspace_p->fluxcal_offset + mfield_workspace_p->offset_fluxcal[n];
                 double cal_data[FLUXCAL_P];
                 gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
@@ -1569,7 +1570,7 @@ main(int argc, char *argv[])
                 gsl_vector_const_view tmp = gsl_vector_const_subvector(coeffs, fluxcal_idx, FLUXCAL_P * ncontrol);
                 gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
 
-                gsl_bspline2_vector_eval(0.5*(t0+t1), &control_pts.matrix, &cal_params.vector, mfield_workspace_p->fluxcal_spline_workspace_p[n]);
+                gsl_bspline2_vector_eval(0.5*(t0+t1), &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
                 fprintf(stderr, "main: satellite %zu: S = %e %e %e\n",
                         n,

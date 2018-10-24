@@ -102,6 +102,7 @@ mfield_alloc(const mfield_parameters *params)
   w->nmax_sv = params->nmax_sv;
   w->nmax_sa = params->nmax_sa;
   w->data_workspace_p = params->mfield_data_p;
+  w->max_threads = (size_t) omp_get_max_threads();
 
   w->params = *params;
 
@@ -211,10 +212,10 @@ mfield_alloc(const mfield_parameters *params)
   w->ncal = 0;
   if (params->fit_fluxcal && w->data_workspace_p)
     {
-      size_t i;
+      size_t i, j;
       size_t sum = 0;
 
-      w->fluxcal_spline_workspace_p = calloc(w->nsat, sizeof(gsl_bspline2_workspace *));
+      w->fluxcal_spline_workspace_p = calloc(w->nsat * w->max_threads, sizeof(gsl_bspline2_workspace *));
 
       /* compute total number of fluxgate calibration parameters for each satellite */
       for (i = 0; i < w->nsat; ++i)
@@ -234,9 +235,13 @@ mfield_alloc(const mfield_parameters *params)
           else
             nbreak = (size_t) (dt / (params->fluxcal_period - 1.0));
 
-          w->fluxcal_spline_workspace_p[i] = gsl_bspline2_alloc(params->fluxcal_spline_order, nbreak);
-          gsl_bspline2_init_uniform(t0, t1, w->fluxcal_spline_workspace_p[i]);
-          ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[i]);
+          for (j = 0; j < w->max_threads; ++j)
+            {
+              w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, j, w->max_threads)] = gsl_bspline2_alloc(params->fluxcal_spline_order, nbreak);
+              gsl_bspline2_init_uniform(t0, t1, w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, j, w->max_threads)]);
+            }
+
+          ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]);
 
           w->offset_fluxcal[i] = sum;
           sum += 9 * ncontrol;
@@ -427,7 +432,6 @@ mfield_alloc(const mfield_parameters *params)
   w->lambda_diag = gsl_vector_calloc(w->p);
   w->LTL = gsl_vector_calloc(w->p);
 
-  w->max_threads = (size_t) omp_get_max_threads();
   w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_max);
   w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_max);
   w->omp_dZ = gsl_matrix_alloc(w->max_threads, w->nnm_max);
@@ -612,7 +616,7 @@ mfield_free(mfield_workspace *w)
 
   if (w->fluxcal_spline_workspace_p)
     {
-      for (i = 0; i < w->nsat; ++i)
+      for (i = 0; i < w->nsat * w->max_threads; ++i)
         {
           if (w->fluxcal_spline_workspace_p[i])
             gsl_bspline2_free(w->fluxcal_spline_workspace_p[i]);
