@@ -478,6 +478,53 @@ euler_vfm2nec(const size_t flags, const double alpha, const double beta,
 }
 
 /*
+euler_matrix_vfm2nec()
+  Convert multiple vectors from VFM to NEC frame
+
+Inputs: flags - EULER_FLG_xxx
+                These flags can indicate derivatives to be taken,
+                and also Euler convention
+        alpha - Euler angle alpha (radians)
+        beta  - Euler angle beta (radians)
+        gamma - Euler angle gamma (radians)
+        q     - quaternions for CRF to NEC
+        B_in  - input matrix (VFM frame), 3-by-N
+        B_out - output matrix (NEC frame), 3-by-N
+
+Return: success or error
+
+Notes:
+1) In place transform is allowed (ie: B_in == B_out)
+*/
+
+int
+euler_matrix_vfm2nec(const size_t flags, const double alpha, const double beta,
+                     const double gamma, const double q[],
+                     const gsl_matrix *B_in, gsl_matrix *B_out)
+{
+  const size_t N = B_in->size2;
+
+  if (B_in->size1 != 3 || B_out->size1 != 3)
+    {
+      GSL_ERROR("input and output matrices must have 3 rows", GSL_EBADLEN);
+    }
+  else if (B_out->size2 != N)
+    {
+      GSL_ERROR("input and output matrices mst have same number of columns", GSL_EBADLEN);
+    }
+  else
+    {
+      /* compute B_out = R_3(alpha,beta,gamma) B_in */
+      euler_matrix_apply_R3(flags, alpha, beta, gamma, B_in, B_out);
+
+      /* compute B_out = R_q R_3(alpha,beta,gamma) B_in */
+      quat_matrix_apply(q, B_out, B_out);
+    }
+
+  return 0;
+}
+
+/*
 euler_nec2vfm()
   Convert a vector from NEC to VFM frame
 
@@ -631,6 +678,121 @@ euler_apply_R3(const size_t flags, const double alpha, const double beta,
     }
 
   return GSL_SUCCESS;
+}
+
+/*
+euler_matrix_apply_R3()
+  Apply 3D Euler rotation to multiple vectors
+
+B_out = R3(alpha,beta,gamma) * [ X1 X2 ... XN ]
+                               [ Y1 Y2 ... YN ]
+                               [ Z1 Z2 ... ZN ]
+
+For ZYX convention,
+
+B_out = Rz(gamma) Ry(beta) Rx(alpha) B_in
+
+Inputs: flags - EULER_FLG_xxx
+                These flags can indicate derivatives to be taken,
+                and also Euler convention
+        alpha - Euler angle alpha (radians)
+        beta  - Euler angle beta (radians)
+        gamma - Euler angle gamma (radians)
+        B_in  - input matrix, 3-by-N
+        B_out - output matrix, 3-by-N
+
+Return: success or error
+
+Notes:
+1) In place transform is allowed (ie: B_in == B_out)
+*/
+
+int
+euler_matrix_apply_R3(const size_t flags, const double alpha, const double beta,
+                      const double gamma, const gsl_matrix *B_in, gsl_matrix *B_out)
+{
+  const size_t N = B_in->size2;
+
+  if (B_in->size1 != 3 || B_out->size1 != 3)
+    {
+      GSL_ERROR("input and output matrices must have 3 rows", GSL_EBADLEN);
+    }
+  else if (B_out->size2 != N)
+    {
+      GSL_ERROR("input and output matrices mst have same number of columns", GSL_EBADLEN);
+    }
+  else
+    {
+      int deriv_alpha, deriv_beta, deriv_gamma;
+      size_t j;
+
+      if (flags & EULER_FLG_DERIV_ALPHA)
+        deriv_alpha = 1;
+      else if (flags & EULER_FLG_DERIV2_ALPHA)
+        deriv_alpha = 2;
+      else
+        deriv_alpha = 0;
+
+      if (flags & EULER_FLG_DERIV_BETA)
+        deriv_beta = 1;
+      else if (flags & EULER_FLG_DERIV2_BETA)
+        deriv_beta = 2;
+      else
+        deriv_beta = 0;
+
+      if (flags & EULER_FLG_DERIV_GAMMA)
+        deriv_gamma = 1;
+      else if (flags & EULER_FLG_DERIV2_GAMMA)
+        deriv_gamma = 2;
+      else
+        deriv_gamma = 0;
+
+      for (j = 0; j < N; ++j)
+        {
+          double tmp_in[3], tmp_out[3];
+
+          if (flags & EULER_FLG_RINV)
+            {
+              /* apply R_inv = [ 0 0 -1; 0 -1 0; -1 0 0 ] matrix to input vector */
+              tmp_in[0] = -gsl_matrix_get(B_in, 2, j);
+              tmp_in[1] = -gsl_matrix_get(B_in, 1, j);
+              tmp_in[2] = -gsl_matrix_get(B_in, 0, j);
+            }
+          else
+            {
+              tmp_in[0] = gsl_matrix_get(B_in, 0, j);
+              tmp_in[1] = gsl_matrix_get(B_in, 1, j);
+              tmp_in[2] = gsl_matrix_get(B_in, 2, j);
+            }
+
+          /* apply Euler rotations B_out = R_3 B_in */
+          if (flags & EULER_FLG_ZYZ)
+            {
+              /* ZYZ convention */
+              euler_apply_Rz(deriv_alpha, alpha, tmp_in, tmp_out);
+              euler_apply_Ry(deriv_beta, beta, tmp_out, tmp_out);
+              euler_apply_Rz(deriv_gamma, gamma, tmp_out, tmp_out);
+            }
+          else if (flags & EULER_FLG_ZYX)
+            {
+              /* ZYX convention */
+              euler_apply_Rx(deriv_alpha, alpha, tmp_in, tmp_out);
+              euler_apply_Ry(deriv_beta, beta, tmp_out, tmp_out);
+              euler_apply_Rz(deriv_gamma, gamma, tmp_out, tmp_out);
+            }
+          else
+            {
+              fprintf(stderr, "euler_matrix_apply_R3: error: no Euler convention specified\n");
+              return -1;
+            }
+
+          gsl_matrix_set(B_out, 0, j, tmp_out[0]);
+          gsl_matrix_set(B_out, 1, j, tmp_out[1]);
+          gsl_matrix_set(B_out, 2, j, tmp_out[2]);
+        }
+
+      return GSL_SUCCESS;
+    }
 }
 
 /*

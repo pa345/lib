@@ -27,6 +27,7 @@ static int fluxcal_P(const double u[3], gsl_matrix * P);
 static int fluxcal_Pinv(const double u[3], gsl_matrix * Pinv);
 static int fluxcal_Pinv_deriv(const double u[3], gsl_matrix * Pinv_1, gsl_matrix * Pinv_2, gsl_matrix * Pinv_3);
 static int fluxcal_apply_datum_Pinv(const gsl_matrix * Pinv, const gsl_vector *m, const double E[3], double B[4]);
+static int fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac);
 
 /*
 fluxcal_apply_datum()
@@ -325,28 +326,21 @@ fluxcal_apply_datum_Pinv(const gsl_matrix * Pinv, const gsl_vector *m, const dou
 
 /*
 fluxcal_jac()
-  Compute elements of the Jacobian matrix corresponding to
-
-epsilon(m) = R_q R_3(alpha,beta,gamma) B(m)
+  Compute elements of the Jacobian matrix corresponding to B(m)
 
 with B(m) = P^{-1} S (E - O)
 
-Inputs: m           - calibration parameters
-        euler_flags - Euler angle flags
-        alpha       - Euler angle (radians)
-        beta        - Euler angle (radians)
-        gamma       - Euler angle (radians)
-        q           - quaternions
-        E           - uncalibrated vector
-        jac         - (output) d/dm eps(m), 3-by-FLUXCAL_P
-                      jac(1,:) = d/dm eps_X(m)
-                      jac(2,:) = d/dm eps_Y(m)
-                      jac(3,:) = d/dm eps_Z(m)
+Inputs: m   - calibration parameters
+        E   - uncalibrated vector
+        jac - (output) d/dm B(m), 3-by-FLUXCAL_P
+              jac(1,j) = d/dm_j B_x(m)
+              jac(2,j) = d/dm_j B_y(m)
+              jac(3,j) = d/dm_j B_z(m)
+              j = 1,2,...,FLUXCAL_P
 */
 
 static int
-fluxcal_jac(const gsl_vector *m, const size_t euler_flags, const double alpha, const double beta, const double gamma,
-            const double *q, const double E[3], gsl_matrix *jac)
+fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac)
 {
   double S[3], O[3], U[3];
   double Pinv_data[9], Pinv_1_data[9], Pinv_2_data[9], Pinv_3_data[9];
@@ -374,23 +368,17 @@ fluxcal_jac(const gsl_vector *m, const size_t euler_flags, const double alpha, c
 
   for (j = 0; j < 3; ++j)
     {
-      double Pinv_j[3], tmp[3];
       size_t k;
 
-      /* Pinv_j := P^{-1}(:,j) */
-      for (k = 0; k < 3; ++k)
-        Pinv_j[k] = gsl_matrix_get(&Pinv.matrix, k, j);
-
-      /* compute tmp = R_q R_3 P^{-1}_j */
-      euler_vfm2nec(euler_flags, alpha, beta, gamma, q, Pinv_j, tmp);
-      
       for (k = 0; k < 3; ++k)
         {
+          double Pinv_kj = gsl_matrix_get(&Pinv.matrix, k, j);
+
           /* compute jac_S = d/dS eps(m) = (E_j - O_j) R_q R_3 P^{-1}_j */
-          gsl_matrix_set(jac, k, FLUXCAL_IDX_SX + j, (E[j] - O[j]) * tmp[k]);
+          gsl_matrix_set(jac, k, FLUXCAL_IDX_SX + j, (E[j] - O[j]) * Pinv_kj);
 
           /* compute jac_O = d/dO eps(m) = -S_j R_q R_3 P^{-1}_j */
-          gsl_matrix_set(jac, k, FLUXCAL_IDX_OX + j, -S[j] * tmp[k]);
+          gsl_matrix_set(jac, k, FLUXCAL_IDX_OX + j, -S[j] * Pinv_kj);
         }
     }
 
@@ -401,11 +389,6 @@ fluxcal_jac(const gsl_vector *m, const size_t euler_flags, const double alpha, c
   fluxcal_apply_datum_Pinv(&Pinv_1.matrix, m, E, tmp1);
   fluxcal_apply_datum_Pinv(&Pinv_2.matrix, m, E, tmp2);
   fluxcal_apply_datum_Pinv(&Pinv_3.matrix, m, E, tmp3);
-
-  /* compute tmp_j := R_q R_3 d/dU_j P^{-1} * S * (E - O) */
-  euler_vfm2nec(euler_flags, alpha, beta, gamma, q, tmp1, tmp1);
-  euler_vfm2nec(euler_flags, alpha, beta, gamma, q, tmp2, tmp2);
-  euler_vfm2nec(euler_flags, alpha, beta, gamma, q, tmp3, tmp3);
 
   /* store in output matrices */
   for (j = 0; j < 3; ++j)

@@ -13,6 +13,7 @@ Model Parameterization
 .. |partialddgp| replace:: :math:`\frac{\partial}{\partial \ddot{g}_{n'm'}}`
 .. |partialeuler| replace:: :math:`\frac{\partial}{\partial \boldsymbol{\alpha}}`
 .. |partialeulerp| replace:: :math:`\frac{\partial}{\partial \boldsymbol{\alpha}'}`
+.. |partialc| replace:: :math:`\frac{\partial}{\partial \mathbf{c}}`
 .. |partialk| replace:: :math:`\frac{\partial}{\partial k(t)}`
 .. |partialkp| replace:: :math:`\frac{\partial}{\partial k(t')}`
 .. |depsdg| replace:: :math:`-d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
@@ -21,7 +22,9 @@ Model Parameterization
 .. |dfdg| replace:: :math:`\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
 .. |dfdgv| replace:: :math:`\frac{t_i - t_0}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
 .. |dfdga| replace:: :math:`\frac{\frac{1}{2} (t_i - t_0)^2}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
+.. |dfdc| replace:: :math:`-\frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdeuler| replace:: :math:`R_q \left[ \frac{\partial}{\partial \boldsymbol{\alpha}} R_3(\boldsymbol{\alpha}) \right] \mathbf{B}^{VFM}_i(\mathbf{c})`
+.. |depsdc| replace:: :math:`R_q R_3(\boldsymbol{\alpha}) \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdk| replace:: :math:`-d\mathbf{B}^{ext}(\mathbf{r}_i)`
 .. |dfdk| replace:: :math:`\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{ext}(\mathbf{r}_i)`
 .. |ddepsdeuler| replace:: :math:`R_q \left[ \frac{\partial^2}{\partial \boldsymbol{\alpha}^2} R_3(\boldsymbol{\alpha}) \right] \mathbf{B}^{VFM}_i(\mathbf{c})`
@@ -205,11 +208,19 @@ control points in each spline. Then,
 
 .. math::
 
-   \frac{\partial \boldsymbol{\epsilon}_i}{\partial s_{jk}}(t) &= N_k(t) \left( E^{VFM}_j - o_j(t) \right) R_q R_3(\boldsymbol{\alpha}(t)) P^{-1}_j(\mathbf{u}(t)) \\
-   \frac{\partial \boldsymbol{\epsilon}_i}{\partial o_{jk}}(t) &= -N_k(t) s_j(t) R_q R_3(\boldsymbol{\alpha}(t)) P^{-1}_j(\mathbf{u}(t)) \\
-   \frac{\partial \boldsymbol{\epsilon}_i}{\partial u_{jk}}(t) &= N_k(t) R_q R_3(\boldsymbol{\alpha}(t)) \left[ \frac{\partial}{\partial u_j} P^{-1}(\mathbf{u}(t))\right] \left( \mathbf{E}^{VFM}_i - \mathbf{o}(t) \right)
+   \frac{\partial}{\partial s_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= N_k(t_i) \left( E^{VFM}_j - o_j(t_i) \right) P^{-1}_j(\mathbf{u}(t_i)) \\
+   \frac{\partial}{\partial o_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= -N_k(t_i) s_j(t_i) P^{-1}_j(\mathbf{u}(t_i)) \\
+   \frac{\partial}{\partial u_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= N_k(t_i) \left[ \frac{\partial}{\partial u_j} P^{-1}(\mathbf{u}(t_i))\right] \left( \mathbf{E}^{VFM}_i - \mathbf{o}(t_i) \right)
 
-where :math:`P^{-1}_j` is the :math:`j`-th column of :math:`P^{-1}`.
+where :math:`P^{-1}_j` is the :math:`j`-th column of :math:`P^{-1}`. Then,
+
+.. math::
+   
+   \frac{\partial \boldsymbol{\epsilon}_i}{\partial ( \cdot )} &= R_q R_3(\boldsymbol{\alpha}) \frac{\partial}{\partial (\cdot)} \mathbf{B}^{VFM}_i(\mathbf{c}) \\
+   \frac{\partial f_i}{\partial (\cdot)} &= -\frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial (\cdot)} \mathbf{B}^{VFM}_i(\mathbf{c}) \\
+   \frac{\partial \boldsymbol{\delta}_i}{\partial ( \cdot )} &= 0
+
+where :math:`(\cdot)` refers to one of :math:`s_{jk},o_{jk},u_{jk}`.
 
 First derivatives
 -----------------
@@ -223,6 +234,7 @@ Derivative     Vector residual |epsiloni| Scalar residual :math:`f_i` Vector res
 |partialdg|    |depsdgv|                  |dfdgv|                     |depsdg|
 |partialddg|   |depsdga|                  |dfdga|                     |depsdgv|
 |partialeuler| |depsdeuler|               0                           0
+|partialc|     |depsdc|                   |dfdc|                      0
 |partialk|     |depsdk|                   |dfdk|
 ============== ========================== =========================== ========================
 

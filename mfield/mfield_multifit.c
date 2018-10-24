@@ -75,6 +75,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           double B_obs_ns[3];           /* N/S observation vector NEC frame */
           double dBdt_model[3];         /* dB/dt (SV of internal model) */
           double dBdt_obs[3];           /* SV observation vector (NEC frame) */
+          double F_obs;                 /* scalar field measurement */
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
@@ -160,6 +161,16 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                 }
             }
 
+          if (fit_euler && fit_fluxcal && (mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
+            {
+              /* F_obs = || R_q R_3(alpha) B_vfm(c) || */
+              F_obs = gsl_hypot3(B_obs[0], B_obs[1], B_obs[2]);
+            }
+          else
+            {
+              F_obs = mptr->F[j];
+            }
+
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
               /* set residual vector */
@@ -198,7 +209,6 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
               MAGDATA_FitMF(mptr->flags[j]))
             {
               double F = gsl_hypot3(B_model[0], B_model[1], B_model[2]);
-              double F_obs = mptr->F[j];
 
               if (f)
                 gsl_vector_set(f, ridx, F - F_obs);
@@ -670,6 +680,8 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
           gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
           double jac_fluxcal_data[3 * FLUXCAL_P];
           gsl_matrix_view jac_fluxcal = gsl_matrix_view_array(jac_fluxcal_data, 3, FLUXCAL_P);
+          double jac_fluxcal_euler_data[3 * FLUXCAL_P];
+          gsl_matrix_view jac_fluxcal_euler = gsl_matrix_view_array(jac_fluxcal_euler_data, 3, FLUXCAL_P);
           gsl_vector *N_fluxcal = fit_fluxcal ? w->fluxcal_spline_workspace_p[i]->B : NULL;
           size_t istart_fluxcal, iend_fluxcal;
 
@@ -709,7 +721,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
             }
 #endif
 
-          /* compute Euler angle derivatives of B vector */
+          /* compute Euler angle derivatives of residual vector */
           if (fit_euler)
             {
               double *q = &(mptr->q[4*j]);
@@ -733,8 +745,11 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
                   gsl_bspline2_vector_eval(mptr->t[j], &control_pts.matrix, &cal_params.vector, w->fluxcal_spline_workspace_p[i]);
 
-                  /* compute jac_fluxcal := d/dm eps(m) */
-                  fluxcal_jac(&cal_params.vector, mptr->euler_flags, alpha, beta, gamma, q, B_vfm, &jac_fluxcal.matrix);
+                  /* compute jac_fluxcal := d/dm B_vfm(m) */
+                  fluxcal_jac(&cal_params.vector, B_vfm, &jac_fluxcal.matrix);
+
+                 /* apply R_q * R_3(alpha) to d/dm B_vfm(m) vectors */
+                  euler_matrix_vfm2nec(mptr->euler_flags, alpha, beta, gamma, q, &jac_fluxcal.matrix, &jac_fluxcal_euler.matrix);
 
                   /* compute B_vfm := P^{-1} S (B_vfm - O) */
                   fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
@@ -808,7 +823,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                           for (idx = 0; idx < FLUXCAL_P; ++idx)
                             {
                               gsl_matrix_set(J, ridx, fluxcal_idx + CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, ncontrol),
-                                             -Nk * gsl_matrix_get(&jac_fluxcal.matrix, 0, idx));
+                                             -Nk * gsl_matrix_get(&jac_fluxcal_euler.matrix, 0, idx));
                             }
                         }
                     }
@@ -852,7 +867,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                           for (idx = 0; idx < FLUXCAL_P; ++idx)
                             {
                               gsl_matrix_set(J, ridx, fluxcal_idx + CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, ncontrol),
-                                             -Nk * gsl_matrix_get(&jac_fluxcal.matrix, 1, idx));
+                                             -Nk * gsl_matrix_get(&jac_fluxcal_euler.matrix, 1, idx));
                             }
                         }
                     }
@@ -896,7 +911,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                           for (idx = 0; idx < FLUXCAL_P; ++idx)
                             {
                               gsl_matrix_set(J, ridx, fluxcal_idx + CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, ncontrol),
-                                             -Nk * gsl_matrix_get(&jac_fluxcal.matrix, 2, idx));
+                                             -Nk * gsl_matrix_get(&jac_fluxcal_euler.matrix, 2, idx));
                             }
                         }
                     }
@@ -908,7 +923,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
           if (MAGDATA_ExistScalar(mptr->flags[j]) &&
               MAGDATA_FitMF(mptr->flags[j]))
             {
-              gsl_vector_view Jv = gsl_matrix_row(J, ridx++);
+              gsl_vector_view Jv;
               double X, Y, Z, F;
 
               /* compute internal X, Y, Z */
@@ -931,6 +946,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               F = gsl_hypot3(X, Y, Z);
 
               /* compute (X dX + Y dY + Z dZ) */
+              Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
               for (k = 0; k < w->nnm_max; ++k)
                 {
                   double dXk = gsl_vector_get(&vx.vector, k);
@@ -943,12 +959,43 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                   mfield_set_sa(&Jv.vector, k, 0.5 * t * t * val, w);
                 }
 
-#if MFIELD_FIT_EXTFIELD
-              gsl_vector_set(&Jv.vector, extidx, X * dB_ext[0] + Y * dB_ext[1] + Z * dB_ext[2]);
-#endif
-
               /* scale by 1/F */
               gsl_vector_scale(&Jv.vector, 1.0 / F);
+
+#if MFIELD_FIT_EXTFIELD
+              Jv = gsl_matrix_row(J, ridx);
+              gsl_vector_set(&Jv.vector, extidx, (X * dB_ext[0] + Y * dB_ext[1] + Z * dB_ext[2]) / F);
+#endif
+
+              if (fit_euler && fit_fluxcal)
+                {
+                  gsl_vector_view vB_vfm = gsl_vector_view_array(B_vfm, 3);
+                  size_t idx;
+
+                  Jv = gsl_matrix_subrow(J, ridx, fluxcal_idx, FLUXCAL_P * ncontrol);
+
+                  /* F = || B_vfm(c) || */
+                  F = gsl_hypot3(B_vfm[0], B_vfm[1], B_vfm[2]);
+
+                  for (idx = 0; idx < FLUXCAL_P; ++idx)
+                    {
+                      gsl_vector_view dBdc_vfm = gsl_matrix_column(&jac_fluxcal.matrix, idx); /* d/dc_i B_vfm(c) */
+                      double result;
+
+                      /* result = B_vfm(c) . d/dc_i B_vfm(c) */
+                      gsl_blas_ddot(&vB_vfm.vector, &dBdc_vfm.vector, &result);
+
+                      for (k = 0; k < w->fluxcal_spline_workspace_p[i]->spline_order; ++k)
+                        {
+                          double Nk = gsl_vector_get(N_fluxcal, k);
+
+                          gsl_vector_set(&Jv.vector, CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, ncontrol),
+                                         -Nk * (result / F));
+                        }
+                    }
+                }
+
+              ++ridx;
             }
 
           if (MAGDATA_FitMF(mptr->flags[j]))
