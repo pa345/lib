@@ -14,6 +14,7 @@ Model Parameterization
 .. |partialeuler| replace:: :math:`\frac{\partial}{\partial \boldsymbol{\alpha}}`
 .. |partialeulerp| replace:: :math:`\frac{\partial}{\partial \boldsymbol{\alpha}'}`
 .. |partialc| replace:: :math:`\frac{\partial}{\partial \mathbf{c}}`
+.. |partialcp| replace:: :math:`\frac{\partial}{\partial \mathbf{c}'}`
 .. |partialk| replace:: :math:`\frac{\partial}{\partial k(t)}`
 .. |partialkp| replace:: :math:`\frac{\partial}{\partial k(t')}`
 .. |depsdg| replace:: :math:`-d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
@@ -208,9 +209,9 @@ control points in each spline. Then,
 
 .. math::
 
-   \frac{\partial}{\partial s_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= N_k(t_i) \left( E^{VFM}_j - o_j(t_i) \right) P^{-1}_j(\mathbf{u}(t_i)) \\
+   \frac{\partial}{\partial s_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= N_k(t_i) \left( (\mathbf{E}^{VFM}_i)_j - o_j(t_i) \right) P^{-1}_j(\mathbf{u}(t_i)) \\
    \frac{\partial}{\partial o_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= -N_k(t_i) s_j(t_i) P^{-1}_j(\mathbf{u}(t_i)) \\
-   \frac{\partial}{\partial u_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= N_k(t_i) \left[ \frac{\partial}{\partial u_j} P^{-1}(\mathbf{u}(t_i))\right] \left( \mathbf{E}^{VFM}_i - \mathbf{o}(t_i) \right)
+   \frac{\partial}{\partial u_{jk}} \mathbf{B}^{VFM}_i(\mathbf{c}) &= N_k(t_i) \left[ \frac{\partial}{\partial u_j} P^{-1}(\mathbf{u}(t_i))\right] S(\mathbf{s}(t_i)) \left( \mathbf{E}^{VFM}_i - \mathbf{o}(t_i) \right)
 
 where :math:`P^{-1}_j` is the :math:`j`-th column of :math:`P^{-1}`. Then,
 
@@ -244,13 +245,14 @@ Second derivatives
 To use the geodesic acceleration method, we also need the second derivatives, given in
 the tables below. For the vector residuals, we have
 
-=============== ========== ============== ==========
-|epsiloni|      |partialg| |partialeuler| |partialk|
-=============== ========== ============== ==========
-|partialgp|     0          0              0
-|partialeulerp| 0          |ddepsdeuler|  0
-|partialkp|     0          0              0
-=============== ========== ============== ==========
+=============== ========== ============== ========== ==========
+|epsiloni|      |partialg| |partialeuler| |partialc| |partialk|
+=============== ========== ============== ========== ==========
+|partialgp|     0          0              0          0
+|partialeulerp| 0          |ddepsdeuler|  X          0
+|partialcp|     0          X              X          0
+|partialkp|     0          0              0          0
+=============== ========== ============== ========== ==========
 
 Therefore, the second directional derivative of the vector residual |epsiloni| is
 

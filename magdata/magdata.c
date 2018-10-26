@@ -79,6 +79,7 @@ magdata_alloc(const size_t n, const double R)
 
   data->euler_flags = 0;
   data->global_flags = 0;
+  data->global_weight = 1.0;
 
   return data;
 }
@@ -318,6 +319,13 @@ int
 magdata_set_euler(const size_t flags, magdata *data)
 {
   data->euler_flags = flags;
+  return GSL_SUCCESS;
+}
+
+int
+magdata_set_weight(const double weight, magdata *data)
+{
+  data->global_weight = weight;
   return GSL_SUCCESS;
 }
 
@@ -1127,6 +1135,7 @@ magdata_write(const char *filename, magdata *data)
   fwrite(&(data->nres), sizeof(size_t), 1, fp);
   fwrite(&(data->global_flags), sizeof(size_t), 1, fp);
   fwrite(&(data->euler_flags), sizeof(size_t), 1, fp);
+  fwrite(&(data->global_weight), sizeof(double), 1, fp);
 
   fwrite(data->name, sizeof(char), MAGDATA_NAME_LENGTH, fp);
   fwrite(data->t, sizeof(double), data->n, fp);
@@ -1231,6 +1240,7 @@ magdata_read(const char *filename, magdata *data)
   fread(&(data->nres), sizeof(size_t), 1, fp);
   fread(&(data->global_flags), sizeof(size_t), 1, fp);
   fread(&(data->euler_flags), sizeof(size_t), 1, fp);
+  fread(&(data->global_weight), sizeof(double), 1, fp);
 
   fread(&(data->name[0]), sizeof(char), MAGDATA_NAME_LENGTH, fp);
   fread(&(data->t[data->n]), sizeof(double), n, fp);

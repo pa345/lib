@@ -1,5 +1,5 @@
-#define OLD_FDF     1
-#define DEBUG       1
+#define OLD_FDF     0
+#define DEBUG       0
 
 typedef struct
 {
@@ -607,6 +607,8 @@ mfield_init_nonlinear(mfield_workspace *w)
       {
         magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
 
+        fprintf(stderr, "sat %zu weight = %g\n", i, mptr->global_weight);
+
         for (j = 0; j < mptr->n; ++j)
           {
             double wt; /* spatial weight */
@@ -620,6 +622,9 @@ mfield_init_nonlinear(mfield_workspace *w)
               spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtSV_workspace_p);
             else /* satellite data */
               track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
+
+            /* include global weight factor for this satellite / observatory */
+            wt *= mptr->global_weight;
 
             if (MAGDATA_ExistX(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_X * wt);
@@ -663,6 +668,7 @@ mfield_init_nonlinear(mfield_workspace *w)
       }
 
     fprintf(stderr, "done\n");
+    exit(1);
 
     assert(idx == w->nres);
   }

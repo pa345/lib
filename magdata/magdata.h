@@ -186,28 +186,29 @@ typedef struct
 
   size_t *index;       /* indexing of residuals, skipping flagged data */
 
-  size_t n;            /* total number of data */
-  size_t ntot;         /* total array allocation */
-  double R;            /* Earth radius (km) */
-  double rmin;         /* minimum radius stored (km) */
-  double rmax;         /* maximum radius stored (km) */
-  size_t nx;           /* number of X measurements */
-  size_t ny;           /* number of Y measurements */
-  size_t nz;           /* number of Z measurements */
-  size_t nf;           /* number of F measurements */
-  size_t ndXdt;        /* number of dX/dt measurements */
-  size_t ndYdt;        /* number of dY/dt measurements */
-  size_t ndZdt;        /* number of dZ/dt measurements */
-  size_t ndx;          /* number of DX measurements */
-  size_t ndy;          /* number of DY measurements */
-  size_t ndz;          /* number of DZ measurements */
-  size_t ndf;          /* number of DF measurements */
-  size_t nvec;         /* number of vector measurements */
-  size_t ngrad;        /* number of along-track difference measurements */
-  size_t nres;         /* number of total residuals */
+  size_t n;             /* total number of data */
+  size_t ntot;          /* total array allocation */
+  double R;             /* Earth radius (km) */
+  double rmin;          /* minimum radius stored (km) */
+  double rmax;          /* maximum radius stored (km) */
+  size_t nx;            /* number of X measurements */
+  size_t ny;            /* number of Y measurements */
+  size_t nz;            /* number of Z measurements */
+  size_t nf;            /* number of F measurements */
+  size_t ndXdt;         /* number of dX/dt measurements */
+  size_t ndYdt;         /* number of dY/dt measurements */
+  size_t ndZdt;         /* number of dZ/dt measurements */
+  size_t ndx ;          /* number of DX measurements */
+  size_t ndy;           /* number of DY measurements */
+  size_t ndz;           /* number of DZ measurements */
+  size_t ndf;           /* number of DF measurements */
+  size_t nvec;          /* number of vector measurements */
+  size_t ngrad;         /* number of along-track difference measurements */
+  size_t nres;          /* number of total residuals */
 
-  size_t euler_flags;  /* EULER_FLG_xxx flags for Euler angle convention */
-  size_t global_flags; /* MAGDATA_GLOBFLG_xxx flags applying to all data */
+  size_t euler_flags;   /* EULER_FLG_xxx flags for Euler angle convention */
+  size_t global_flags;  /* MAGDATA_GLOBFLG_xxx flags applying to all data */
+  double global_weight; /* weight factor applying to all data */
 
   track_weight_workspace *weight_workspace_p;
 } magdata;
@@ -274,6 +275,7 @@ magdata *magdata_alloc(const size_t n, const double R);
 magdata *magdata_realloc(const size_t n, const double R, magdata *data);
 void magdata_free(magdata *data);
 int magdata_set_euler(const size_t flags, magdata *data);
+int magdata_set_weight(const double weight, magdata *data);
 int magdata_datum_init(magdata_datum *datum);
 int magdata_add(const magdata_datum *datum, magdata *data);
 int magdata_init(magdata *data);

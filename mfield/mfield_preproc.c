@@ -1174,6 +1174,7 @@ main(int argc, char *argv[])
   size_t magdata_flags = 0;       /* MAGDATA_GLOBFLG_xxx */
   size_t magdata_flags2 = 0;
   size_t magdata_euler_flags = 0; /* EULER_FLG_xxx */
+  double magdata_global_weight = 1.0; /* global weighting factor for this data source */
   double polar_gap = -1.0;
   int flag_vec_rms = 1;
 
@@ -1253,6 +1254,7 @@ main(int argc, char *argv[])
             data = read_swarm(optarg, 0);
             magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL;
             magdata_euler_flags = EULER_FLG_ZYX;
+            magdata_global_weight = 0.1;
             break;
 
           /* For E/W gradients */
@@ -1438,6 +1440,9 @@ main(int argc, char *argv[])
 
   /* set Euler convention flags */
   magdata_set_euler(magdata_euler_flags, mdata);
+  magdata_set_weight(magdata_global_weight, mdata);
+
+  fprintf(stderr, "main: global weight factor = %g\n", magdata_global_weight);
 
 #if 0
   fprintf(stderr, "main: writing data to %s...", data_file);

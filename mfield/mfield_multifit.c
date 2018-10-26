@@ -76,7 +76,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           double dBdt_model[3];         /* dB/dt (SV of internal model) */
           double dBdt_obs[3];           /* SV observation vector (NEC frame) */
           double F_obs;                 /* scalar field measurement */
-          gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)];
+          gsl_bspline2_workspace *fluxcal_spline_p = fit_fluxcal ? w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
@@ -677,7 +677,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
           double B_nec_alpha_ns[3], B_nec_beta_ns[3], B_nec_gamma_ns[3];
 
           /* fluxgate calibration parameters */
-          gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)];
+          gsl_bspline2_workspace *fluxcal_spline_p = fit_fluxcal ? w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
           double cal_data[FLUXCAL_P];
           gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
           double jac_fluxcal_data[3 * FLUXCAL_P];

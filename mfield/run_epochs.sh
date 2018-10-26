@@ -6,11 +6,10 @@ start_epoch="2009.0"
 end_epoch="2016.0"
 numit="5"
 
-#input_files="data/champ*.dat data/F17a.dat data/F17.dat data/swarm*.dat data/obs/*SV.dat"
-input_files="data/champ*.dat data/F17a.dat data/F17.dat data/swarm*.dat"
+input_files="data/champ*.dat data/F*.dat data/swarm*.dat data/obs/*SV.dat"
 
 prog="./mfield"
-coef_dir="$MYLIBHOME/mfield/coef_GAP_NOOBS"
+coef_dir="$MYLIBHOME/mfield/coef_GAP2"
 cfgfile="MF_dmsp.cfg"
 
 # SV/SA damping parameter
