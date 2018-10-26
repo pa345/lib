@@ -607,8 +607,6 @@ mfield_init_nonlinear(mfield_workspace *w)
       {
         magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
 
-        fprintf(stderr, "sat %zu weight = %g\n", i, mptr->global_weight);
-
         for (j = 0; j < mptr->n; ++j)
           {
             double wt; /* spatial weight */
@@ -668,7 +666,6 @@ mfield_init_nonlinear(mfield_workspace *w)
       }
 
     fprintf(stderr, "done\n");
-    exit(1);
 
     assert(idx == w->nres);
   }
