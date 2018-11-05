@@ -12,9 +12,12 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_rstat.h>
 
+#include <common/common.h>
+
 #include "euler.h"
 #include "magdata.h"
 #include "mfield.h"
+#include "mfield_euler.h"
 #include "mfield_residual.h"
 
 static int mfield_residual_print_stat(const char *component_str, const gsl_rstat_workspace *rstat_p);
@@ -102,6 +105,19 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
   const char *fmtstr_grad = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f %.4f %.4f %.4f %.4f\n";
   const double qdlat_cutoff = w->params.qdlat_fit_cutoff; /* cutoff latitude for high/low statistics */
   const size_t n = 12; /* number of components to write to disk */
+
+  /* Euler angle variables */
+  const int fit_euler = w->params.fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
+  const size_t euler_ncontrol = fit_euler ? gsl_bspline2_ncontrol(w->euler_spline_workspace_p[CIDX2(nsource, w->nsat, 0, w->max_threads)]) : 0;
+  const size_t euler_idx = w->euler_offset + w->offset_euler[nsource];
+  gsl_bspline2_workspace *euler_spline_p = fit_euler ? w->euler_spline_workspace_p[CIDX2(nsource, w->nsat, 0, w->max_threads)] : NULL;
+  double euler_data[EULER_P];
+  gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
+
+  /* Euler angle control points for this dataset */
+  gsl_vector_const_view v1 = gsl_vector_const_subvector(w->c, euler_idx, EULER_P * euler_ncontrol);
+  gsl_matrix_const_view euler_control_pts = gsl_matrix_const_view_vector(&v1.vector, EULER_P, euler_ncontrol);
+
   FILE *fp[12];
   size_t idx = *index;
   size_t j, k;
@@ -319,20 +335,27 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
 
           B_nec[3] = mptr->F[j];
 
-          if (w->params.fit_euler && mptr->global_flags & MAGDATA_GLOBFLG_EULER)
+          if (fit_euler)
             {
-              size_t euler_idx = mfield_euler_idx(nsource, mptr->t[j], w);
-              double alpha = gsl_vector_get(w->c, euler_idx);
-              double beta = gsl_vector_get(w->c, euler_idx + 1);
-              double gamma = gsl_vector_get(w->c, euler_idx + 2);
               double *q = &(mptr->q[4*j]);
+              double B_vfm[3];
 
-              B_nec[0] = mptr->Bx_vfm[j];
-              B_nec[1] = mptr->By_vfm[j];
-              B_nec[2] = mptr->Bz_vfm[j];
+              /* compute Euler angles for this timestamp */
+              gsl_bspline2_vector_eval(mptr->t[j], &euler_control_pts.matrix, &euler_params.vector, euler_spline_p);
+
+              B_vfm[0] = mptr->Bx_vfm[j];
+              B_vfm[1] = mptr->By_vfm[j];
+              B_vfm[2] = mptr->Bz_vfm[j];
+
+#if 0
+              if (fit_fluxcal)
+                {
+                  B_nec[3] = ...
+                }
+#endif
 
               /* rotate to NEC with computed Euler angles */
-              euler_vfm2nec(mptr->euler_flags, alpha, beta, gamma, q, B_nec, B_nec);
+              euler_vfm2nec(mptr->euler_flags, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec);
             }
           else
             {

@@ -9,7 +9,7 @@ plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 #outfile="F17.mp4"
 #title="DMSP F-17"
 
-coefdir="coef_smooth"
+coefdir="coef3"
 outfile="SA"
 title="Smoothed BOUMME"
 

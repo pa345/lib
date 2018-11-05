@@ -1,5 +1,4 @@
-#define OLD_FDF     0
-#define DEBUG       0
+#define OLD_FDF     1
 
 typedef struct
 {
@@ -60,7 +59,6 @@ static double huber(const double x);
 static double bisquare(const double x);
 static int mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs, mfield_workspace * w);
 
-#include "mfield_fluxcal.c"
 #include "mfield_multifit.c"
 
 
@@ -577,6 +575,9 @@ mfield_init_nonlinear(mfield_workspace *w)
 
 #endif
 
+  /* allocate sparse Jacobian matrix for Euler angles, fluxgate calibration and external field */
+  w->J2 = gsl_spmatrix_alloc(nres, GSL_MAX(w->p_sparse, 1));
+  
   w->wts_spatial = gsl_vector_alloc(nres);
   w->wts_robust = gsl_vector_alloc(nres);
   w->wts_final = gsl_vector_alloc(nres);
@@ -709,12 +710,9 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   struct timeval tv0, tv1;
 
   gettimeofday(&tv0, NULL);
-#if DEBUG
-  fprintf(stderr, "mfield_calc_df2: entering function...\n");
-
-  fprintf(stderr, "mfield_calc_df2: TransJ = %s...\n",
-          TransJ == CblasTrans ? "trans" : "notrans");
-#endif
+  mfield_debug("mfield_calc_df2: entering function...\n");
+  mfield_debug("mfield_calc_df2: TransJ = %s...\n",
+               TransJ == CblasTrans ? "trans" : "notrans");
 
   /* initialize outputs to 0 */
   if (v)
@@ -1133,9 +1131,7 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
 #endif
 
   gettimeofday(&tv1, NULL);
-#if DEBUG
-  fprintf(stderr, "mfield_calc_df2: leaving function... (%g seconds)\n", time_diff(tv0, tv1));
-#endif
+  mfield_debug("mfield_calc_df2: leaving function... (%g seconds)\n", time_diff(tv0, tv1));
 
   return GSL_SUCCESS;
 }
@@ -1152,7 +1148,7 @@ Inputs: t           - scaled timestamp
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
                       internal SH expansion, nnm_max-by-1
-        extidx      - index of external field coefficient in [0,next-1]
+        extidx      - index of external field coefficient in [0,p_ext-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
         euler_idx   - index of Euler angles
@@ -1375,7 +1371,7 @@ Inputs: t           - scaled timestamp
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
                       internal SH expansion, nnm_max-by-1
-        extidx      - index of external field coefficient in [0,next-1]
+        extidx      - index of external field coefficient in [0,p_ext-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
         euler_idx   - index of Euler angles
@@ -1480,7 +1476,7 @@ Inputs: t           - scaled timestamp
         ridx        - residual index of this row in [0,nres-1]
         dB_int      - Green's functions for desired vector component of
                       internal SH expansion, nnm_max-by-1
-        extidx      - index of external field coefficient in [0,next-1]
+        extidx      - index of external field coefficient in [0,p_ext-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
         euler_idx   - index of Euler angles
@@ -2814,13 +2810,30 @@ mfield_nonlinear_callback(const size_t iter, void *params,
           if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
             {
               double t0 = w->data_workspace_p->t0[i];
-              size_t euler_idx = mfield_euler_idx(i, t0, w);
+              gsl_bspline2_workspace *euler_spline_p = w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
+              size_t euler_idx = w->euler_offset + w->offset_euler[i];
+              size_t ncontrol = gsl_bspline2_ncontrol(euler_spline_p);
+              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, euler_idx, EULER_P * ncontrol);
+              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, EULER_P, ncontrol);
+              double euler_data[EULER_P];
+              gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
+              char buf[32];
 
-              fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg]\n",
+              if (mptr->euler_flags & EULER_FLG_ZYX)
+                sprintf(buf, "ZYX");
+              else if (mptr->euler_flags & EULER_FLG_ZYZ)
+                sprintf(buf, "ZYZ");
+              else
+                *buf = '\0';
+
+              gsl_bspline2_vector_eval(mptr->t[0], &control_pts.matrix, &euler_params.vector, euler_spline_p);
+
+              fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg] [%s]\n",
                       i,
-                      gsl_vector_get(x, euler_idx) * 180.0 / M_PI,
-                      gsl_vector_get(x, euler_idx + 1) * 180.0 / M_PI,
-                      gsl_vector_get(x, euler_idx + 2) * 180.0 / M_PI);
+                      euler_data[0] * 180.0 / M_PI,
+                      euler_data[1] * 180.0 / M_PI,
+                      euler_data[2] * 180.0 / M_PI,
+                      buf);
             }
         }
     }
@@ -2840,7 +2853,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
             {
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
-              size_t ncontrol = gsl_bspline2_nbasis(fluxcal_spline_p);
+              size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
               gsl_vector_const_view tmp = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * ncontrol);
               gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
               double cal_data[FLUXCAL_P];

@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
+#include <errno.h>
 
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
@@ -18,16 +20,81 @@
 #include <gsl/gsl_errno.h>
 
 #include <common/common.h>
+#include <bspline2/gsl_bspline2.h>
 
 #include "mfield_fluxcal.h"
 
-static int fluxcal_apply_datum(const gsl_vector *m, const double E[3], double B[4]);
-static int fluxcal_invapply_datum(const gsl_vector *m, const double B[3], double E[3]);
 static int fluxcal_P(const double u[3], gsl_matrix * P);
 static int fluxcal_Pinv(const double u[3], gsl_matrix * Pinv);
 static int fluxcal_Pinv_deriv(const double u[3], gsl_matrix * Pinv_1, gsl_matrix * Pinv_2, gsl_matrix * Pinv_3);
 static int fluxcal_apply_datum_Pinv(const gsl_matrix * Pinv, const gsl_vector *m, const double E[3], double B[4]);
-static int fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac);
+
+int
+mfield_fluxcal_print(const char *filename, const size_t sat_idx,
+                     const mfield_workspace *w)
+{
+  FILE *fp;
+  gsl_bspline2_workspace *spline_p = w->fluxcal_spline_workspace_p[CIDX2(sat_idx, w->nsat, 0, w->max_threads)];
+  const size_t ncontrol = gsl_bspline2_ncontrol(spline_p);
+  const size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[sat_idx];
+  const double dt = 5.0 * 86400000; /* 5 days in ms */
+
+  double cal_data[FLUXCAL_P];
+  gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
+
+  /* fluxgate calibration control points for this dataset */
+  gsl_vector_const_view tmp = gsl_vector_const_subvector(w->c, fluxcal_idx, FLUXCAL_P * ncontrol);
+  gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
+
+  double t0 = w->data_workspace_p->t0[sat_idx];
+  double t1 = w->data_workspace_p->t1[sat_idx];
+  double t;
+  size_t i;
+
+  fp = fopen(filename, "w");
+  if (!fp)
+    {
+      fprintf(stderr, "mfield_fluxcal_print: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return -1;
+    }
+
+  i = 1;
+  fprintf(fp, "# Fluxgate calibration parameters for satellite %zu\n", sat_idx);
+  fprintf(fp, "# Field %zu: timestamp (CDF_EPOCH)\n", i++);
+  fprintf(fp, "# Field %zu: time (decimal years)\n", i++);
+  fprintf(fp, "# Field %zu: SX (dimensionless)\n", i++);
+  fprintf(fp, "# Field %zu: SY (dimensionless)\n", i++);
+  fprintf(fp, "# Field %zu: SZ (dimensionless)\n", i++);
+  fprintf(fp, "# Field %zu: OX (nT)\n", i++);
+  fprintf(fp, "# Field %zu: OY (nT)\n", i++);
+  fprintf(fp, "# Field %zu: OZ (nT)\n", i++);
+  fprintf(fp, "# Field %zu: U1 (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: U2 (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: U3 (degrees)\n", i++);
+
+  for (t = t0; t < t1; t += dt)
+    {
+      gsl_bspline2_vector_eval(t, &control_pts.matrix, &cal_params.vector, spline_p);
+
+      fprintf(fp, "%f %f %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
+              t,
+              satdata_epoch2year(t),
+              cal_data[FLUXCAL_IDX_SX],
+              cal_data[FLUXCAL_IDX_SY],
+              cal_data[FLUXCAL_IDX_SZ],
+              cal_data[FLUXCAL_IDX_OX],
+              cal_data[FLUXCAL_IDX_OY],
+              cal_data[FLUXCAL_IDX_OZ],
+              cal_data[FLUXCAL_IDX_U1] * 180.0 / M_PI,
+              cal_data[FLUXCAL_IDX_U2] * 180.0 / M_PI,
+              cal_data[FLUXCAL_IDX_U3] * 180.0 / M_PI);
+    }
+
+  fclose(fp);
+
+  return 0;
+}
 
 /*
 fluxcal_apply_datum()
@@ -53,8 +120,8 @@ Notes:
 2) It is allowed for E == B for in-place transform
 */
 
-static int
-fluxcal_apply_datum(const gsl_vector *m, const double E[3], double B[4])
+int
+mfield_fluxcal_apply_datum(const gsl_vector *m, const double E[3], double B[4])
 {
   int s;
   double U[3], Pinv_data[9];
@@ -97,8 +164,8 @@ Notes:
 2) It is allowed for E == B for in-place transform
 */
 
-static int
-fluxcal_invapply_datum(const gsl_vector *m, const double B[3], double E[3])
+int
+mfield_fluxcal_invapply_datum(const gsl_vector *m, const double B[3], double E[3])
 {
   int s = 0;
   double S[3], O[3], U[3], P_data[9];
@@ -339,8 +406,8 @@ Inputs: m   - calibration parameters
               j = 1,2,...,FLUXCAL_P
 */
 
-static int
-fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac)
+int
+mfield_fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac)
 {
   double S[3], O[3], U[3];
   double Pinv_data[9], Pinv_1_data[9], Pinv_2_data[9], Pinv_3_data[9];

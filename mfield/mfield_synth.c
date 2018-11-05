@@ -19,9 +19,8 @@
 #include "euler.h"
 
 #include "mfield.h"
+#include "mfield_fluxcal.h"
 #include "mfield_synth.h"
-
-#include "mfield_fluxcal.c"
 
 static int mfield_synth_calc(const double t, const double r, const double theta, const double phi,
                              const gsl_vector * g, double B[3], mfield_workspace *w);
@@ -198,7 +197,7 @@ mfield_synth_replace(mfield_workspace *w)
               euler_nec2vfm(mptr->euler_flags, alpha, beta, gamma, q, B, B_vfm);
 
               if (fit_fluxcal)
-                fluxcal_invapply_datum(&cal_params.vector, B_vfm, B_vfm);
+                mfield_fluxcal_invapply_datum(&cal_params.vector, B_vfm, B_vfm);
 
               mptr->Bx_vfm[j] = B_vfm[0];
               mptr->By_vfm[j] = B_vfm[1];

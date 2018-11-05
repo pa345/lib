@@ -26,6 +26,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <omp.h>
 
@@ -44,6 +45,7 @@
 #include <gsl/gsl_multilarge_nlinear.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_sort_vector.h>
+#include <gsl/gsl_spmatrix.h>
 
 #include "mfield_green.h"
 
@@ -56,6 +58,8 @@
 #include "lls.h"
 #include "lapack_wrapper.h"
 #include "mfield.h"
+#include "mfield_euler.h"
+#include "mfield_fluxcal.h"
 
 static int mfield_green(const double r, const double theta, const double phi,
                         mfield_workspace *w);
@@ -64,8 +68,8 @@ static int mfield_eval_g(const double t, const double r, const double theta, con
 static int mfield_update_histogram(const gsl_vector *r, gsl_histogram *h);
 static int mfield_print_histogram(FILE *fp, gsl_histogram *h);
 static int mfield_compare_int(const void *a, const void *b);
+static int mfield_debug(const char *format, ...);
 
-#include "mfield_euler.c"
 #include "mfield_nonlinear.c"
 #include "lapack_inverse.c"
 
@@ -90,6 +94,7 @@ mfield_alloc(const mfield_parameters *params)
   const size_t ntheta = 100;
   const size_t nphi = 100;
   size_t plm_size;
+  size_t i, j;
 
   w = calloc(1, sizeof(mfield_workspace));
   if (!w)
@@ -174,16 +179,19 @@ mfield_alloc(const mfield_parameters *params)
 
   plm_size = gsl_sf_legendre_array_n(w->nmax_max);
 
+  w->p_euler = 0;
   if (params->fit_euler && w->data_workspace_p)
     {
-      size_t i;
       size_t sum = 0;
+
+      w->euler_spline_workspace_p = calloc(w->nsat * w->max_threads, sizeof(gsl_bspline2_workspace *));
 
       /* compute total number of Euler bins for each satellite */
       for (i = 0; i < w->nsat; ++i)
         {
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
           double t0, t1, dt;
+          size_t nbreak, ncontrol;
 
           if (!(mptr->global_flags & MAGDATA_GLOBFLG_EULER))
             continue;
@@ -196,23 +204,31 @@ mfield_alloc(const mfield_parameters *params)
           else
             w->nbins_euler[i] = (size_t) (dt / params->euler_period) + 1;
 
-          w->offset_euler[i] = 3 * sum;
-          sum += w->nbins_euler[i];
+          if (params->euler_period <= 0.0)
+            nbreak = 2;
+          else
+            nbreak = (size_t) (dt / (params->euler_period - 1.0));
 
-          fprintf(stderr, "mfield_alloc: number of Euler bins for satellite %zu: %zu\n", i, w->nbins_euler[i]);
+          for (j = 0; j < w->max_threads; ++j)
+            {
+              w->euler_spline_workspace_p[CIDX2(i, w->nsat, j, w->max_threads)] = gsl_bspline2_alloc(params->euler_spline_order, nbreak);
+              gsl_bspline2_init_uniform(t0, t1, w->euler_spline_workspace_p[CIDX2(i, w->nsat, j, w->max_threads)]);
+            }
+
+          ncontrol = gsl_bspline2_ncontrol(w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]);
+
+          w->offset_euler[i] = sum;
+          sum += EULER_P * ncontrol;
+
+          fprintf(stderr, "mfield_alloc: number of Euler control points for satellite %zu: %zu\n", i, ncontrol);
         }
 
-      w->neuler = 3 * sum;
-    }
-  else
-    {
-      w->neuler = 0;
+      w->p_euler = sum;
     }
 
-  w->ncal = 0;
+  w->p_fluxcal = 0;
   if (params->fit_fluxcal && w->data_workspace_p)
     {
-      size_t i, j;
       size_t sum = 0;
 
       w->fluxcal_spline_workspace_p = calloc(w->nsat * w->max_threads, sizeof(gsl_bspline2_workspace *));
@@ -241,7 +257,7 @@ mfield_alloc(const mfield_parameters *params)
               gsl_bspline2_init_uniform(t0, t1, w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, j, w->max_threads)]);
             }
 
-          ncontrol = gsl_bspline2_nbasis(w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]);
+          ncontrol = gsl_bspline2_ncontrol(w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]);
 
           w->offset_fluxcal[i] = sum;
           sum += 9 * ncontrol;
@@ -249,10 +265,10 @@ mfield_alloc(const mfield_parameters *params)
           fprintf(stderr, "mfield_alloc: number of fluxgate calibration control points satellite %zu: %zu\n", i, ncontrol);
         }
 
-      w->ncal = sum;
+      w->p_fluxcal = sum;
     }
 
-  w->next = 0;
+  w->p_ext = 0;
 
 #if MFIELD_FIT_EXTFIELD
 
@@ -264,8 +280,8 @@ mfield_alloc(const mfield_parameters *params)
     {
       int *all_t;
       size_t nall = 0;
-      size_t next = 0;
-      size_t i, j, k = 0;
+      size_t p_ext = 0;
+      size_t k = 0;
 
       /* count total number of data points */
       for (i = 0; i < w->nsat; ++i)
@@ -306,28 +322,26 @@ mfield_alloc(const mfield_parameters *params)
       for (i = 0; i < k; ++i)
         {
           int fdayi = all_t[i];
-          void *ptr = bsearch(&fdayi, w->ext_fdayi, next, sizeof(int), mfield_compare_int);
+          void *ptr = bsearch(&fdayi, w->ext_fdayi, p_ext, sizeof(int), mfield_compare_int);
 
           if (ptr == NULL)
             {
               /* this day not yet recorded in array, add it now */
-              w->ext_fdayi[next++] = fdayi;
+              w->ext_fdayi[p_ext++] = fdayi;
             }
         }
 
       free(all_t);
 
-      w->next = next;
+      w->p_ext = p_ext;
     }
 
 #endif /* MFIELD_FIT_EXTFIELD */
 
-  w->nbias = 0;
+  w->p_bias = 0;
 
   if (params->fit_cbias && w->data_workspace_p)
     {
-      size_t i;
-
       w->bias_idx = calloc(w->nsat, sizeof(size_t));
 
       for (i = 0; i < w->nsat; ++i)
@@ -359,13 +373,14 @@ mfield_alloc(const mfield_parameters *params)
               /* sanity check */
               assert(nX > 50 && nY > 50 && nZ > 50);
 
-              w->bias_idx[i] = w->nbias;
-              w->nbias += 3;
+              w->bias_idx[i] = w->p_bias;
+              w->p_bias += 3;
             }
         }
     }
 
-  w->p += w->neuler + w->ncal + w->next + w->nbias;
+  w->p_sparse = w->p_euler + w->p_fluxcal + w->p_ext + w->p_bias;
+  w->p += w->p_sparse;
 
   if (w->p == 0)
     {
@@ -376,9 +391,9 @@ mfield_alloc(const mfield_parameters *params)
   w->sv_offset = w->nnm_mf;
   w->sa_offset = w->sv_offset + w->nnm_sv;
   w->euler_offset = w->sa_offset + w->nnm_sa;
-  w->ext_offset = w->euler_offset + w->neuler;
-  w->fluxcal_offset = w->ext_offset + w->next;
-  w->bias_offset = w->fluxcal_offset + w->ncal;
+  w->ext_offset = w->euler_offset + w->p_euler;
+  w->fluxcal_offset = w->ext_offset + w->p_ext;
+  w->bias_offset = w->fluxcal_offset + w->p_fluxcal;
 
   w->cosmphi = malloc((w->nmax_max + 1) * sizeof(double));
   w->sinmphi = malloc((w->nmax_max + 1) * sizeof(double));
@@ -446,7 +461,6 @@ mfield_alloc(const mfield_parameters *params)
      * X, Y, Z, F, DX_NS, DY_NS, DZ_NS, DF_NS, DX_EW, DY_EW, DZ_EW, DF_EW, dX/dt, dY/dt, dZ/dt
      */
     const size_t ncomp = 15;
-    size_t i;
 
     /*
      * maximum observations to accumulate at once in LS system, calculated to make
@@ -576,6 +590,9 @@ mfield_free(mfield_workspace *w)
   if (w->choleskyL)
     gsl_matrix_free(w->choleskyL);
 
+  if (w->J2)
+    gsl_spmatrix_free(w->J2);
+
   if (w->omp_dX)
     gsl_matrix_free(w->omp_dX);
 
@@ -614,6 +631,17 @@ mfield_free(mfield_workspace *w)
   free(w->omp_GTG);
   free(w->omp_JTJ);
 
+  if (w->euler_spline_workspace_p)
+    {
+      for (i = 0; i < w->nsat * w->max_threads; ++i)
+        {
+          if (w->euler_spline_workspace_p[i])
+            gsl_bspline2_free(w->euler_spline_workspace_p[i]);
+        }
+
+      free(w->euler_spline_workspace_p);
+    }
+
   if (w->fluxcal_spline_workspace_p)
     {
       for (i = 0; i < w->nsat * w->max_threads; ++i)
@@ -638,7 +666,7 @@ mfield_init_params(mfield_parameters * params)
   params->nmax_sv = 0;
   params->nmax_sa = 0;
   params->nsat = 0;
-  params->euler_period = 0.0;
+  params->euler_period = -1.0;
   params->fluxcal_period = -1.0;
   params->max_iter = 0;
   params->fit_mf = 0;
@@ -666,6 +694,7 @@ mfield_init_params(mfield_parameters * params)
   params->synth_data = 0;
   params->synth_noise = 0;
   params->synth_nmin = 0;
+  params->euler_spline_order = 2;   /* linear spline */
   params->fluxcal_spline_order = 3; /* quadratic spline */
 
   return 0;
@@ -1429,7 +1458,7 @@ mfield_write(const char *filename, mfield_workspace *w)
 
   /*
    * only write internal coefficients since when we later read
-   * the file we won't be able to recalculate w->neuler
+   * the file we won't be able to recalculate w->p_euler
    */
   fwrite(w->c->data, sizeof(double), w->p_int, fp);
 
@@ -1744,7 +1773,7 @@ mfield_extidx(const double t, const mfield_workspace *w)
 #else
   /* search for this day in our sorted array of daily timestamps */
   int fdayi = (int) satdata_epoch2fday(t);
-  void *ptr = bsearch(&fdayi, w->ext_fdayi, w->next, sizeof(int), mfield_compare_int);
+  void *ptr = bsearch(&fdayi, w->ext_fdayi, w->p_ext, sizeof(int), mfield_compare_int);
 
   if (ptr != NULL)
     {
@@ -1912,4 +1941,23 @@ mfield_compare_int(const void *a, const void *b)
     return 0;
   else
     return 1;
+}
+
+static int
+mfield_debug(const char *format, ...)
+{
+  int s = 0;
+#if MFIELD_DEBUG
+  va_list args;
+
+  va_start(args, format);
+
+  vfprintf(stderr, format, args);
+
+  va_end(args);
+
+  fflush(stderr);
+#endif
+
+  return s;
 }

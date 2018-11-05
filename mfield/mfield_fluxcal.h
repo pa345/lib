@@ -11,6 +11,8 @@
 
 #include <satdata/satdata.h>
 
+#include "mfield.h"
+
 /* number of fit parameters */
 #define FLUXCAL_P              9
 
@@ -27,5 +29,10 @@
 /*
  * Prototypes
  */
+
+int mfield_fluxcal_print(const char *filename, const size_t sat_idx, const mfield_workspace *w);
+int mfield_fluxcal_apply_datum(const gsl_vector *m, const double E[3], double B[4]);
+int mfield_fluxcal_invapply_datum(const gsl_vector *m, const double B[3], double E[3]);
+int mfield_fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac);
 
 #endif /* INCLUDED_mfield_fluxcal_h */

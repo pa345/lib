@@ -15,6 +15,7 @@
 #include <gsl/gsl_multilarge_nlinear.h>
 #include <gsl/gsl_histogram.h>
 #include <gsl/gsl_eigen.h>
+#include <gsl/gsl_spmatrix.h>
 
 #include <spatwt/spatwt.h>
 #include <track/track_weight.h>
@@ -54,6 +55,8 @@
 #define MFIELD_IDX_DF_EW          11
 #define MFIELD_IDX_B_EULER        12
 #define MFIELD_IDX_END            13
+
+#define MFIELD_DEBUG              1
 
 typedef struct
 {
@@ -101,6 +104,7 @@ typedef struct
   int synth_noise;                      /* add gaussian noise to synthetic model */
   size_t synth_nmin;                    /* minimum spherical harmonic degree for synthetic model */
 
+  size_t euler_spline_order;            /* order of spline for Euler angles */
   size_t fluxcal_spline_order;          /* order of spline for fluxgate calibration parameters */
 
   mfield_data_workspace *mfield_data_p; /* satellite data */
@@ -120,10 +124,6 @@ typedef struct
   size_t nnm_mf;    /* number of (n,m) coefficients in model for MF */
   size_t nnm_sv;    /* number of (n,m) coefficients in model for SV */
   size_t nnm_sa;    /* number of (n,m) coefficients in model for SA */
-  size_t neuler;    /* number of Euler angles in model */
-  size_t next;      /* number of external coefficients in model */
-  size_t ncal;      /* number of VFM calibration parameters */
-  size_t nbias;     /* number of crustal bias coefficients in model */
 
   size_t nnm_max;   /* MAX(nnm_mf, nnm_sv, nnm_sa) */
 
@@ -136,6 +136,11 @@ typedef struct
 
   size_t p;         /* number of model coefficients */
   size_t p_int;     /* number of model coefficients for internal field only */
+  size_t p_sparse;  /* number of model coefficients for sparse part of Jacobian (p_euler + p_fluxcal + p_ext + p_bias) */
+  size_t p_euler;   /* number of Euler angles parameters in model */
+  size_t p_fluxcal; /* number of VFM calibration parameters */
+  size_t p_ext;     /* number of external parameters in model */
+  size_t p_bias;    /* number of crustal bias parameters in model */
 
   size_t nobs_cnt;
 
@@ -227,6 +232,7 @@ typedef struct
    */
   gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
   gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p_int-by-p_int */
+  gsl_spmatrix *J2;        /* Jacobian matrix for euler, fluxcal and external parameters (sparse), nres-by-(p_euler+p_fluxcal+p_ext) */
 
   size_t max_threads;      /* maximum number of threads/processors available */
   gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_max */
@@ -255,6 +261,7 @@ typedef struct
   green_workspace *green_workspace_p2;
   gsl_eigen_symm_workspace *eigen_workspace_p;
 
+  gsl_bspline2_workspace **euler_spline_workspace_p;
   gsl_bspline2_workspace **fluxcal_spline_workspace_p;
 } mfield_workspace;
 

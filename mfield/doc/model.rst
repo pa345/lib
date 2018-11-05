@@ -20,10 +20,10 @@ Model Parameterization
 .. |depsdg| replace:: :math:`-d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
 .. |depsdgv| replace:: :math:`-(t_i - t_0) d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
 .. |depsdga| replace:: :math:`-\frac{1}{2}(t_i - t_0)^2 d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdg| replace:: :math:`\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdgv| replace:: :math:`\frac{t_i - t_0}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdga| replace:: :math:`\frac{\frac{1}{2} (t_i - t_0)^2}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdc| replace:: :math:`-\frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
+.. |dfdg| replace:: :math:`-\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
+.. |dfdgv| replace:: :math:`-\frac{t_i - t_0}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
+.. |dfdga| replace:: :math:`-\frac{\frac{1}{2} (t_i - t_0)^2}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
+.. |dfdc| replace:: :math:`\frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdeuler| replace:: :math:`R_q \left[ \frac{\partial}{\partial \boldsymbol{\alpha}} R_3(\boldsymbol{\alpha}) \right] \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdc| replace:: :math:`R_q R_3(\boldsymbol{\alpha}) \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdk| replace:: :math:`-d\mathbf{B}^{ext}(\mathbf{r}_i)`
@@ -48,15 +48,15 @@ where the residuals are
 .. math::
 
    \boldsymbol{\epsilon}_i & = R_q R_3(\boldsymbol{\alpha}) \mathbf{B}^{VFM}_i(\mathbf{c}) - \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \\
-   f_i & = || \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) || - F_i(\mathbf{c}) \\
+   f_i &= F_i(\mathbf{c}) - || \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) || \\
    \boldsymbol{\delta}_i &= \dot{\mathbf{B}}_i - \dot{\mathbf{B}}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})
 
 Data measurements
 =================
 
 :math:`\mathbf{B}^{VFM}_i(\mathbf{c})` is the vector measurement in the VFM instrument frame which may be calibrated using
-the parameters :math:`\mathbf{c} = (\mathbf{s},\mathbf{o},\mathbf{u})`, :math:`F_i(\mathbf{c})` is the calibrated scalar field
-measurement, and :math:`\dot{\mathbf{B}}_i` is a vector secular variation measurement (i.e. derived from ground observatory
+the parameters :math:`\mathbf{c} = (\mathbf{s},\mathbf{o},\mathbf{u})`, :math:`F_i(\mathbf{c}) = || \mathbf{B}^{VFM}(\mathbf{c}) ||`
+is the calibrated scalar field measurement, and :math:`\dot{\mathbf{B}}_i` is a vector secular variation measurement (i.e. derived from ground observatory
 time series). The fluxgate calibration is as follows,
 
 .. math:: \mathbf{B}^{VFM}_i(\mathbf{c}) = P^{-1}(\mathbf{u}) S(\mathbf{s}) (\mathbf{E}^{VFM}_i - \mathbf{o})
@@ -84,7 +84,16 @@ The matrix :math:`R_3(\boldsymbol{\alpha})` rotates a vector from the VFM frame 
 by the star camera using the Euler angles :math:`\boldsymbol{\alpha} = (\alpha,\beta,\gamma)`. The matrix :math:`R_q` then rotates from CRF to NEC
 (see Olsen et al, 2013).
 
-The calibration parameters are given a time dependence represented by a B-spline,
+The Euler angles are given a time dependence represented by a B-spline,
+
+.. math:: \boldsymbol{\alpha}(t) = \sum_i \boldsymbol{\alpha}_i N_{i,k}(t) =
+                                   \sum_i \begin{pmatrix}
+                                            \alpha_i \\
+                                            \beta_i \\
+                                            \gamma_i
+                                          \end{pmatrix} N_{i,k}(t)
+
+The calibration parameters are also given a time dependence represented by a B-spline,
 
 .. math:: \mathbf{c}(t) = \sum_i \mathbf{c}_i N_{i,k}(t) =
                           \sum_i \begin{pmatrix}
@@ -193,6 +202,24 @@ where
    \end{array}
    \right.
 
+Euler angles
+------------
+
+Let
+
+.. math::
+   
+   \alpha_j(t) &= \sum_k \alpha_{jk} N_k(t) \\
+
+where :math:`j = 1,2,3` and :math:`k` is summed from :math:`1` to the number of
+control points in each spline. Then,
+
+.. math::
+
+   \frac{\partial \boldsymbol{\epsilon}_i}{\partial \alpha_{jk}} &= N_k(t_i) R_q \left[ \frac{\partial}{\partial \alpha_j} R_3(\alpha_1,\alpha_2,\alpha_3) \right] \mathbf{B}^{VFM}_i(\mathbf{c}) \\
+   \frac{\partial f_i}{\partial \alpha_{jk}} &= 0 \\
+   \frac{\partial \boldsymbol{\delta}_i}{\partial \alpha_{jk}} &= 0
+
 Fluxgate calibration
 --------------------
 
@@ -218,7 +245,7 @@ where :math:`P^{-1}_j` is the :math:`j`-th column of :math:`P^{-1}`. Then,
 .. math::
    
    \frac{\partial \boldsymbol{\epsilon}_i}{\partial ( \cdot )} &= R_q R_3(\boldsymbol{\alpha}) \frac{\partial}{\partial (\cdot)} \mathbf{B}^{VFM}_i(\mathbf{c}) \\
-   \frac{\partial f_i}{\partial (\cdot)} &= -\frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial (\cdot)} \mathbf{B}^{VFM}_i(\mathbf{c}) \\
+   \frac{\partial f_i}{\partial (\cdot)} &= \frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial (\cdot)} \mathbf{B}^{VFM}_i(\mathbf{c}) \\
    \frac{\partial \boldsymbol{\delta}_i}{\partial ( \cdot )} &= 0
 
 where :math:`(\cdot)` refers to one of :math:`s_{jk},o_{jk},u_{jk}`.
