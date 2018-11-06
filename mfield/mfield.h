@@ -184,9 +184,6 @@ typedef struct
 
   gsl_vector *diag; /* diag(D) where D is regularization matrix */
 
-  gsl_histogram *hf; /* histogram of F residuals */
-  gsl_histogram *hz; /* histogram of Z residuals */
-
   /* nonlinear least squares parameters */
   gsl_vector *wts_spatial; /* spatial weights, nres-by-1 */
   gsl_vector *wts_robust;  /* robust weights, nres-by-1 */

@@ -1015,8 +1015,8 @@ main(int argc, char *argv[])
 
             if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
               {
-                double t0 = mptr->t[0];
-                double t1 = mptr->t[mptr->n - 1];
+                double t0 = mfield_workspace_p->data_workspace_p->t0[n];
+                double t1 = mfield_workspace_p->data_workspace_p->t1[n];
                 gsl_bspline2_workspace *fluxcal_spline_p = mfield_workspace_p->fluxcal_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
                 size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
                 size_t fluxcal_idx = mfield_workspace_p->fluxcal_offset + mfield_workspace_p->offset_fluxcal[n];

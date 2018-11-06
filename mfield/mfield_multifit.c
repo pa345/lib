@@ -29,8 +29,6 @@ processing to compute all the Green's functions quickly.
 Inputs: x      - model coefficients
         params - parameters
         f      - (output) residual vector
-                 if set to NULL, the residual histograms
-                 w->hf and w->hz are updated with residuals
 
 Notes:
 1) For the histograms, w->wts_final must be initialized prior
@@ -49,8 +47,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
   mfield_debug("mfield_calc_f: entering function...\n");
   gettimeofday(&tv0, NULL);
 
-  if (f)
-    gsl_vector_set_zero(f);
+  gsl_vector_set_zero(f);
 
   for (i = 0; i < w->nsat; ++i)
     {
@@ -111,8 +108,8 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
               gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
 
               /* Euler angle control points for this dataset */
-              gsl_vector_const_view t1 = gsl_vector_const_subvector(x, euler_idx, EULER_P * euler_ncontrol);
-              gsl_matrix_const_view euler_control_pts = gsl_matrix_const_view_vector(&t1.vector, EULER_P, euler_ncontrol);
+              gsl_vector_const_view v1 = gsl_vector_const_subvector(x, euler_idx, EULER_P * euler_ncontrol);
+              gsl_matrix_const_view euler_control_pts = gsl_matrix_const_view_vector(&v1.vector, EULER_P, euler_ncontrol);
 
               double *q = &(mptr->q[4*j]);
               double B_vfm[4];
@@ -130,8 +127,8 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                   gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
 
                   /* fluxgate calibration control points for this dataset */
-                  gsl_vector_const_view t2 = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
-                  gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&t2.vector, FLUXCAL_P, fluxcal_ncontrol);
+                  gsl_vector_const_view v2 = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
+                  gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
                   gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
                   mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
@@ -183,116 +180,62 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
-              /* set residual vector */
-              if (f)
-                gsl_vector_set(f, ridx, B_obs[0] - B_model[0]);
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, B_obs[0] - B_model[0]);
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Y)
             {
-              /* set residual vector */
-              if (f)
-                gsl_vector_set(f, ridx, B_obs[1] - B_model[1]);
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, B_obs[1] - B_model[1]);
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Z)
             {
-              /* set residual vector */
-              if (f)
-                gsl_vector_set(f, ridx, B_obs[2] - B_model[2]);
-              else
-                {
-                  double wt = gsl_vector_get(w->wts_final, ridx);
-                  wt = sqrt(wt);
-                  wt = 1.0;
-                  gsl_histogram_increment(w->hz, wt * (B_obs[2] - B_model[2]));
-                }
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, B_obs[2] - B_model[2]);
             }
 
           if (MAGDATA_ExistScalar(mptr->flags[j]) &&
               MAGDATA_FitMF(mptr->flags[j]))
             {
               double F_mod = gsl_hypot3(B_model[0], B_model[1], B_model[2]);
-
-              if (f)
-                gsl_vector_set(f, ridx, F_obs - F_mod);
-              else
-                {
-                  double wt = gsl_vector_get(w->wts_final, ridx);
-                  wt = sqrt(wt);
-                  wt = 1.0;
-                  gsl_histogram_increment(w->hf, wt * (F_obs - F_mod));
-                }
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, F_obs - F_mod);
             }
 
           if (MAGDATA_FitMF(mptr->flags[j]))
             {
               if (mptr->flags[j] & MAGDATA_FLG_DXDT)
                 {
-                  /* set residual vector */
-                  if (f)
-                    gsl_vector_set(f, ridx, dBdt_obs[0] - dBdt_model[0]);
-
-                  ++ridx;
+                  gsl_vector_set(f, ridx++, dBdt_obs[0] - dBdt_model[0]);
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_DYDT)
                 {
-                  /* set residual vector */
-                  if (f)
-                    gsl_vector_set(f, ridx, dBdt_obs[1] - dBdt_model[1]);
-
-                  ++ridx;
+                  gsl_vector_set(f, ridx++, dBdt_obs[1] - dBdt_model[1]);
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_DZDT)
                 {
-                  /* set residual vector */
-                  if (f)
-                    gsl_vector_set(f, ridx, dBdt_obs[2] - dBdt_model[2]);
-
-                  ++ridx;
+                  gsl_vector_set(f, ridx++, dBdt_obs[2] - dBdt_model[2]);
                 }
             }
 
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
             {
-              /* set residual vector */
-              if (f)
-                gsl_vector_set(f, ridx, (B_model_ns[0] - B_model[0]) - (B_obs_ns[0] - B_obs[0]));
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, (B_model_ns[0] - B_model[0]) - (B_obs_ns[0] - B_obs[0]));
             }
 
           if (mptr->flags[j] & (MAGDATA_FLG_DY_NS | MAGDATA_FLG_DY_EW))
             {
-              /* set residual vector */
-              if (f)
-                gsl_vector_set(f, ridx, (B_model_ns[1] - B_model[1]) - (B_obs_ns[1] - B_obs[1]));
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, (B_model_ns[1] - B_model[1]) - (B_obs_ns[1] - B_obs[1]));
             }
 
           if (mptr->flags[j] & (MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DZ_EW))
             {
-              /* set residual vector */
-              if (f)
-                gsl_vector_set(f, ridx, (B_model_ns[2] - B_model[2]) - (B_obs_ns[2] - B_obs[2]));
-
-              ++ridx;
+              gsl_vector_set(f, ridx++, (B_model_ns[2] - B_model[2]) - (B_obs_ns[2] - B_obs[2]));
             }
         } /* for (j = 0; j < mptr->n; ++j) */
     }
 
-  if (f && mparams->regularize && !mparams->synth_data)
+  if (mparams->regularize && !mparams->synth_data)
     {
       /* store L*x in bottom of f for regularization */
       gsl_vector_view v = gsl_vector_subvector(f, w->nres, w->p);
@@ -303,15 +246,12 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 
   gettimeofday(&tv1, NULL);
   mfield_debug("mfield_calc_f: leaving function (%g seconds, ||f|| = %g)\n",
-               time_diff(tv0, tv1), f ? gsl_blas_dnrm2(f) : 0.0);
+               time_diff(tv0, tv1), gsl_blas_dnrm2(f));
 
 #if 0
-  if (f)
-    {
-      printv_octave(x, "x");
-      printv_octave(f, "f");
-      exit(1);
-    }
+  printv_octave(x, "x");
+  printv_octave(f, "f");
+  exit(1);
 #endif
 
   return s;
@@ -373,8 +313,6 @@ Inputs: x      - model coefficients, length p
         v      - velocity vector, length p
         params - parameters
         f      - (output) residual vector
-                 if set to NULL, the residual histograms
-                 w->hf and w->hz are updated with residuals
 
 Notes:
 1) For the histograms, w->wts_final must be initialized prior

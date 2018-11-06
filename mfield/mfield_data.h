@@ -55,8 +55,8 @@ typedef struct
   size_t nsources;   /* number of data sources (satellites) */
   magdata **mdata;
 
-  double *t0;        /* array of size nsources for first time of each satellite */
-  double *t1;        /* array of size nsources for last time of each satellite */
+  double *t0;        /* array of size nsources for first time of each satellite (CDF_EPOCH) */
+  double *t1;        /* array of size nsources for last time of each satellite (CDF_EPOCH) */
 
   double t_mu;       /* mean of timestamps (years) */
   double t_sigma;    /* stddev of timestamps (years) */

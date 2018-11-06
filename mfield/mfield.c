@@ -45,6 +45,7 @@
 #include <gsl/gsl_multilarge_nlinear.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_sort_vector.h>
+#include <gsl/gsl_spblas.h>
 #include <gsl/gsl_spmatrix.h>
 
 #include "mfield_green.h"
@@ -421,11 +422,6 @@ mfield_alloc(const mfield_parameters *params)
 
   w->diag = gsl_vector_alloc(w->p_int);
 
-  w->hf = gsl_histogram_alloc(500);
-  w->hz = gsl_histogram_alloc(500);
-  gsl_histogram_set_ranges_uniform(w->hf, -40.0, 40.0);
-  gsl_histogram_set_ranges_uniform(w->hz, -40.0, 40.0);
-
   w->nobs_cnt = 0;
 
   /* these are computed later in mfield_init() */
@@ -523,12 +519,6 @@ mfield_free(mfield_workspace *w)
 
   if (w->diag)
     gsl_vector_free(w->diag);
-
-  if (w->hf)
-    gsl_histogram_free(w->hf);
-
-  if (w->hz)
-    gsl_histogram_free(w->hz);
 
   if (w->bias_idx)
     free(w->bias_idx);

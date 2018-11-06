@@ -46,8 +46,6 @@ static int mfield_vector_green_grad(const double t, const double t_grad, const d
 static int mfield_nonlinear_model_ext(const double r, const double theta,
                                       const double phi, const gsl_vector *g,
                                       double dB[3], const mfield_workspace *w);
-static int mfield_nonlinear_histogram(const gsl_vector *c,
-                                      mfield_workspace *w);
 static int mfield_nonlinear_regularize(gsl_vector *diag,
                                        mfield_workspace *w);
 static void mfield_nonlinear_callback(const size_t iter, void *params,
@@ -60,6 +58,7 @@ static double bisquare(const double x);
 static int mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs, mfield_workspace * w);
 
 #include "mfield_multifit.c"
+#include "mfield_multilarge.c"
 
 
 /*
@@ -114,14 +113,6 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
 
   /* convert input vector from physical to dimensionless time units */
   mfield_coeffs(-1, c, c, w);
-
-#if OLD_FDF
-  /*
-   * build and print residual histograms with previous coefficients
-   * and previous wts_final vector
-   */
-  mfield_nonlinear_histogram(c, w);
-#endif
 
   /* compute robust weights with coefficients from previous iteration */
   if (w->niter > 0)
@@ -1352,6 +1343,7 @@ mfield_jacobian_grad_JTu(const double t, const double t_grad, const size_t flags
 
   return GSL_SUCCESS;
 }
+
 /*
 mfield_jacobian_Ju()
   Update the J u vector with a new row of the Jacobian matrix,
@@ -2128,54 +2120,6 @@ mfield_nonlinear_model_ext(const double r, const double theta,
 } /* mfield_nonlinear_model_ext() */
 
 /*
-mfield_nonlinear_histogram()
-  Print residual histogram
-
-Inputs: c - scaled/dimensionless coefficient vector
-        w - workspace
-
-Notes:
-1) w->wts_final must be initialized prior to calling this function
-*/
-
-static int
-mfield_nonlinear_histogram(const gsl_vector *c, mfield_workspace *w)
-{
-  int s = 0;
-  FILE *fp;
-  char filename[2048];
-
-  /* reset histograms */
-  gsl_histogram_reset(w->hf);
-  gsl_histogram_reset(w->hz);
-
-  /* loop through data and construct residual histograms */
-  mfield_calc_f(c, w, NULL);
-
-  /* scale histograms */
-  gsl_histogram_scale(w->hf, 1.0 / gsl_histogram_sum(w->hf));
-  gsl_histogram_scale(w->hz, 1.0 / gsl_histogram_sum(w->hz));
-
-  /* print histograms to file */
-
-  sprintf(filename, "reshistF.nlin.iter%zu.dat", w->niter);
-  fprintf(stderr, "mfield_nonlinear_histogram: writing %s...", filename);
-  fp = fopen(filename, "w");
-  mfield_print_histogram(fp, w->hf);
-  fclose(fp);
-  fprintf(stderr, "done\n");
-
-  sprintf(filename, "reshistZ.nlin.iter%zu.dat", w->niter);
-  fprintf(stderr, "mfield_nonlinear_histogram: writing %s...", filename);
-  fp = fopen(filename, "w");
-  mfield_print_histogram(fp, w->hz);
-  fclose(fp);
-  fprintf(stderr, "done\n");
-
-  return s;
-} /* mfield_nonlinear_histogram() */
-
-/*
 mfield_nonlinear_regularize()
   Construct diag = diag(L) for regularized fit by minimizing
 [d/dt B_r]^2 and/or [d^2/dt^2 B_r]^2 at the CMB
@@ -2826,7 +2770,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
               else
                 *buf = '\0';
 
-              gsl_bspline2_vector_eval(mptr->t[0], &control_pts.matrix, &euler_params.vector, euler_spline_p);
+              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &euler_params.vector, euler_spline_p);
 
               fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg] [%s]\n",
                       i,
@@ -2851,6 +2795,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
+              double t0 = w->data_workspace_p->t0[i];
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
@@ -2859,7 +2804,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
               double cal_data[FLUXCAL_P];
               gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
 
-              gsl_bspline2_vector_eval(mptr->t[0], &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
               fprintf(stderr, "\t fluxcal %zu: S = %12.4f %12.4f %12.4f\n",
                       i,
