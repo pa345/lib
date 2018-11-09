@@ -2,7 +2,7 @@ bin_PROGRAMS = mfield mfield_preproc mfield_preproc_obs
 
 check_PROGRAMS = mfield_emag mfield_eval_main mfield_compare mfield_plot
 
-common_libs = -L/home/palken/usr/lib -lobsdata -ltrack -lmagcoord -lapex -lflow -lcommon -lmsynth -lbspline2 -lm -lcdf -lpomme -lsatdata -lindices ~/usr/lib/libgsl.a ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libptcblas.a ~/usr/lib/libptf77blas.a ~/usr/lib/libatlas.a -lpthread -lgfortran -lnetcdf
+common_libs = -L/home/palken/usr/lib -lobsdata -ltrack -lmagcoord -lapex -lflow -lcommon -lmsynth -lbspline2 -lm -lcdf -lpomme -lsatdata -lindices -lgslspblas2 ~/usr/lib/libgsl.a ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libptcblas.a ~/usr/lib/libptf77blas.a ~/usr/lib/libatlas.a -lpthread -lgfortran -lnetcdf
 
 mfield_SOURCES = mfield.c mfield_data.c mfield_error.c mfield_euler.c mfield_fluxcal.c mfield_green.c mfield_main.c mfield_residual.c mfield_synth.c
 mfield_CFLAGS = -fopenmp

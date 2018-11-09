@@ -32,6 +32,8 @@ green_workspace *green_alloc(const size_t nmax, const size_t mmax, const double 
 void green_free(green_workspace *w);
 int green_calc_int(const double r, const double theta, const double phi,
                    double *X, double *Y, double *Z, green_workspace *w);
+int green_calc_int2(const double r, const double theta, const double phi,
+                    gsl_vector *X, gsl_vector *Y, gsl_vector *Z, green_workspace *w);
 int green_calc_ext(const double r, const double theta, const double phi,
                    double *X, double *Y, double *Z, green_workspace *w);
 int green_potential_calc_ext(const double r, const double theta, const double phi,

@@ -190,7 +190,6 @@ green_eval_chi_qnm(const double b, const double theta, const double phi,
   for (n = 1; n <= nmax; ++n)
     {
       int M = (int) GSL_MIN(n, mmax);
-      int m;
 
       for (m = -M; m <= M; ++m)
         {
@@ -259,7 +258,6 @@ green_eval_sheet_qnm(const double b, const double theta, const double phi,
   for (n = 1; n <= nmax; ++n)
     {
       int M = (int) GSL_MIN(n, mmax);
-      int m;
 
       for (m = -M; m <= M; ++m)
         {

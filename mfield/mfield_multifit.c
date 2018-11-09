@@ -840,33 +840,6 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                time_diff(tv0, tv1), gsl_spmatrix_nnz(J),
                (double) gsl_spmatrix_nnz(J) / (double) (J->size1 * J->size2) * 100.0);
 
-#if 0
-  {
-    gsl_spmatrix *C, *CT, *B;
-
-    mfield_debug("mfield_calc_J2: converting J2 to CCS...");
-    gettimeofday(&tv0, NULL);
-    C = gsl_spmatrix_ccs(J);
-    gettimeofday(&tv1, NULL);
-    mfield_debug("done (%g seconds)\n", time_diff(tv0,tv1));
-
-    CT = gsl_spmatrix_alloc_nzmax(C->size2, C->size1, C->nz, C->sptype);
-    gsl_spmatrix_transpose_memcpy(CT, C);
-
-    B = gsl_spmatrix_alloc_nzmax(C->size2, C->size2, C->nz, C->sptype);
-
-    mfield_debug("mfield_calc_J2: computing J2^T J2...");
-    gettimeofday(&tv0, NULL);
-    gsl_spblas_dgemm(1.0, CT, C, B);
-    gettimeofday(&tv1, NULL);
-    mfield_debug("done (%g seconds, nnz = %zu)\n", time_diff(tv0,tv1), B->nz);
-
-    gsl_spmatrix_free(C);
-    gsl_spmatrix_free(CT);
-    gsl_spmatrix_free(B);
-  }
-#endif
-
   return s;
 }
 
@@ -948,15 +921,15 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
             continue;
 
           /* calculate internal Green's functions */
-          green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data, w->green_array_p[thread_id]);
+          green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
 
           /* calculate internal Green's functions for gradient point (N/S or E/W) */
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
             {
-              green_calc_int(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
-                             vx_ns.vector.data, vy_ns.vector.data, vz_ns.vector.data,
-                             w->green_array_p[thread_id]);
+              green_calc_int2(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
+                              &vx_ns.vector, &vy_ns.vector, &vz_ns.vector,
+                              w->green_array_p[thread_id]);
             }
 
 #if MFIELD_FIT_EXTFIELD
@@ -1178,7 +1151,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
   gettimeofday(&tv1, NULL);
   mfield_debug("mfield_calc_df: leaving function (%g seconds)\n", time_diff(tv0, tv1));
 
-#if 0
+#if 1
   print_octave(J, "J");
   exit(1);
 #endif
@@ -1246,8 +1219,8 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
       B_prior[2] = mptr->Bz_model_ns[data_idx];
     }
 
-  green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data,
-                 w->green_array_p[thread_id]);
+  green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector,
+                  w->green_array_p[thread_id]);
 
   /* compute internal field model */
   B_int[0] = mfield_nonlinear_model_int(ts, &vx.vector, x, w);
@@ -1379,8 +1352,8 @@ mfield_nonlinear_model_SV(const gsl_vector * x, const magdata * mptr, const size
   theta = mptr->theta[idx];
   phi = mptr->phi[idx];
 
-  green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data,
-                 w->green_array_p[thread_id]);
+  green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector,
+                  w->green_array_p[thread_id]);
 
   /* compute internal field model */
   dBdt_int[0] = mfield_nonlinear_model_int_SV(ts, &vx.vector, x, w);

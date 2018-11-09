@@ -116,6 +116,12 @@ int
 green_calc_int(const double r, const double theta, const double phi,
                double *X, double *Y, double *Z, green_workspace *w)
 {
+#if 1
+  gsl_vector_view vx = gsl_vector_view_array(X, w->nnm);
+  gsl_vector_view vy = gsl_vector_view_array(Y, w->nnm);
+  gsl_vector_view vz = gsl_vector_view_array(Z, w->nnm);
+  return green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w);
+#else
   int s = 0;
   const size_t nmax = w->nmax;
   const size_t mmax = w->mmax;
@@ -178,7 +184,115 @@ green_calc_int(const double r, const double theta, const double phi,
     }
 
   return s;
+#endif
 } /* green_calc_int() */
+
+/*
+green_calc_int2()
+  Compute Green's functions for X,Y,Z spherical harmonic expansion. These
+are simply the basis functions multiplying the g_{nm} and h_{nm} coefficients
+
+Inputs: r     - radius (km)
+        theta - colatitude (radians)
+        phi   - longitude (radians)
+        X     - (output) vector of X Green's functions, size nnm
+        Y     - (output) vector of Y Green's functions, size nnm
+        Z     - (output) vector of Z Green's functions, size nnm
+        w     - workspace
+
+Notes:
+1) On output, the following arrays are initialized
+w->Plm
+w->dPlm
+w->sinmphi
+w->cosmphi
+
+2) X,Y,Z can be set to NULL if not desired
+*/
+
+int
+green_calc_int2(const double r, const double theta, const double phi,
+                gsl_vector *X, gsl_vector *Y, gsl_vector *Z, green_workspace *w)
+{
+  if (X != NULL && X->size != w->nnm)
+    {
+      GSL_ERROR("X vector does not match workspace", GSL_EBADLEN);
+    }
+  else if (Y != NULL && Y->size != w->nnm)
+    {
+      GSL_ERROR("Y vector does not match workspace", GSL_EBADLEN);
+    }
+  else if (Z != NULL && Z->size != w->nnm)
+    {
+      GSL_ERROR("Z vector does not match workspace", GSL_EBADLEN);
+    }
+  else
+    {
+      int s = 0;
+      const size_t nmax = w->nmax;
+      const size_t mmax = w->mmax;
+      size_t n;
+      int m;
+      const double sint = sin(theta);
+      const double cost = cos(theta);
+      double ratio = w->R / r;
+      double term = ratio * ratio;     /* (a/r)^{n+2} */
+
+      /* precompute cos(m phi) and sin(m phi) */
+      for (m = 0; m <= (int) mmax; ++m)
+        {
+          w->cosmphi[m] = cos(m * phi);
+          w->sinmphi[m] = sin(m * phi);
+        }
+
+      /* compute associated legendres */
+      gsl_sf_legendre_deriv_array(GSL_SF_LEGENDRE_SCHMIDT,
+                                  nmax, cost, w->Plm, w->dPlm);
+
+      for (n = 1; n <= nmax; ++n)
+        {
+          int M = (int) GSL_MIN(mmax, n);
+
+          /* (a/r)^{n+2} */
+          term *= ratio;
+
+          /* compute h_{nm} */
+          for (m = -M; m < 0; ++m)
+            {
+              int mabs = -m;
+              size_t cidx = green_nmidx(n, m, w);
+              size_t aidx = gsl_sf_legendre_array_index(n, mabs);
+
+              if (X)
+                gsl_vector_set(X, cidx, term * w->sinmphi[mabs] * w->dPlm[aidx] * (-sint));
+
+              if (Y)
+                gsl_vector_set(Y, cidx, -term / sint * mabs * w->cosmphi[mabs] * w->Plm[aidx]);
+
+              if (Z)
+                gsl_vector_set(Z, cidx, -(n + 1.0) * term * w->sinmphi[mabs] * w->Plm[aidx]);
+            }
+
+          /* compute g_{nm} */
+          for (m = 0; m <= M; ++m)
+            {
+              size_t cidx = green_nmidx(n, m, w);
+              size_t aidx = gsl_sf_legendre_array_index(n, m);
+
+              if (X)
+                gsl_vector_set(X, cidx, term * w->cosmphi[m] * w->dPlm[aidx] * (-sint));
+
+              if (Y)
+                gsl_vector_set(Y, cidx, term / sint * m * w->sinmphi[m] * w->Plm[aidx]);
+
+              if (Z)
+                gsl_vector_set(Z, cidx, -(n + 1.0) * term * w->cosmphi[m] * w->Plm[aidx]);
+            }
+        }
+
+      return s;
+    }
+}
 
 /*
 green_calc_ext()

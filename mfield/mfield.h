@@ -188,6 +188,7 @@ typedef struct
   gsl_vector *wts_spatial; /* spatial weights, nres-by-1 */
   gsl_vector *wts_robust;  /* robust weights, nres-by-1 */
   gsl_vector *wts_final;   /* final weights (robust x spatial), nres-by-1 */
+  gsl_vector *sqrt_wts_final; /* sqrt(wts_final), length nres */
   gsl_multifit_nlinear_workspace *multifit_nlinear_p;
   gsl_multilarge_nlinear_workspace *nlinear_workspace_p;
   size_t ndata;            /* number of unique data points in LS system */

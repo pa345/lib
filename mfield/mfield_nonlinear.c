@@ -135,7 +135,20 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
     }
 
   if (!params->use_weights || params->synth_data)
-    gsl_vector_set_all(w->wts_final, 1.0);
+    {
+      gsl_vector_set_all(w->wts_final, 1.0);
+      gsl_vector_set_all(w->sqrt_wts_final, 1.0);
+    }
+  else
+    {
+      size_t i;
+
+      for (i = 0; i < w->nres; ++i)
+        {
+          double wi = gsl_vector_get(w->wts_final, i);
+          gsl_vector_set(w->sqrt_wts_final, i, sqrt(wi));
+        }
+    }
 
 #if !OLD_FDF
 
@@ -232,7 +245,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
     n += p;
 
   fdf.f = mfield_calc_Wf;
-  fdf.df = mfield_calc_df2;
+  fdf.df = mfield_calc_df3;
   fdf.fvv = mfield_calc_Wfvv;
   fdf.n = n;
   fdf.p = p;
@@ -262,7 +275,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
       fprintf(stderr, "mfield_calc_nonlinear: computing RHS of linear system...");
       gsl_vector_set_zero(w->c);
       mfield_calc_Wf(w->c, w, w->wfvec);
-      mfield_calc_df2(CblasTrans, w->c, w->wfvec, w, JTf, NULL);
+      mfield_calc_df3(CblasTrans, w->c, w->wfvec, w, JTf, NULL);
       fprintf(stderr, "done\n");
 
       /* regularize JTJ matrix */
@@ -572,6 +585,7 @@ mfield_init_nonlinear(mfield_workspace *w)
   w->wts_spatial = gsl_vector_alloc(nres);
   w->wts_robust = gsl_vector_alloc(nres);
   w->wts_final = gsl_vector_alloc(nres);
+  w->sqrt_wts_final = gsl_vector_alloc(nres);
 
   gsl_vector_set_all(w->wts_robust, 1.0);
 
@@ -770,16 +784,16 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
             continue;
 
           /* compute internal Green's functions for this point */
-          green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data,
-                         w->green_array_p[thread_id]);
+          green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector,
+                          w->green_array_p[thread_id]);
 
           /* calculate internal Green's functions for gradient point (N/S or E/W) */
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
             {
-              green_calc_int(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
-                             vx_grad.vector.data, vy_grad.vector.data, vz_grad.vector.data,
-                             w->green_array_p[thread_id]);
+              green_calc_int2(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
+                              &vx_grad.vector, &vy_grad.vector, &vz_grad.vector,
+                              w->green_array_p[thread_id]);
             }
 
           /* compute internal field model */
@@ -1787,16 +1801,16 @@ mfield_nonlinear_vector_precompute(const gsl_vector *weights, mfield_workspace *
             continue;
 
           /* calculate internal Green's functions */
-          green_calc_int(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data,
-                         w->green_array_p[thread_id]);
+          green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector,
+                          w->green_array_p[thread_id]);
 
           /* calculate internal Green's functions for gradient point (N/S or E/W) */
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
             {
-              green_calc_int(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
-                             vx_grad.vector.data, vy_grad.vector.data, vz_grad.vector.data,
-                             w->green_array_p[thread_id]);
+              green_calc_int2(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
+                              &vx_grad.vector, &vy_grad.vector, &vz_grad.vector,
+                              w->green_array_p[thread_id]);
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_X)

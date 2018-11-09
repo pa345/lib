@@ -48,6 +48,9 @@
 #include <gsl/gsl_spblas.h>
 #include <gsl/gsl_spmatrix.h>
 
+#include <spblas2/gsl_spblas2.h>
+#include <spblas2/gsl_spcblas.h>
+
 #include "mfield_green.h"
 
 #include <common/common.h>
@@ -537,6 +540,9 @@ mfield_free(mfield_workspace *w)
 
   if (w->wts_final)
     gsl_vector_free(w->wts_final);
+
+  if (w->sqrt_wts_final)
+    gsl_vector_free(w->sqrt_wts_final);
 
   if (w->multifit_nlinear_p)
     gsl_multifit_nlinear_free(w->multifit_nlinear_p);
