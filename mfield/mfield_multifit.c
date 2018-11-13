@@ -565,7 +565,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
   struct timeval tv0, tv1;
   int parallel;
 
-  mfield_debug("mfield_calc_J2: entering function...\n");
+  mfield_debug("mfield_calc_J2: entering function (J_2: %zu-by-%zu)...\n", J->size1, J->size2);
   gettimeofday(&tv0, NULL);
 
   if (J->nz == 0)
@@ -1151,7 +1151,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
   gettimeofday(&tv1, NULL);
   mfield_debug("mfield_calc_df: leaving function (%g seconds)\n", time_diff(tv0, tv1));
 
-#if 1
+#if 0
   print_octave(J, "J");
   exit(1);
 #endif

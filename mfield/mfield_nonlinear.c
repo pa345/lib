@@ -1,4 +1,4 @@
-#define OLD_FDF     1
+#define OLD_FDF     0
 
 typedef struct
 {
@@ -567,7 +567,7 @@ mfield_init_nonlinear(mfield_workspace *w)
 
     fdf_params.solver = gsl_multifit_nlinear_solver_cholesky;
     fdf_params.scale = gsl_multifit_nlinear_scale_levenberg;
-    fdf_params.trs = gsl_multifit_nlinear_trs_ddogleg;
+    fdf_params.trs = gsl_multifit_nlinear_trs_lm;
     fdf_params.fdtype = GSL_MULTIFIT_NLINEAR_CTRDIFF;
     w->multifit_nlinear_p = gsl_multifit_nlinear_alloc(T, &fdf_params, w->nres_tot, p);
   }
@@ -575,6 +575,7 @@ mfield_init_nonlinear(mfield_workspace *w)
 #else
 
   /* allocate fit workspace - start with Levenberg-Marquardt solver */
+  /*mfield_nonlinear_alloc_multilarge(gsl_multilarge_nlinear_trs_lm, w);*/
   mfield_nonlinear_alloc_multilarge(gsl_multilarge_nlinear_trs_lm, w);
 
 #endif
@@ -2887,10 +2888,23 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
           gsl_multilarge_nlinear_name(multilarge_p),
           gsl_multilarge_nlinear_trs_name(multilarge_p));
 
-  fprintf(stderr, "\t dipole: %12.4f %12.4f %12.4f [nT]\n",
-          gsl_vector_get(x, mfield_coeff_nmidx(1, 0)),
-          gsl_vector_get(x, mfield_coeff_nmidx(1, 1)),
-          gsl_vector_get(x, mfield_coeff_nmidx(1, -1)));
+  if (w->nnm_mf > 0)
+    {
+      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+              "dipole:",
+              mfield_get_mf(x, mfield_coeff_nmidx(1, 0), w),
+              mfield_get_mf(x, mfield_coeff_nmidx(1, 1), w),
+              mfield_get_mf(x, mfield_coeff_nmidx(1, -1), w));
+    }
+
+  if (w->nnm_sv > 0)
+    {
+      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+              "SV dipole:",
+              mfield_get_sv(x, mfield_coeff_nmidx(1, 0), w),
+              mfield_get_sv(x, mfield_coeff_nmidx(1, 1), w),
+              mfield_get_sv(x, mfield_coeff_nmidx(1, -1), w));
+    }
 
   if (w->params.fit_euler)
     {
@@ -2899,14 +2913,20 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
       for (i = 0; i < w->nsat; ++i)
         {
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-
+  
           if (mptr->n == 0)
             continue;
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
             {
               double t0 = w->data_workspace_p->t0[i];
-              size_t euler_idx = mfield_euler_idx(i, t0, w);
+              gsl_bspline2_workspace *euler_spline_p = w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
+              size_t euler_idx = w->euler_offset + w->offset_euler[i];
+              size_t ncontrol = gsl_bspline2_ncontrol(euler_spline_p);
+              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, euler_idx, EULER_P * ncontrol);
+              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, EULER_P, ncontrol);
+              double euler_data[EULER_P];
+              gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
               char buf[32];
 
               if (mptr->euler_flags & EULER_FLG_ZYX)
@@ -2916,12 +2936,55 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
               else
                 *buf = '\0';
 
-              fprintf(stderr, "\t euler%zu: %12.4f %12.4f %12.4f [deg] [%s]\n",
+              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &euler_params.vector, euler_spline_p);
+
+              fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg] [%s]\n",
                       i,
-                      gsl_vector_get(x, euler_idx) * 180.0 / M_PI,
-                      gsl_vector_get(x, euler_idx + 1) * 180.0 / M_PI,
-                      gsl_vector_get(x, euler_idx + 2) * 180.0 / M_PI,
+                      euler_data[0] * 180.0 / M_PI,
+                      euler_data[1] * 180.0 / M_PI,
+                      euler_data[2] * 180.0 / M_PI,
                       buf);
+            }
+        }
+    }
+
+  if (w->params.fit_fluxcal)
+    {
+      size_t i;
+
+      for (i = 0; i < w->nsat; ++i)
+        {
+          magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+  
+          if (mptr->n == 0)
+            continue;
+
+          if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
+            {
+              double t0 = w->data_workspace_p->t0[i];
+              gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
+              size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
+              size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
+              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * ncontrol);
+              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
+              double cal_data[FLUXCAL_P];
+              gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
+
+              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+
+              fprintf(stderr, "\t fluxcal %zu: S = %12.4f %12.4f %12.4f\n",
+                      i,
+                      cal_data[FLUXCAL_IDX_SX],
+                      cal_data[FLUXCAL_IDX_SY],
+                      cal_data[FLUXCAL_IDX_SZ]);
+              fprintf(stderr, "\t            O = %12.4f %12.4f %12.4f [nT]\n",
+                      cal_data[FLUXCAL_IDX_OX],
+                      cal_data[FLUXCAL_IDX_OY],
+                      cal_data[FLUXCAL_IDX_OZ]);
+              fprintf(stderr, "\t            U = %12.4f %12.4f %12.4f [deg]\n",
+                      cal_data[FLUXCAL_IDX_U1] * 180.0 / M_PI,
+                      cal_data[FLUXCAL_IDX_U2] * 180.0 / M_PI,
+                      cal_data[FLUXCAL_IDX_U3] * 180.0 / M_PI);
             }
         }
     }

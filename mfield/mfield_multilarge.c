@@ -441,7 +441,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   if (J2_crs)
     gsl_spmatrix_free(J2_crs);
 
-#if 1
+#if 0
   if (u)
     printv_octave(u, "u");
 
@@ -668,11 +668,12 @@ mfield_jacobian_F(CBLAS_TRANSPOSE_t TransJ, const double t, const double sqrt_wj
       const double *Ad = J2->data;
       size_t k, p;
 
-      for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+      for (k = 0; k < J_int->size; ++k)
         {
-          for (k = 0; k < J_int->size; ++k)
+          double Jk = gsl_vector_get(J_int, k);
+
+          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
             {
-              double Jk = gsl_vector_get(J_int, k);
               double *ptr = gsl_matrix_ptr(J2TJ1, Aj[p], k);
               *ptr += Ad[p] * Jk;
             }
@@ -711,32 +712,38 @@ mfield_jacobian_J2TJ1(const double t, const double sqrt_wj, const size_t ridx,
       const size_t *Ap = J2->p;
       const size_t *Aj = J2->i;
       const double *Ad = J2->data;
-      size_t k, p;
+      size_t p;
 
-      for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+      if (w->nnm_mf > 0)
         {
-          for (k = 0; k < w->nnm_max; ++k)
+          gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_mf);
+
+          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
             {
-              double dBk = gsl_vector_get(dB_int, k);
-              double *ptr;
-              
-              if (k < w->nnm_mf)
-                {
-                  ptr = gsl_matrix_ptr(J2TJ1, Aj[p], k);
-                  *ptr -= Ad[p] * dBk;
-                }
+              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], 0, w->nnm_mf);
+              gsl_blas_daxpy(-Ad[p], &in.vector, &out.vector);
+            }
+        }
 
-              if (k < w->nnm_sv)
-                {
-                  ptr = gsl_matrix_ptr(J2TJ1, Aj[p], w->sv_offset + k);
-                  *ptr -= Ad[p] * (t * dBk);
-                }
+      if (w->nnm_sv > 0)
+        {
+          gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_sv);
 
-              if (k < w->nnm_sa)
-                {
-                  ptr = gsl_matrix_ptr(J2TJ1, Aj[p], w->sa_offset + k);
-                  *ptr -= Ad[p] * (0.5 * t * t * dBk);
-                }
+          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+            {
+              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->sv_offset, w->nnm_sv);
+              gsl_blas_daxpy(-t * Ad[p], &in.vector, &out.vector);
+            }
+        }
+
+      if (w->nnm_sa > 0)
+        {
+          gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_sa);
+
+          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+            {
+              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->sa_offset, w->nnm_sa);
+              gsl_blas_daxpy(-0.5 * t * t * Ad[p], &in.vector, &out.vector);
             }
         }
 
