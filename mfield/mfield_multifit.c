@@ -285,10 +285,10 @@ mfield_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f)
 
   for (i = 0; i < w->nres; ++i)
     {
-      double wi = gsl_vector_get(w->wts_final, i);
+      double swi = gsl_vector_get(w->sqrt_wts_final, i);
       double *fi = gsl_vector_ptr(f, i);
 
-      *fi *= sqrt(wi);
+      *fi *= swi;
     }
 
   gettimeofday(&tv1, NULL);
@@ -323,6 +323,7 @@ static int
 mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vector *fvv)
 {
   int s = GSL_SUCCESS;
+#if 0
   mfield_workspace *w = (mfield_workspace *) params;
   const mfield_parameters *mparams = &(w->params);
   size_t i, j;
@@ -500,6 +501,7 @@ mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vec
 
   gettimeofday(&tv1, NULL);
   mfield_debug("mfield_calc_fvv: leaving function (%g seconds)\n", time_diff(tv0, tv1));
+#endif
 
   return s;
 }

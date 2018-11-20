@@ -700,6 +700,7 @@ mfield_init_nonlinear(mfield_workspace *w)
   return s;
 } /* mfield_init_nonlinear() */
 
+#if 0
 /*
 mfield_calc_df()
   Compute J^T J matrix and J^T u or J u vector using OpenMP
@@ -1141,6 +1142,8 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
 
   return GSL_SUCCESS;
 }
+
+#endif
 
 /*
 mfield_jacobian_JTu()

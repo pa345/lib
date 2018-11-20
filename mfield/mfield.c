@@ -119,10 +119,9 @@ mfield_alloc(const mfield_parameters *params)
   w->spatwtMF_workspace_p = spatwt_alloc(8, 12);
   w->spatwtSV_workspace_p = spatwt_alloc(8, 12);
 
-  w->nbins_euler = calloc(1, w->nsat * sizeof(size_t));
   w->offset_euler = calloc(1, w->nsat * sizeof(size_t));
   w->offset_fluxcal = calloc(1, w->nsat * sizeof(size_t));
-  if (!w->nbins_euler || !w->offset_euler || !w->offset_fluxcal)
+  if (!w->offset_euler || !w->offset_fluxcal)
     {
       mfield_free(w);
       return 0;
@@ -202,11 +201,6 @@ mfield_alloc(const mfield_parameters *params)
 
           magdata_t(&t0, &t1, mptr);
           dt = (t1 - t0) / 86400000.0; /* convert to days */
-
-          if (params->euler_period <= 0.0)
-            w->nbins_euler[i] = 1;
-          else
-            w->nbins_euler[i] = (size_t) (dt / params->euler_period) + 1;
 
           if (params->euler_period <= 0.0)
             nbreak = 2;
@@ -546,9 +540,6 @@ mfield_free(mfield_workspace *w)
 
   if (w->multifit_nlinear_p)
     gsl_multifit_nlinear_free(w->multifit_nlinear_p);
-
-  if (w->nbins_euler)
-    free(w->nbins_euler);
 
   if (w->offset_euler)
     free(w->offset_euler);

@@ -127,7 +127,6 @@ typedef struct
 
   size_t nnm_max;   /* MAX(nnm_mf, nnm_sv, nnm_sa) */
 
-  size_t *nbins_euler;    /* number of Euler bins for each satellite */
   size_t *offset_euler;   /* start index of each satellite's Euler angles in coefficient vector */
   size_t *offset_fluxcal; /* start index of each satellite's fluxgate calibration parameters in coefficient vector */
   size_t *bias_idx;       /* indices of observatory biases in coefficient vector */
@@ -318,9 +317,7 @@ extern inline int mfield_set_sv(gsl_vector *c, const size_t idx, const double x,
 extern inline int mfield_set_sa(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 
 /* mfield_euler.c */
-size_t mfield_euler_idx(const size_t sat_idx, const double t, const mfield_workspace *w);
-int mfield_euler_print(const char *filename, const size_t sat_idx,
-                       const mfield_workspace *w);
+int mfield_euler_print(const char *filename, const size_t sat_idx, const mfield_workspace *w);
 
 /* mfield_fill.c */
 int mfield_fill(const char *coeffile, satdata_mag *data);

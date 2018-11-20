@@ -120,13 +120,21 @@ typedef struct
   double *Bf_main;  /* total main field intensity in T */
 
   gsl_spmatrix *S; /* sparse pde matrix */
-  gsl_matrix *B;   /* rhs vectors, nr*ntheta-by-nrhs; B(:,1) = g1, B(:,2) = g2 */
-  gsl_matrix *X;   /* PDE solution, nr*ntheta-by-nrhs */
-  gsl_vector *psi; /* pde solution, size nr*ntheta */
+  gsl_matrix *G;   /* rhs vectors, nr*ntheta-by-nrhs; G(:,1) = g1, G(:,2) = g2 */
+  gsl_matrix *B;   /* rhs vectors with boundary conditions applied, nr*ntheta-by-nrhs */
+  gsl_matrix *PSI; /* PDE solution, nr*ntheta-by-nrhs */
   double residual; /* residual ||A*psi - b|| */
   double rrnorm;   /* relative residual ||b - A*psi|| / ||b|| */
   double rcond;    /* reciprical condition number */
   size_t nrhs;     /* number of right hand sides */
+
+  gsl_matrix *WR;      /* W_r matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *WTHETA;  /* W_theta matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *WPHI;    /* W_phi matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *JR;      /* J_r(psi_i) matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *JTHETA;  /* J_theta(psi_i) matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *ER;      /* E_r(psi_i) matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *ETHETA;  /* E_theta(psi_i) matrix, nr*ntheta-by-nrhs */
 
   gsl_matrix *J_r;     /* J_r current solution (A/m^2) */
   gsl_matrix *J_theta; /* J_theta current solution (A/m^2) */
@@ -151,11 +159,6 @@ typedef struct
   double *f3;
   double *f4;
   double *f5;
-
-  /* pde right hand side, size nr*ntheta */
-  double *g;
-  double *g1; /* term multiplying E_phi0 */
-  double *g2; /* wind term */
 
   /* (r,theta) components of W = sigma * (U x B), size nr*ntheta */
   double *W_r;

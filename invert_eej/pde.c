@@ -54,9 +54,14 @@ static int pde_sigma_tensor(sigma_workspace *sigma_p, pde_workspace *w);
 static void pde_compute_wind(pde_workspace *w);
 static int pde_scales(sigma_workspace *sigma_p, pde_workspace *w);
 static int pde_coefficients(pde_workspace *w);
-static int pde_rhs(const int compute_winds, const double E_phi0, pde_workspace *w);
+static int pde_rhs_g1(gsl_vector *g1, pde_workspace *w);
+static int pde_rhs_g2(const gsl_vector *W_r, const gsl_vector *W_t, gsl_vector *g2, pde_workspace *w);
 static int pde_compute_solution(const gsl_spmatrix *A, const gsl_matrix *B, gsl_matrix *X, pde_workspace *w);
-static int pde_calc_J(pde_workspace *w);
+static int pde_calc_J(const gsl_vector * psi, pde_workspace *w);
+static int pde_calc_W(pde_workspace *w);
+static int pde_calc_Jr(const gsl_vector * psi, gsl_vector * Jr, pde_workspace *w);
+static int pde_calc_Jt(const gsl_vector * psi, gsl_vector * Jt, pde_workspace *w);
+static int pde_calc_E(pde_workspace *w);
 static int pde_main_field(pde_workspace *w);
 static int pde_debug(pde_workspace *w, const char *format, ...);
 static int pde2d_coefs(const double r, const double theta, double coef[GSL_PDE2D_COEF_TOTAL], void *params);
@@ -101,7 +106,6 @@ pde_alloc(pde_parameters *params)
 
   /*hwm_set_error_scale(4.0, w->hwm_workspace_p);*/
 
-  w->psi = gsl_vector_alloc(nrt);
   w->J_lat = gsl_vector_alloc(w->ntheta);
   w->J_lat_E = gsl_vector_alloc(w->ntheta);
   w->J_lat_u = gsl_vector_alloc(w->ntheta);
@@ -111,7 +115,7 @@ pde_alloc(pde_parameters *params)
   w->E_r = gsl_matrix_alloc(w->nr, w->ntheta);
   w->E_theta = gsl_matrix_alloc(w->nr, w->ntheta);
   w->E_phi = gsl_matrix_alloc(w->nr, w->ntheta);
-  if (w->psi == 0 || w->J_lat == 0 ||
+  if (w->J_lat == 0 ||
       w->J_r == 0 || w->J_theta == 0 || w->J_phi == 0 ||
       w->E_r == 0 || w->E_theta == 0 || w->E_phi == 0)
     {
@@ -141,10 +145,7 @@ pde_alloc(pde_parameters *params)
   w->f3 = malloc(nrt * sizeof(double));
   w->f4 = malloc(nrt * sizeof(double));
   w->f5 = malloc(nrt * sizeof(double));
-  w->g = malloc(nrt * sizeof(double));
-  w->g1 = malloc(nrt * sizeof(double));
-  w->g2 = malloc(nrt * sizeof(double));
-  if (!w->f1 || !w->f2 || !w->f3 || !w->f4 || !w->f5 || !w->g || !w->g1 || !w->g2)
+  if (!w->f1 || !w->f2 || !w->f3 || !w->f4 || !w->f5)
     {
       pde_free(w);
       return 0;
@@ -196,8 +197,17 @@ pde_alloc(pde_parameters *params)
 
   w->S = gsl_spmatrix_alloc(nrt, nrt);
   w->B = gsl_matrix_alloc(nrt, w->nrhs);
-  w->X = gsl_matrix_alloc(nrt, w->nrhs);
-  if (!w->S || !w->B || !w->X)
+  w->G = gsl_matrix_alloc(nrt, w->nrhs);
+  w->PSI = gsl_matrix_alloc(nrt, w->nrhs);
+  w->JR = gsl_matrix_alloc(nrt, w->nrhs);
+  w->JTHETA = gsl_matrix_alloc(nrt, w->nrhs);
+  w->WR = gsl_matrix_alloc(nrt, w->nrhs);
+  w->WTHETA = gsl_matrix_alloc(nrt, w->nrhs);
+  w->WPHI = gsl_matrix_alloc(nrt, w->nrhs);
+  w->ER = gsl_matrix_alloc(nrt, w->nrhs);
+  w->ETHETA = gsl_matrix_alloc(nrt, w->nrhs);
+  if (!w->S || !w->B || !w->G || !w->PSI || !w->JR || !w->JTHETA ||
+      !w->WR || !w->WTHETA || !w->WPHI || !w->ER || !w->ETHETA)
     {
       pde_free(w);
       return 0;
@@ -255,9 +265,6 @@ pde_alloc(pde_parameters *params)
 void
 pde_free(pde_workspace *w)
 {
-  if (w->psi)
-    gsl_vector_free(w->psi);
-
   if (w->J_lat)
     gsl_vector_free(w->J_lat);
 
@@ -315,15 +322,6 @@ pde_free(pde_workspace *w)
   if (w->f5)
     free(w->f5);
 
-  if (w->g)
-    free(w->g);
-
-  if (w->g1)
-    free(w->g1);
-
-  if (w->g2)
-    free(w->g2);
-
   if (w->W_r)
     free(w->W_r);
 
@@ -357,8 +355,32 @@ pde_free(pde_workspace *w)
   if (w->B)
     gsl_matrix_free(w->B);
 
-  if (w->X)
-    gsl_matrix_free(w->X);
+  if (w->G)
+    gsl_matrix_free(w->G);
+
+  if (w->PSI)
+    gsl_matrix_free(w->PSI);
+
+  if (w->JR)
+    gsl_matrix_free(w->JR);
+
+  if (w->JTHETA)
+    gsl_matrix_free(w->JTHETA);
+
+  if (w->WR)
+    gsl_matrix_free(w->WR);
+
+  if (w->WTHETA)
+    gsl_matrix_free(w->WTHETA);
+
+  if (w->WPHI)
+    gsl_matrix_free(w->WPHI);
+
+  if (w->ER)
+    gsl_matrix_free(w->ER);
+
+  if (w->ETHETA)
+    gsl_matrix_free(w->ETHETA);
 
   if (w->r_grid)
     free(w->r_grid);
@@ -567,6 +589,7 @@ pde_solve(const int compute_winds, const double E_phi0, pde_workspace *w)
 {
   double min, max;
   int s = 0;
+  size_t i;
 
   w->compute_winds = compute_winds;
   w->E_phi0 = E_phi0;
@@ -578,11 +601,31 @@ pde_solve(const int compute_winds, const double E_phi0, pde_workspace *w)
   if (s)
     return s;
 
-  pde_debug(w, "pde_solve: computing PDE right hand side...");
-  s = pde_rhs(compute_winds, E_phi0 / w->E_s, w);
+  pde_debug(w, "pde_solve: computing W matrices...");
+  s = pde_calc_W(w);
   pde_debug(w, "done (s = %d)\n", s);
   if (s)
     return s;
+
+
+  {
+    gsl_vector_view g1 = gsl_matrix_column(w->G, 0);
+    gsl_vector_view g2 = gsl_matrix_column(w->G, 1);
+    gsl_vector_const_view Wr = gsl_matrix_const_column(w->WR, 1);
+    gsl_vector_const_view Wt = gsl_matrix_const_column(w->WTHETA, 1);
+
+    pde_debug(w, "pde_solve: computing PDE right hand sides...");
+
+    /* compute g_1 */
+    s = pde_rhs_g1(&g1.vector, w);
+
+    /* compute g_2(W_0) */
+    s += pde_rhs_g2(&Wr.vector, &Wt.vector, &g2.vector, w);
+
+    pde_debug(w, "done (s = %d)\n", s);
+    if (s)
+      return s;
+  }
 
   pde_debug(w, "pde_solve: initializing PDE...");
   s = gsl_pde2d_init(w->gsl_pde2d_workspace_p);
@@ -633,17 +676,15 @@ pde_solve(const int compute_winds, const double E_phi0, pde_workspace *w)
   {
     gsl_vector_const_view b1 = gsl_matrix_const_column(w->B, 0);
     gsl_vector_const_view b2 = gsl_matrix_const_column(w->B, 1);
-    gsl_vector_const_view psi1 = gsl_matrix_const_column(w->X, 0);
-    gsl_vector_const_view psi2 = gsl_matrix_const_column(w->X, 1);
 
-    s += pde_compute_solution(w->S, w->B, w->X, w);
+    s += pde_compute_solution(w->S, w->B, w->PSI, w);
 
+#if 0
     /* psi = E_phi0 * psi1 + psi2 */
-
     gsl_vector_memcpy(w->psi, &psi1.vector);
     gsl_vector_scale(w->psi, E_phi0 / w->E_s);
-
     gsl_vector_add(w->psi, &psi2.vector);
+#endif
 
     pde_debug(w, "\t g1 residual = %.12e (relative: %.12e)\n",
               w->superlu_workspace_p->rnorm[0],
@@ -658,14 +699,34 @@ pde_solve(const int compute_winds, const double E_phi0, pde_workspace *w)
 
   pde_debug(w, "done\n");
 
+  pde_debug(w, "pde_solve: computing J_r and J_theta...");
+
+  for (i = 0; i < w->nrhs; ++i)
+    {
+      gsl_vector_const_view psi = gsl_matrix_const_column(w->PSI, i);
+      gsl_vector_view Jr = gsl_matrix_column(w->JR, i);
+      gsl_vector_view Jt = gsl_matrix_column(w->JTHETA, i);
+
+      s += pde_calc_Jr(&psi.vector, &Jr.vector, w);
+      s += pde_calc_Jt(&psi.vector, &Jt.vector, w);
+    }
+
+  pde_debug(w, "done (s = %d)\n", s);
+
+  pde_debug(w, "pde_solve: computing E matrices...");
+  s += pde_calc_E(w);
+  pde_debug(w, "done (s = %d)\n", s);
+
+#if 0
   pde_debug(w, "pde_solve: computing eastward current...");
-  s += pde_calc_J(w);
+  s += pde_calc_J(w->psi, w);
   pde_debug(w, "done (s = %d)\n", s);
 
   /* J_lat is height-integrated and has units of current * meters */
   pde_debug(w, "pde_solve: scaling output back to physical units...");
   gsl_vector_scale(w->J_lat, w->J_s * w->r_s);
   pde_debug(w, "done\n");
+#endif
 
   return s;
 } /* pde_solve() */
@@ -1172,19 +1233,18 @@ pde_coefficients(pde_workspace *w)
 }
 
 /*
-pde_rhs()
-  Compute rhs of PDE: g1 and g2
+pde_rhs_g1()
+  Compute rhs g_1 of PDE
 
-Inputs: compute_winds - include wind terms
-        E_phi0        - eastward electric field (dimensionless)
-        w             - workspace
+Inputs: g1 - output g_1 vector, length nr*ntheta
+        w  - workspace
 
 Notes:
 1) pde_coefficients() must be called first to initialize alpha,beta,gamma arrays
 */
 
 static int
-pde_rhs(const int compute_winds, const double E_phi0, pde_workspace *w)
+pde_rhs_g1(gsl_vector *g1, pde_workspace *w)
 {
   int s = 0;
   const double R = w->R / w->r_s;
@@ -1204,13 +1264,7 @@ pde_rhs(const int compute_winds, const double E_phi0, pde_workspace *w)
           size_t k = PDE_IDX(i, j, w);
           double theta = pde_theta(j, w);
           double sint = pde_sint(j, w);
-          gsl_matrix *sigma = w->sigma[k];
-          double s_rr = gsl_matrix_get(sigma, IDX_R, IDX_R);
-          double s_tr = gsl_matrix_get(sigma, IDX_THETA, IDX_R);
-          double s_tt = gsl_matrix_get(sigma, IDX_THETA, IDX_THETA);
-          double s_rt = gsl_matrix_get(sigma, IDX_R, IDX_THETA);
           double dr1, dt1;
-          double dr2, dt2;
 
           if (i == 0)
             {
@@ -1262,37 +1316,81 @@ pde_rhs(const int compute_winds, const double E_phi0, pde_workspace *w)
                      (w->beta[PDE_IDX(i, j - 1, w)] / w->alpha[PDE_IDX(i, j - 1, w)]) / sin(theta - dtheta));
             }
 
-          w->g1[k] = ratio * w->alpha[k] * (r * dr1 + sint * dt1);
-          w->g[k] = w->g1[k] * E_phi0;
+          /* g_1 rhs vector */
+          gsl_vector_set(g1, k, ratio * w->alpha[k] * (r * dr1 + sint * dt1));
+        }
+    }
 
-          /* account for wind terms */
+  return s;
+}
+
+/*
+pde_rhs_g2()
+  Compute rhs g_2(W)
+
+Inputs: W_r - r component of W = sigma (U x B), length nr*ntheta
+        W_t - theta component of W = sigma (U x B), length nr*ntheta
+        g2  - (output) output vector g_2(W)
+        w   - workspace
+
+Notes:
+1) pde_coefficients() must be called first to initialize alpha,beta,gamma arrays
+*/
+
+static int
+pde_rhs_g2(const gsl_vector *W_r, const gsl_vector *W_t, gsl_vector *g2, pde_workspace *w)
+{
+  int s = 0;
+  const double R = w->R / w->r_s;
+  const double dr = pde_dr(w);
+  const double drinv = 1.0 / dr;
+  const double dtheta = pde_dtheta(w);
+  const double dtinv = 1.0 / dtheta;
+  size_t i, j;
+
+  for (i = 0; i < w->nr; ++i)
+    {
+      double r = pde_r(i, w);
+      double ratio = r / R;
+
+      for (j = 0; j < w->ntheta; ++j)
+        {
+          size_t k = PDE_IDX(i, j, w);
+          double sint = pde_sint(j, w);
+          gsl_matrix *sigma = w->sigma[k];
+          double s_rr = gsl_matrix_get(sigma, IDX_R, IDX_R);
+          double s_tr = gsl_matrix_get(sigma, IDX_THETA, IDX_R);
+          double s_tt = gsl_matrix_get(sigma, IDX_THETA, IDX_THETA);
+          double s_rt = gsl_matrix_get(sigma, IDX_R, IDX_THETA);
+          double dr2, dt2;
+
           if (i == 0)
             {
               /* use forward differences */
 
               dr2 = drinv *
-                    ((r + dr) / w->alpha[PDE_IDX(i + 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_THETA, IDX_R) * w->W_r[PDE_IDX(i + 1, j, w)] -
-                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_R, IDX_R) * w->W_t[PDE_IDX(i + 1, j, w)]) -
-                     r / w->alpha[k] * (s_tr * w->W_r[k] - s_rr * w->W_t[k]));
+                    ((r + dr) / w->alpha[PDE_IDX(i + 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_THETA, IDX_R) * gsl_vector_get(W_r, PDE_IDX(i + 1, j, w)) -
+                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_R, IDX_R) * gsl_vector_get(W_t, PDE_IDX(i + 1, j, w))) -
+                     r / w->alpha[k] * (s_tr * gsl_vector_get(W_r, k) - s_rr * gsl_vector_get(W_t, k)));
             }
           else if (i == w->nr - 1)
             {
               /* use backward differences */
 
               dr2 = drinv *
-                    (r / w->alpha[k] * (s_tr * w->W_r[k] - s_rr * w->W_t[k]) -
-                     (r - dr) / w->alpha[PDE_IDX(i - 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_THETA, IDX_R) * w->W_r[PDE_IDX(i - 1, j, w)] -
-                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_R, IDX_R) * w->W_t[PDE_IDX(i - 1, j, w)]));
+                    (r / w->alpha[k] * (s_tr * gsl_vector_get(W_r, k) - s_rr * gsl_vector_get(W_t, k)) -
+                     (r - dr) / w->alpha[PDE_IDX(i - 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_THETA, IDX_R) * gsl_vector_get(W_r, PDE_IDX(i - 1, j, w)) -
+                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_R, IDX_R) * gsl_vector_get(W_t, PDE_IDX(i - 1, j, w))));
             }
           else
             {
               /* use central differences */
 
               dr2 = 0.5 * drinv *
-                    ((r + dr) / w->alpha[PDE_IDX(i + 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_THETA, IDX_R) * w->W_r[PDE_IDX(i + 1, j, w)] -
-                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_R, IDX_R) * w->W_t[PDE_IDX(i + 1, j, w)]) -
-                     (r - dr) / w->alpha[PDE_IDX(i - 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_THETA, IDX_R) * w->W_r[PDE_IDX(i - 1, j, w)] -
-                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_R, IDX_R) * w->W_t[PDE_IDX(i - 1, j, w)]));
+                    ((r + dr) / w->alpha[PDE_IDX(i + 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_THETA, IDX_R) * gsl_vector_get(W_r, PDE_IDX(i + 1, j, w)) -
+                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i + 1, j, w)], IDX_R, IDX_R) * gsl_vector_get(W_t, PDE_IDX(i + 1, j, w))) -
+                     (r - dr) / w->alpha[PDE_IDX(i - 1, j, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_THETA, IDX_R) * gsl_vector_get(W_r, PDE_IDX(i - 1, j, w)) -
+                                                                  gsl_matrix_get(w->sigma[PDE_IDX(i - 1, j, w)], IDX_R, IDX_R) * gsl_vector_get(W_t, PDE_IDX(i - 1, j, w))));
             }
 
           if (j == 0)
@@ -1300,34 +1398,31 @@ pde_rhs(const int compute_winds, const double E_phi0, pde_workspace *w)
               /* use forward differences */
 
               dt2 = dtinv *
-                    (1.0 / w->alpha[PDE_IDX(i, j + 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_THETA, IDX_THETA) * w->W_r[PDE_IDX(i, j + 1, w)] -
-                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_R, IDX_THETA) * w->W_t[PDE_IDX(i, j + 1, w)]) -
-                     1.0 / w->alpha[k] * (s_tt * w->W_r[k] - s_rt * w->W_t[k]));
+                    (1.0 / w->alpha[PDE_IDX(i, j + 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_THETA, IDX_THETA) * gsl_vector_get(W_r, PDE_IDX(i, j + 1, w)) -
+                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_R, IDX_THETA) * gsl_vector_get(W_t, PDE_IDX(i, j + 1, w))) -
+                     1.0 / w->alpha[k] * (s_tt * gsl_vector_get(W_r, k) - s_rt * gsl_vector_get(W_t, k)));
             }
           else if (j == w->ntheta - 1)
             {
               /* use backward differences */
 
               dt2 = dtinv *
-                    (1.0 / w->alpha[k] * (s_tt * w->W_r[k] - s_rt * w->W_t[k]) -
-                     1.0 / w->alpha[PDE_IDX(i, j - 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_THETA, IDX_THETA) * w->W_r[PDE_IDX(i, j - 1, w)] -
-                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_R, IDX_THETA) * w->W_t[PDE_IDX(i, j - 1, w)]));
+                    (1.0 / w->alpha[k] * (s_tt * gsl_vector_get(W_r, k) - s_rt * gsl_vector_get(W_t, k)) -
+                     1.0 / w->alpha[PDE_IDX(i, j - 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_THETA, IDX_THETA) * gsl_vector_get(W_r, PDE_IDX(i, j - 1, w)) -
+                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_R, IDX_THETA) * gsl_vector_get(W_t, PDE_IDX(i, j - 1, w))));
             }
           else
             {
               /* use central differences */
 
               dt2 = 0.5 * dtinv *
-                    (1.0 / w->alpha[PDE_IDX(i, j + 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_THETA, IDX_THETA) * w->W_r[PDE_IDX(i, j + 1, w)] -
-                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_R, IDX_THETA) * w->W_t[PDE_IDX(i, j + 1, w)]) -
-                     1.0 / w->alpha[PDE_IDX(i, j - 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_THETA, IDX_THETA) * w->W_r[PDE_IDX(i, j - 1, w)] -
-                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_R, IDX_THETA) * w->W_t[PDE_IDX(i, j - 1, w)]));
+                    (1.0 / w->alpha[PDE_IDX(i, j + 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_THETA, IDX_THETA) * gsl_vector_get(W_r, PDE_IDX(i, j + 1, w)) -
+                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j + 1, w)], IDX_R, IDX_THETA) * gsl_vector_get(W_t, PDE_IDX(i, j + 1, w))) -
+                     1.0 / w->alpha[PDE_IDX(i, j - 1, w)] * (gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_THETA, IDX_THETA) * gsl_vector_get(W_r, PDE_IDX(i, j - 1, w)) -
+                                                             gsl_matrix_get(w->sigma[PDE_IDX(i, j - 1, w)], IDX_R, IDX_THETA) * gsl_vector_get(W_t, PDE_IDX(i, j - 1, w))));
             }
 
-          w->g2[k] = ratio * ratio * w->alpha[k] * sint * (dr2 + dt2);
-
-          if (compute_winds)
-            w->g[k] += w->g2[k];
+          gsl_vector_set(g2, k, ratio * ratio * w->alpha[k] * sint * (dr2 + dt2));
         }
     }
 
@@ -1356,8 +1451,6 @@ pde_compute_solution(const gsl_spmatrix *A, const gsl_matrix *B, gsl_matrix *X, 
     w->rcond = w->superlu_workspace_p->rcond;
 
     gsl_spmatrix_free(C);
-
-    printv_octave(w->psi, "psi_superlu");
 
     if (s)
       fprintf(stderr, "pde_compute_solution: slu_proc failed: s = %d\n", s);
@@ -1414,10 +1507,13 @@ pde_calc_J()
 compute height integrated eastward current and store in w->J_lat
 
 J_{r,theta,phi} and J_lat will have dimensionless units
+
+Inputs: psi - PDE solution vector, length nr*ntheta
+        w   - workspace
 */
 
 static int
-pde_calc_J(pde_workspace *w)
+pde_calc_J(const gsl_vector * psi, pde_workspace *w)
 {
   size_t i, j;
   const double dr = pde_dr(w);
@@ -1451,34 +1547,34 @@ pde_calc_J(pde_workspace *w)
 
           if (i == 0)
             {
-              psi_r = drinv * (PSI_GET(w->psi, i + 1, j, w) -
-                               PSI_GET(w->psi, i, j, w));
+              psi_r = drinv * (PSI_GET(psi, i + 1, j, w) -
+                               PSI_GET(psi, i, j, w));
             }
           else if (i == w->nr - 1)
             {
-              psi_r = drinv * (PSI_GET(w->psi, i, j, w) -
-                               PSI_GET(w->psi, i - 1, j, w));
+              psi_r = drinv * (PSI_GET(psi, i, j, w) -
+                               PSI_GET(psi, i - 1, j, w));
             }
           else
             {
-              psi_r = 0.5 * drinv * (PSI_GET(w->psi, i + 1, j, w) -
-                                     PSI_GET(w->psi, i - 1, j, w));
+              psi_r = 0.5 * drinv * (PSI_GET(psi, i + 1, j, w) -
+                                     PSI_GET(psi, i - 1, j, w));
             }
 
           if (j == 0)
             {
-              psi_t = dtinv * (PSI_GET(w->psi, i, j + 1, w) -
-                               PSI_GET(w->psi, i, j, w));
+              psi_t = dtinv * (PSI_GET(psi, i, j + 1, w) -
+                               PSI_GET(psi, i, j, w));
             }
           else if (j == w->ntheta - 1)
             {
-              psi_t = dtinv * (PSI_GET(w->psi, i, j, w) -
-                               PSI_GET(w->psi, i, j - 1, w));
+              psi_t = dtinv * (PSI_GET(psi, i, j, w) -
+                               PSI_GET(psi, i, j - 1, w));
             }
           else
             {
-              psi_t = 0.5 * dtinv * (PSI_GET(w->psi, i, j + 1, w) -
-                                     PSI_GET(w->psi, i, j - 1, w));
+              psi_t = 0.5 * dtinv * (PSI_GET(psi, i, j + 1, w) -
+                                     PSI_GET(psi, i, j - 1, w));
             }
 
           J_r = ratio_sq / sint * psi_t;
@@ -1529,6 +1625,235 @@ pde_calc_J(pde_workspace *w)
         J_sum += gsl_matrix_get(w->J_phi, i, j) * dr;
 
       gsl_vector_set(w->J_lat, j, J_sum);
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
+pde_calc_W()
+  Compute W_r, W_t, and W_p matrices
+
+W_r = [ 0 ; W(u_0)_r ]
+W_t = [ 0 ; W(u_0)_t ]
+W_p = [ 0 ; W(u_0)_p ]
+
+where u_0 is the HWM wind field and W(u) = sigma*(u x B)
+
+Inputs: w   - workspace
+
+Notes:
+1) On output, the w->WR, w->WTHETA and w->WPHI matrices are filled
+*/
+
+static int
+pde_calc_W(pde_workspace *w)
+{
+  size_t i, j;
+
+  for (i = 0; i < w->nr; ++i)
+    {
+      for (j = 0; j < w->ntheta; ++j)
+        {
+          size_t k = PDE_IDX(i, j, w);
+          gsl_matrix *s = w->sigma[k];
+          double s_rr = gsl_matrix_get(s, IDX_R, IDX_R);
+          double s_rt = gsl_matrix_get(s, IDX_R, IDX_THETA);
+          double s_rp = gsl_matrix_get(s, IDX_R, IDX_PHI);
+          double s_tr = gsl_matrix_get(s, IDX_THETA, IDX_R);
+          double s_tt = gsl_matrix_get(s, IDX_THETA, IDX_THETA);
+          double s_tp = gsl_matrix_get(s, IDX_THETA, IDX_PHI);
+          double s_pr = gsl_matrix_get(s, IDX_PHI, IDX_R);
+          double s_pt = gsl_matrix_get(s, IDX_PHI, IDX_THETA);
+          double s_pp = gsl_matrix_get(s, IDX_PHI, IDX_PHI);
+          double W_r, W_t, W_p;
+
+          /* column corresponding to E_{phi0} is 0 */
+          gsl_matrix_set(w->WR, k, 0, 0.0);
+          gsl_matrix_set(w->WTHETA, k, 0, 0.0);
+          gsl_matrix_set(w->WPHI, k, 0, 0.0);
+
+          W_r = s_rr * (w->mwind[k] * w->Bp_main[k] - w->zwind[k] * w->Bt_main[k]) +
+                s_rt * (w->zwind[k] * w->Br_main[k] - w->vwind[k] * w->Bp_main[k]) +
+                s_rp * (w->vwind[k] * w->Bt_main[k] - w->mwind[k] * w->Br_main[k]);
+
+          W_t = s_tr * (w->mwind[k] * w->Bp_main[k] - w->zwind[k] * w->Bt_main[k]) +
+                s_tt * (w->zwind[k] * w->Br_main[k] - w->vwind[k] * w->Bp_main[k]) +
+                s_tp * (w->vwind[k] * w->Bt_main[k] - w->mwind[k] * w->Br_main[k]);
+
+          W_p = s_pr * (w->mwind[k] * w->Bp_main[k] - w->zwind[k] * w->Bt_main[k]) +
+                s_pt * (w->zwind[k] * w->Br_main[k] - w->vwind[k] * w->Bp_main[k]) +
+                s_pp * (w->vwind[k] * w->Bt_main[k] - w->mwind[k] * w->Br_main[k]);
+
+          gsl_matrix_set(w->WR, k, 1, W_r);
+          gsl_matrix_set(w->WTHETA, k, 1, W_t);
+          gsl_matrix_set(w->WPHI, k, 1, W_p);
+        }
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
+pde_calc_Jr()
+  Compute J_r component of current density
+
+J_r = (R/r)^2 1/sin(theta) d/dtheta psi
+
+Inputs: psi - PDE solution vector, length nr*ntheta
+        Jr  - (output) J_r vector (dimensionless), length nr*ntheta
+        w   - workspace
+*/
+
+static int
+pde_calc_Jr(const gsl_vector * psi, gsl_vector * Jr, pde_workspace *w)
+{
+  size_t i, j;
+  const double dtheta = pde_dtheta(w);
+  const double dtinv = 1.0 / dtheta;
+  const double R = w->R / w->r_s;
+  double psi_t;  /* @/@theta psi */
+
+  for (i = 0; i < w->nr; ++i)
+    {
+      double r = pde_r(i, w);
+      double ratio = R / r;
+      double ratio_sq = ratio * ratio;
+
+      for (j = 0; j < w->ntheta; ++j)
+        {
+          size_t k = PDE_IDX(i, j, w);
+          double sint = pde_sint(j, w);
+
+          if (j == 0)
+            {
+              psi_t = dtinv * (PSI_GET(psi, i, j + 1, w) -
+                               PSI_GET(psi, i, j, w));
+            }
+          else if (j == w->ntheta - 1)
+            {
+              psi_t = dtinv * (PSI_GET(psi, i, j, w) -
+                               PSI_GET(psi, i, j - 1, w));
+            }
+          else
+            {
+              psi_t = 0.5 * dtinv * (PSI_GET(psi, i, j + 1, w) -
+                                     PSI_GET(psi, i, j - 1, w));
+            }
+
+          gsl_vector_set(Jr, k, ratio_sq / sint * psi_t);
+        }
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
+pde_calc_Jt()
+  Compute J_t component of current density
+
+J_t = -(R/r) R/sin(theta) d/dr psi
+
+Inputs: psi - PDE solution vector, length nr*ntheta
+        Jt  - (output) J_t vector (dimensionless), length nr*ntheta
+        w   - workspace
+*/
+
+static int
+pde_calc_Jt(const gsl_vector * psi, gsl_vector * Jt, pde_workspace *w)
+{
+  size_t i, j;
+  const double dr = pde_dr(w);
+  const double drinv = 1.0 / dr;
+  const double R = w->R / w->r_s;
+  double psi_r;  /* @/@r psi */
+
+  for (i = 0; i < w->nr; ++i)
+    {
+      double r = pde_r(i, w);
+      double ratio = R / r;
+
+      for (j = 0; j < w->ntheta; ++j)
+        {
+          size_t k = PDE_IDX(i, j, w);
+          double sint = pde_sint(j, w);
+
+          if (i == 0)
+            {
+              psi_r = drinv * (PSI_GET(psi, i + 1, j, w) -
+                               PSI_GET(psi, i, j, w));
+            }
+          else if (i == w->nr - 1)
+            {
+              psi_r = drinv * (PSI_GET(psi, i, j, w) -
+                               PSI_GET(psi, i - 1, j, w));
+            }
+          else
+            {
+              psi_r = 0.5 * drinv * (PSI_GET(psi, i + 1, j, w) -
+                                     PSI_GET(psi, i - 1, j, w));
+            }
+
+          gsl_vector_set(Jt, k, -ratio * R / sint * psi_r);
+        }
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
+pde_calc_E()
+  Compute electric field matrices E_r and E_t
+
+Inputs: w   - workspace
+
+Notes:
+1) w->ER and w->ETHETA are filled
+*/
+
+static int
+pde_calc_E(pde_workspace *w)
+{
+  size_t h, i, j;
+  const double R = w->R / w->r_s;
+
+  for (h = 0; h < w->nrhs; ++h)
+    {
+      for (i = 0; i < w->nr; ++i)
+        {
+          double r = pde_r(i, w);
+          double ratio = R / r;
+
+          for (j = 0; j < w->ntheta; ++j)
+            {
+              size_t k = PDE_IDX(i, j, w);
+              double Jr = gsl_matrix_get(w->JR, k, h);
+              double Jt = gsl_matrix_get(w->JTHETA, k, h);
+              double Wr = gsl_matrix_get(w->WR, k, h);
+              double Wt = gsl_matrix_get(w->WTHETA, k, h);
+              double sint = pde_sint(j, w);
+              gsl_matrix *s = w->sigma[k];
+              double s_rr = gsl_matrix_get(s, IDX_R, IDX_R);
+              double s_rt = gsl_matrix_get(s, IDX_R, IDX_THETA);
+              double s_tr = gsl_matrix_get(s, IDX_THETA, IDX_R);
+              double s_tt = gsl_matrix_get(s, IDX_THETA, IDX_THETA);
+              double Er, Et;
+
+              Er = (s_tt * (Jr - Wr) - s_rt * (Jt - Wt)) / w->alpha[k];
+              Et = -(s_tr * (Jr - Wr) - s_rr * (Jt - Wt)) / w->alpha[k];
+
+              if (h == 0)
+                {
+                  /* add term multiplying E_{phi0} */
+                  Er -= w->beta[k] / w->alpha[k] * ratio / sint;
+                  Et += w->gamma[k] / w->alpha[k] * ratio / sint;
+                }
+
+              /* store electric field */
+              gsl_matrix_set(w->ER, k, h, Er);
+              gsl_matrix_set(w->ETHETA, k, h, Et);
+            }
+        }
     }
 
   return GSL_SUCCESS;
@@ -1609,9 +1934,9 @@ pde2d_rhs(const double r, const double theta, double *rhsval, void *params)
   k = PDE_IDX(i, j, w);
 
   if (w->flags & PDE_FLG_RHS_G1)
-    *rhsval = w->g1[k];
+    *rhsval = gsl_matrix_get(w->G, k, 0);
   else if (w->flags & PDE_FLG_RHS_G2)
-    *rhsval = w->g2[k];
+    *rhsval = gsl_matrix_get(w->G, k, 1);
   else
     {
       GSL_ERROR("invalid rhs flag", GSL_EINVAL);

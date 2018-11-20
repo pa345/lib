@@ -154,12 +154,12 @@ which gives
 
 .. math::
 
-   g &= E_{\phi_0} g_1 + g_2(\mathbf{u}) \\
+   g &= E_{\phi_0} g_1 + g_2(\mathbf{W}) \\
    g_1 &= \frac{r}{R} \alpha \left[ r \frac{\partial}{\partial r} \left( \frac{\gamma}{\alpha} \right) + \sin{\theta} \frac{\partial}{\partial \theta} \left( \frac{1}{\sin{\theta}} \frac{\beta}{\alpha} \right) \right] \\
-   g_2(\mathbf{u}) &= \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \right) \right] \right\}
+   g_2(\mathbf{W}) &= \left( \frac{r}{R} \right)^2 \alpha \sin{\theta} \left\{ \frac{\partial}{\partial r} \left[ \frac{r}{\alpha} \left( \sigma_{\theta r} W_r - \sigma_{rr} W_{\theta} \right) \right] + \frac{\partial}{\partial \theta} \left[ \frac{1}{\alpha} \left( \sigma_{\theta \theta} W_r - \sigma_{r \theta} W_{\theta} \right) \right] \right\}
 
-Recall that :math:`\mathbf{W} = \sigma \left( \mathbf{u} \times \mathbf{B}_0 \right)` and so :math:`g_2(\mathbf{u})` is
-linear in :math:`\mathbf{u}`. Also, we have
+Recall that :math:`\mathbf{W} = \sigma \left( \mathbf{u} \times \mathbf{B}_0 \right)` and so :math:`g_2(\mathbf{W})` is
+linear in :math:`\mathbf{W}` (and also in :math:`\mathbf{u}`). Also, we have
 
 .. math::
 

@@ -663,6 +663,8 @@ mag_log_grids(const int header, const mag_workspace *w)
   int s = 0;
   size_t i, j;
   pde_workspace *pde_p = w->pde_workspace_p;
+  gsl_vector_const_view g1 = gsl_matrix_const_column(pde_p->G, 0);
+  gsl_vector_const_view g2 = gsl_matrix_const_column(pde_p->G, 1);
 
   if (header)
     {
@@ -685,7 +687,8 @@ mag_log_grids(const int header, const mag_workspace *w)
       log_proc(w->log_grids, "# Field %zu: f3(r,theta) (dimensionless)\n", i++);
       log_proc(w->log_grids, "# Field %zu: f4(r,theta) (dimensionless)\n", i++);
       log_proc(w->log_grids, "# Field %zu: f5(r,theta) (dimensionless)\n", i++);
-      log_proc(w->log_grids, "# Field %zu: g(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: g1(r,theta) (dimensionless)\n", i++);
+      log_proc(w->log_grids, "# Field %zu: g2(r,theta) (dimensionless)\n", i++);
       return s;
     }
 
@@ -698,7 +701,7 @@ mag_log_grids(const int header, const mag_workspace *w)
 
           sigma_result(i, j, &s0, &s1, &s2, pde_p->sigma_workspace_p);
 
-          log_proc(w->log_grids, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
+          log_proc(w->log_grids, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
                    90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
                    pde_r_km(i, pde_p) - R_EARTH_KM,
                    s0,
@@ -709,14 +712,15 @@ mag_log_grids(const int header, const mag_workspace *w)
                    pde_p->alpha[k],
                    pde_p->beta[k],
                    pde_p->gamma[k],
-                   pde_p->W_r[k],
-                   pde_p->W_t[k],
+                   gsl_matrix_get(pde_p->WR, k, 1),
+                   gsl_matrix_get(pde_p->WTHETA, k, 1),
                    pde_p->f1[k],
                    pde_p->f2[k],
                    pde_p->f3[k],
                    pde_p->f4[k],
                    pde_p->f5[k],
-                   pde_p->g[k]);
+                   gsl_vector_get(&g1.vector, k),
+                   gsl_vector_get(&g2.vector, k));
         }
 
       log_proc(w->log_grids, "\n");
@@ -749,12 +753,17 @@ mag_log_fields(const int header, const mag_workspace *w)
       i = 1;
       log_proc(w->log_fields, "# Field %zu: latitude (degrees)\n", i++);
       log_proc(w->log_fields, "# Field %zu: radius (km)\n", i++);
-      log_proc(w->log_fields, "# Field %zu: psi(r,theta) [A]\n", i++);
-      log_proc(w->log_fields, "# Field %zu: J_r(r,theta) [A/m^2]\n", i++);
-      log_proc(w->log_fields, "# Field %zu: J_theta(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: psi1(r,theta) [A]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: psi2(r,theta) [A]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_r1(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_r2(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_theta1(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_theta2(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_phi(r,theta) [A/m^2]\n", i++);
-      log_proc(w->log_fields, "# Field %zu: E_r(r,theta) [mV/m]\n", i++);
-      log_proc(w->log_fields, "# Field %zu: E_theta(r,theta) [mV/m]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_r1(r,theta) [mV/m]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_r2(r,theta) [mV/m]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_theta1(r,theta) [mV/m]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: E_theta2(r,theta) [mV/m]\n", i++);
       log_proc(w->log_fields, "# Field %zu: E_phi(r,theta) [mV/m]\n", i++);
       return s;
     }
@@ -763,15 +772,22 @@ mag_log_fields(const int header, const mag_workspace *w)
     {
       for (i = 0; i < pde_p->nr; ++i)
         {
-          log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
+          size_t k = PDE_IDX(i, j, pde_p);
+
+          log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
                    90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
                    pde_r_km(i, pde_p) - R_EARTH_KM,
-                   PSI_GET(pde_p->psi, i, j, pde_p) * pde_p->psi_s,
-                   gsl_matrix_get(pde_p->J_r, i, j) * pde_p->J_s,
-                   gsl_matrix_get(pde_p->J_theta, i, j) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->PSI, k, 0) * pde_p->psi_s,
+                   gsl_matrix_get(pde_p->PSI, k, 1) * pde_p->psi_s,
+                   gsl_matrix_get(pde_p->JR, k, 0) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->JR, k, 1) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->JTHETA, k, 0) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->JTHETA, k, 1) * pde_p->J_s,
                    gsl_matrix_get(pde_p->J_phi, i, j) * pde_p->J_s,
-                   gsl_matrix_get(pde_p->E_r, i, j) * pde_p->E_s * 1.0e3,
-                   gsl_matrix_get(pde_p->E_theta, i, j) * pde_p->E_s * 1.0e3,
+                   gsl_matrix_get(pde_p->ER, k, 0) * pde_p->E_s * 1.0e3,
+                   gsl_matrix_get(pde_p->ER, k, 1) * pde_p->E_s * 1.0e3,
+                   gsl_matrix_get(pde_p->ETHETA, k, 0) * pde_p->E_s * 1.0e3,
+                   gsl_matrix_get(pde_p->ETHETA, k, 1) * pde_p->E_s * 1.0e3,
                    gsl_matrix_get(pde_p->E_phi, i, j) * pde_p->E_s * 1.0e3);
         }
 

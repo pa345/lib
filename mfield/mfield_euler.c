@@ -21,55 +21,6 @@
 
 #include "mfield_euler.h"
 
-static size_t mfield_euler_bin(const size_t sat_idx, const double t,
-                               const mfield_workspace *w);
-
-/*
-mfield_euler_idx()
-  Return index of Euler angles for a given satellite and time period
-
-Inputs: sat_idx - satellite index in [0,nsat-1]
-        t       - time (CDF_EPOCH)
-        w       - workspace
-
-Return: index so that:
-alpha = w->c[index]
-beta = w->c[index + 1]
-gamma = w->c[index + 2]
-
-Notes:
-1) The Euler angles are organized inside the coefficient vector as:
-
-c = [ MF | SV | SA | Euler | Ext ]
-
-and
-
-Euler = [ Euler_0 | Euler_1 | ... | Euler_n ]
-
-where Euler_k are the Euler angles for satellite k. Now
-
-Euler_k = [ Euler_{k0} | Euler_{k1} | ... | Euler_{km} ]
-
-and m = nbins - 1. The appropriate bin is selected according to
-the time, as Euler angles are computed for regular time intervals,
-specified by the euler_period parameter. Finally, for satellite k and
-bin l, the Euler angles are:
-
-Euler_{kl} = [ alpha beta gamma ]
-*/
-
-size_t
-mfield_euler_idx(const size_t sat_idx, const double t, const mfield_workspace *w)
-{
-  /*size_t idx = w->euler_offset + 3 * sat_idx;*/
-  size_t bin = mfield_euler_bin(sat_idx, t, w);
-  size_t idx = w->euler_offset + w->offset_euler[sat_idx] + 3 * bin;
-
-  assert(idx >= w->euler_offset && idx < w->euler_offset + w->p_euler);
-
-  return idx;
-} /* mfield_euler_idx() */
-
 int
 mfield_euler_print(const char *filename, const size_t sat_idx,
                    const mfield_workspace *w)
@@ -123,29 +74,4 @@ mfield_euler_print(const char *filename, const size_t sat_idx,
   fclose(fp);
 
   return 0;
-}
-
-/*
-mfield_euler_bin()
-  Return bin number of Euler angles for a given satellite and time
-
-Inputs: sat_idx - satellite index in [0,nsat-1]
-        t       - time (CDF_EPOCH)
-        w       - workspace
-
-Return: bin number corresponding to Euler angle triplet
-*/
-
-static size_t
-mfield_euler_bin(const size_t sat_idx, const double t, const mfield_workspace *w)
-{
-  double t0 = w->data_workspace_p->t0[sat_idx];
-  double t1 = w->data_workspace_p->t1[sat_idx];
-  double ratio = (t - t0) / (t1 - t0);
-  size_t bin = (size_t) (w->nbins_euler[sat_idx] * ratio);
-
-  if (bin >= w->nbins_euler[sat_idx])
-    bin = w->nbins_euler[sat_idx] - 1;
-
-  return bin;
 }
