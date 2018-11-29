@@ -580,6 +580,9 @@ mfield_free(mfield_workspace *w)
   if (w->J2)
     gsl_spmatrix_free(w->J2);
 
+  if (w->J2_csr)
+    gsl_spmatrix_free(w->J2_csr);
+
   if (w->omp_dX)
     gsl_matrix_free(w->omp_dX);
 

@@ -230,6 +230,7 @@ typedef struct
   gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
   gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p_int-by-p_int */
   gsl_spmatrix *J2;        /* Jacobian matrix for euler, fluxcal and external parameters (sparse), nres-by-(p_euler+p_fluxcal+p_ext) */
+  gsl_spmatrix *J2_csr;    /* J2 matrix in CSR format */
 
   size_t max_threads;      /* maximum number of threads/processors available */
   gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_max */
