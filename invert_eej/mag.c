@@ -611,7 +611,6 @@ mag_proc(const mag_params *params, track_workspace *track_p,
 
       /* log electric field and current density grids */
       mag_log_fields(0, w);
-      exit(1);
 
       if (s)
         {
@@ -619,6 +618,15 @@ mag_proc(const mag_params *params, track_workspace *track_p,
                    ntrack);
         }
 
+#if 1
+      /* invert for EEF */
+      {
+        gsl_vector_view J_sat = gsl_vector_view_array(w->EEJ, w->ncurr);
+
+        invert_calc(&J_sat.vector, w->pde_workspace_p->JPHI_HI);
+        exit(1);
+      }
+#else
       /* invert for EEF */
       {
         gsl_vector_view J_sat = gsl_vector_view_array(w->EEJ, w->ncurr);
@@ -658,6 +666,7 @@ mag_proc(const mag_params *params, track_workspace *track_p,
         if (s == GSL_SUCCESS)
           mag_log_EEF(0, unix_time, lon_eq * M_PI / 180.0, kp, w);
       }
+#endif
     }
 
   log_proc(w->log_general,

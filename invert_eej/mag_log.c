@@ -759,7 +759,8 @@ mag_log_fields(const int header, const mag_workspace *w)
       log_proc(w->log_fields, "# Field %zu: J_r2(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_theta1(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: J_theta2(r,theta) [A/m^2]\n", i++);
-      log_proc(w->log_fields, "# Field %zu: J_phi(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_phi1(r,theta) [A/m^2]\n", i++);
+      log_proc(w->log_fields, "# Field %zu: J_phi2(r,theta) [A/m^2]\n", i++);
       log_proc(w->log_fields, "# Field %zu: E_r1(r,theta) [mV/m]\n", i++);
       log_proc(w->log_fields, "# Field %zu: E_r2(r,theta) [mV/m]\n", i++);
       log_proc(w->log_fields, "# Field %zu: E_theta1(r,theta) [mV/m]\n", i++);
@@ -774,7 +775,7 @@ mag_log_fields(const int header, const mag_workspace *w)
         {
           size_t k = PDE_IDX(i, j, pde_p);
 
-          log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
+          log_proc(w->log_fields, "%8.4f %8.4f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
                    90.0 - pde_theta(j, pde_p) * 180.0 / M_PI,
                    pde_r_km(i, pde_p) - R_EARTH_KM,
                    gsl_matrix_get(pde_p->PSI, k, 0) * pde_p->psi_s,
@@ -783,7 +784,8 @@ mag_log_fields(const int header, const mag_workspace *w)
                    gsl_matrix_get(pde_p->JR, k, 1) * pde_p->J_s,
                    gsl_matrix_get(pde_p->JTHETA, k, 0) * pde_p->J_s,
                    gsl_matrix_get(pde_p->JTHETA, k, 1) * pde_p->J_s,
-                   gsl_matrix_get(pde_p->J_phi, i, j) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->JPHI, k, 0) * pde_p->J_s,
+                   gsl_matrix_get(pde_p->JPHI, k, 1) * pde_p->J_s,
                    gsl_matrix_get(pde_p->ER, k, 0) * pde_p->E_s * 1.0e3,
                    gsl_matrix_get(pde_p->ER, k, 1) * pde_p->E_s * 1.0e3,
                    gsl_matrix_get(pde_p->ETHETA, k, 0) * pde_p->E_s * 1.0e3,

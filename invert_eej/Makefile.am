@@ -4,6 +4,7 @@ libmag_la_SOURCES =        \
   cfg.c                    \
 	coord.c                  \
 	geod2geoc.c              \
+	invert.c                 \
 	inverteef.c              \
   log.c                    \
 	mag.c                    \

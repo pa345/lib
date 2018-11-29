@@ -54,7 +54,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   gsl_matrix_view JTJ_int; /* internal field portion of J^T J */
   gsl_matrix_view vJ2TJ1;   /* J_2^T J_1, p_sparse-by-p_int */
   gsl_matrix *J2TJ1 = NULL;
-  gsl_spmatrix *J2_crs = NULL;
+  gsl_spmatrix *J2_csr = NULL;
   struct timeval tv0, tv1, tv2, tv3;
 
   gettimeofday(&tv0, NULL);
@@ -81,15 +81,15 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       /* calculate sparse part of Jacobian J_2 */
       mfield_calc_J2(x, w->J2, w);
 
-      mfield_debug("mfield_calc_df3: compressing J_2 to CRS...");
+      mfield_debug("mfield_calc_df3: compressing J_2 to CSR...");
       gettimeofday(&tv2, NULL);
-      J2_crs = gsl_spmatrix_crs(w->J2);
+      J2_csr = gsl_spmatrix_csr(w->J2);
       gettimeofday(&tv3, NULL);
       mfield_debug("done (%g seconds)\n", time_diff(tv2, tv3));
 
       mfield_debug("mfield_calc_df3: computing sqrt(W) J_2...");
       gettimeofday(&tv2, NULL);
-      gsl_spmatrix_scale_rows(J2_crs, w->sqrt_wts_final);
+      gsl_spmatrix_scale_rows(J2_csr, w->sqrt_wts_final);
       gettimeofday(&tv3, NULL);
       mfield_debug("done (%g seconds)\n", time_diff(tv2, tv3));
 
@@ -100,7 +100,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
 
           mfield_debug("mfield_calc_df3: computing J_2^T W J_2...");
           gettimeofday(&tv2, NULL);
-          gsl_spblas_dusrk(CblasLower, CblasTrans, 1.0, J2_crs, 0.0, &J2TJ2.matrix);
+          gsl_spblas_dussyrk(CblasLower, CblasTrans, 1.0, J2_csr, 0.0, &J2TJ2.matrix);
           gettimeofday(&tv3, NULL);
           mfield_debug("done (%g seconds)\n", time_diff(tv2, tv3));
 
@@ -113,13 +113,13 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
         {
           /* store J_2(x)^T sqrt(W) u in lower part of v */
           gsl_vector_view tmp = gsl_vector_subvector(v, w->p_int, w->p_sparse);
-          gsl_spblas_dusmv(CblasTrans, 1.0, J2_crs, u, 0.0, &tmp.vector);
+          gsl_spblas_dusmv(CblasTrans, 1.0, J2_csr, u, 0.0, &tmp.vector);
         }
       else
         {
           /* store J_2(x) u_2 in v */
           gsl_vector_const_view u2 = gsl_vector_const_subvector(u, w->p_int, w->p_sparse);
-          gsl_spblas_dusmv(CblasNoTrans, 1.0, J2_crs, &u2.vector, 0.0, v);
+          gsl_spblas_dusmv(CblasNoTrans, 1.0, J2_csr, &u2.vector, 0.0, v);
         }
     }
 
@@ -196,7 +196,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
                     {
 #pragma omp critical
                       {
-                        mfield_jacobian_J2TJ1(t, sqrt_wj, ridx, &vx.vector, J2_crs, J2TJ1, w);
+                        mfield_jacobian_J2TJ1(t, sqrt_wj, ridx, &vx.vector, J2_csr, J2TJ1, w);
                       }
                     }
                 }
@@ -227,7 +227,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
                     {
 #pragma omp critical
                       {
-                        mfield_jacobian_J2TJ1(t, sqrt_wj, ridx, &vy.vector, J2_crs, J2TJ1, w);
+                        mfield_jacobian_J2TJ1(t, sqrt_wj, ridx, &vy.vector, J2_csr, J2TJ1, w);
                       }
                     }
                 }
@@ -258,7 +258,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
                     {
 #pragma omp critical
                       {
-                        mfield_jacobian_J2TJ1(t, sqrt_wj, ridx, &vz.vector, J2_crs, J2TJ1, w);
+                        mfield_jacobian_J2TJ1(t, sqrt_wj, ridx, &vz.vector, J2_csr, J2TJ1, w);
                       }
                     }
                 }
@@ -294,7 +294,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
 #pragma omp critical
               {
                 mfield_jacobian_F(TransJ, t, sqrt_wj, u, ridx, &vx.vector, &vy.vector, &vz.vector,
-                                  B_total, J2_crs, &Jv.vector, v, J2TJ1, w);
+                                  B_total, J2_csr, &Jv.vector, v, J2TJ1, w);
               }
 
               ++ridx;
@@ -453,8 +453,8 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       gsl_vector_add(&v.vector, w->LTL);
     }
 
-  if (J2_crs)
-    gsl_spmatrix_free(J2_crs);
+  if (J2_csr)
+    gsl_spmatrix_free(J2_csr);
 
 #if 0
   if (u)
@@ -624,7 +624,7 @@ Inputs: TransJ      - op(J)
                       B_model[1] = Y model
                       B_model[2] = Z model
                       B_model[3] = F model
-        J2          - J_2 matrix, CRS format (may be NULL)
+        J2          - J_2 matrix, CSR format (may be NULL)
         J_int       - (output) row of Jacobian (weighted) for
                       scalar residual and internal Green's functions, p_int-by-1
         v           - (output) updated op(J) u vector
@@ -678,11 +678,13 @@ mfield_jacobian_F(CBLAS_TRANSPOSE_t TransJ, const double t, const double sqrt_wj
 
   if (J2 && J2TJ1)
     {
-      const size_t *Ap = J2->p;
-      const size_t *Aj = J2->i;
+      const int *Ap = J2->p;
+      const int *Aj = J2->i;
       const double *Ad = J2->data;
-      size_t k, p;
+      size_t k;
+      int p;
 
+#if 0
       for (k = 0; k < J_int->size; ++k)
         {
           double Jk = gsl_vector_get(J_int, k);
@@ -693,6 +695,13 @@ mfield_jacobian_F(CBLAS_TRANSPOSE_t TransJ, const double t, const double sqrt_wj
               *ptr += Ad[p] * Jk;
             }
         }
+#else
+      for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+        {
+          gsl_vector_view out = gsl_matrix_row(J2TJ1, Aj[p]);
+          gsl_blas_daxpy(Ad[p], J_int, &out.vector);
+        }
+#endif
     }
 
   return GSL_SUCCESS;
@@ -708,7 +717,7 @@ Inputs: t       - scaled timestamp
         sqrt_wj - sqrt(weight) for this data point, sqrt(W(ridx,ridx))
         ridx    - index of this row in [0,nres-1]
         dB_int  - internal Green's functions for desired component, length nnm_max
-        J2      - J_2 matrix, CRS format
+        J2      - J_2 matrix, CSR format
         J2TJ1   - (output) J_2^T J_1 block of JTJ matrix, size p_sparse-by-p_int
         w       - workspace
 
@@ -722,49 +731,66 @@ mfield_jacobian_J2TJ1(const double t, const double sqrt_wj, const size_t ridx,
                       const gsl_vector * dB_int, const gsl_spmatrix * J2, gsl_matrix * J2TJ1,
                       const mfield_workspace * w)
 {
-  if (!GSL_SPMATRIX_ISCRS(J2))
+  if (!GSL_SPMATRIX_ISCSR(J2))
     {
-      GSL_ERROR("require matrix in CRS format", GSL_EINVAL);
+      GSL_ERROR("require matrix in CSR format", GSL_EINVAL);
     }
   else
     {
-      const size_t *Ap = J2->p;
-      const size_t *Aj = J2->i;
+      const int *Ap = J2->p;
+      const int *Aj = J2->i;
       const double *Ad = J2->data;
-      size_t p;
+      int p;
 
-      if (w->nnm_mf > 0)
+      /*printf("id0 = %d\n", omp_get_thread_num());*/
+
+/*#pragma omp parallel sections*/
+      {
+        /*#pragma omp section*/
         {
-          gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_mf);
-
-          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+          /*printf("id1 = %d\n", omp_get_thread_num());*/
+          if (w->nnm_mf > 0)
             {
-              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], 0, w->nnm_mf);
-              gsl_blas_daxpy(-sqrt_wj * Ad[p], &in.vector, &out.vector);
+              gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_mf);
+
+              for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+                {
+                  gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], 0, w->nnm_mf);
+                  gsl_blas_daxpy(-sqrt_wj * Ad[p], &in.vector, &out.vector);
+                }
             }
         }
 
-      if (w->nnm_sv > 0)
+        /*#pragma omp section*/
         {
-          gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_sv);
-
-          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+          /*printf("id2 = %d\n", omp_get_thread_num());*/
+          if (w->nnm_sv > 0)
             {
-              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->sv_offset, w->nnm_sv);
-              gsl_blas_daxpy(-t * sqrt_wj * Ad[p], &in.vector, &out.vector);
+              gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_sv);
+
+              for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+                {
+                  gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->sv_offset, w->nnm_sv);
+                  gsl_blas_daxpy(-t * sqrt_wj * Ad[p], &in.vector, &out.vector);
+                }
             }
         }
 
-      if (w->nnm_sa > 0)
+        /*#pragma omp section*/
         {
-          gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_sa);
-
-          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+          /*printf("id3 = %d\n", omp_get_thread_num());*/
+          if (w->nnm_sa > 0)
             {
-              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->sa_offset, w->nnm_sa);
-              gsl_blas_daxpy(-0.5 * t * t * sqrt_wj * Ad[p], &in.vector, &out.vector);
+              gsl_vector_const_view in = gsl_vector_const_subvector(dB_int, 0, w->nnm_sa);
+
+              for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+                {
+                  gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->sa_offset, w->nnm_sa);
+                  gsl_blas_daxpy(-0.5 * t * t * sqrt_wj * Ad[p], &in.vector, &out.vector);
+                }
             }
         }
+      }
 
       return GSL_SUCCESS;
     }

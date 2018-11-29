@@ -75,6 +75,8 @@ typedef struct
  * Prototypes
  */
 
+int invert_calc(gsl_vector *J_sat, const gsl_matrix * J_phi);
+
 inverteef_workspace *inverteef_alloc(inverteef_parameters *params);
 void inverteef_free(inverteef_workspace *w);
 int inverteef_calc(gsl_vector *J_sat, const double *qdlat_pde, gsl_vector *J_lat_E,

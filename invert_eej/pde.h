@@ -128,13 +128,16 @@ typedef struct
   double rcond;    /* reciprical condition number */
   size_t nrhs;     /* number of right hand sides */
 
-  gsl_matrix *WR;      /* W_r matrix, nr*ntheta-by-nrhs */
-  gsl_matrix *WTHETA;  /* W_theta matrix, nr*ntheta-by-nrhs */
-  gsl_matrix *WPHI;    /* W_phi matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *WR;      /* [sigma*(UxB)]_r matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *WTHETA;  /* [sigma*(UxB)]_theta matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *WPHI;    /* [sigma*(UxB)]_phi matrix, nr*ntheta-by-nrhs */
   gsl_matrix *JR;      /* J_r(psi_i) matrix, nr*ntheta-by-nrhs */
   gsl_matrix *JTHETA;  /* J_theta(psi_i) matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *JPHI;    /* J_phi(psi_i) matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *JPHI_HI; /* height-integrated J_phi(psi_i) matrix, ntheta-by-nrhs */
   gsl_matrix *ER;      /* E_r(psi_i) matrix, nr*ntheta-by-nrhs */
   gsl_matrix *ETHETA;  /* E_theta(psi_i) matrix, nr*ntheta-by-nrhs */
+  gsl_matrix *EPHI;    /* E_phi(psi_i) matrix, nr*ntheta-by-nrhs */
 
   gsl_matrix *J_r;     /* J_r current solution (A/m^2) */
   gsl_matrix *J_theta; /* J_theta current solution (A/m^2) */
@@ -159,10 +162,6 @@ typedef struct
   double *f3;
   double *f4;
   double *f5;
-
-  /* (r,theta) components of W = sigma * (U x B), size nr*ntheta */
-  double *W_r;
-  double *W_t;
 
   double E_phi0;     /* eastward electric field in V/m */
   int compute_winds; /* use winds in PDE solution? */

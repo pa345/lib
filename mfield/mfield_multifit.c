@@ -579,7 +579,6 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
        * structure, without worrying about race conditions
        */
       parallel = 0;
-      J->spflags |= GSL_SPMATRIX_FLG_PATTERN;
     }
   else
     {

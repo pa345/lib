@@ -61,6 +61,7 @@ static int pde_calc_J(const gsl_vector * psi, pde_workspace *w);
 static int pde_calc_W(pde_workspace *w);
 static int pde_calc_Jr(const gsl_vector * psi, gsl_vector * Jr, pde_workspace *w);
 static int pde_calc_Jt(const gsl_vector * psi, gsl_vector * Jt, pde_workspace *w);
+static int pde_calc_Jp(pde_workspace *w);
 static int pde_calc_E(pde_workspace *w);
 static int pde_main_field(pde_workspace *w);
 static int pde_debug(pde_workspace *w, const char *format, ...);
@@ -151,14 +152,6 @@ pde_alloc(pde_parameters *params)
       return 0;
     }
 
-  w->W_r = malloc(nrt * sizeof(double));
-  w->W_t = malloc(nrt * sizeof(double));
-  if (!w->W_r || !w->W_t)
-    {
-      pde_free(w);
-      return 0;
-    }
-
   w->zwind = malloc(nrt * sizeof(double));
   w->mwind = malloc(nrt * sizeof(double));
   w->vwind = malloc(nrt * sizeof(double));
@@ -201,13 +194,16 @@ pde_alloc(pde_parameters *params)
   w->PSI = gsl_matrix_alloc(nrt, w->nrhs);
   w->JR = gsl_matrix_alloc(nrt, w->nrhs);
   w->JTHETA = gsl_matrix_alloc(nrt, w->nrhs);
+  w->JPHI = gsl_matrix_alloc(nrt, w->nrhs);
+  w->JPHI_HI = gsl_matrix_alloc(w->ntheta, w->nrhs);
   w->WR = gsl_matrix_alloc(nrt, w->nrhs);
   w->WTHETA = gsl_matrix_alloc(nrt, w->nrhs);
   w->WPHI = gsl_matrix_alloc(nrt, w->nrhs);
   w->ER = gsl_matrix_alloc(nrt, w->nrhs);
   w->ETHETA = gsl_matrix_alloc(nrt, w->nrhs);
-  if (!w->S || !w->B || !w->G || !w->PSI || !w->JR || !w->JTHETA ||
-      !w->WR || !w->WTHETA || !w->WPHI || !w->ER || !w->ETHETA)
+  w->EPHI = gsl_matrix_alloc(nrt, w->nrhs);
+  if (!w->S || !w->B || !w->G || !w->PSI || !w->JR || !w->JTHETA || !w->JPHI ||
+      !w->JPHI_HI || !w->WR || !w->WTHETA || !w->WPHI || !w->ER || !w->ETHETA || !w->EPHI)
     {
       pde_free(w);
       return 0;
@@ -322,12 +318,6 @@ pde_free(pde_workspace *w)
   if (w->f5)
     free(w->f5);
 
-  if (w->W_r)
-    free(w->W_r);
-
-  if (w->W_t)
-    free(w->W_t);
-
   if (w->zwind)
     free(w->zwind);
 
@@ -367,6 +357,12 @@ pde_free(pde_workspace *w)
   if (w->JTHETA)
     gsl_matrix_free(w->JTHETA);
 
+  if (w->JPHI)
+    gsl_matrix_free(w->JPHI);
+
+  if (w->JPHI_HI)
+    gsl_matrix_free(w->JPHI_HI);
+
   if (w->WR)
     gsl_matrix_free(w->WR);
 
@@ -381,6 +377,9 @@ pde_free(pde_workspace *w)
 
   if (w->ETHETA)
     gsl_matrix_free(w->ETHETA);
+
+  if (w->EPHI)
+    gsl_matrix_free(w->EPHI);
 
   if (w->r_grid)
     free(w->r_grid);
@@ -715,6 +714,10 @@ pde_solve(const int compute_winds, const double E_phi0, pde_workspace *w)
 
   pde_debug(w, "pde_solve: computing E matrices...");
   s += pde_calc_E(w);
+  pde_debug(w, "done (s = %d)\n", s);
+
+  pde_debug(w, "pde_solve: computing J_phi matrix...");
+  s += pde_calc_Jp(w);
   pde_debug(w, "done (s = %d)\n", s);
 
 #if 0
@@ -1102,6 +1105,7 @@ pde_coefficients(pde_workspace *w)
           if (w->alpha[k] < alpha_min)
             w->alpha[k] = alpha_min;
 
+#if 0
           /* compute W = sigma (U x B) grids */
 
           /* [sigma U x B]_r */
@@ -1119,6 +1123,7 @@ pde_coefficients(pde_workspace *w)
                               w->vwind[k] * w->Bp_main[k]) +
                       s_tp * (w->vwind[k] * w->Bt_main[k] -
                               w->mwind[k] * w->Br_main[k]);
+#endif /*XXX*/
         }
     }
 
@@ -1501,6 +1506,7 @@ pde_compute_solution(const gsl_spmatrix *A, const gsl_matrix *B, gsl_matrix *X, 
   return s;
 }
 
+#if 0/*XXX*/
 /*
 pde_calc_J()
   Compute current density components and store in w->J_{r,theta,phi}. Also
@@ -1629,6 +1635,7 @@ pde_calc_J(const gsl_vector * psi, pde_workspace *w)
 
   return GSL_SUCCESS;
 }
+#endif
 
 /*
 pde_calc_W()
@@ -1802,13 +1809,77 @@ pde_calc_Jt(const gsl_vector * psi, gsl_vector * Jt, pde_workspace *w)
 }
 
 /*
+pde_calc_Jp()
+  Compute J_p component of current density
+
+J_p = s_pr E_r + s_pt E_t + s_pp E_p + W_p
+
+Also compute height-integrated J_p:
+
+J^{HI}_p(theta) = sum_{i=1}^{nr} J_p(r_i,theta)
+
+Inputs: w - workspace
+
+Notes:
+1) pde_calc_E() must be called first to compute electric field matrices
+2) pde_calc_W() must be called first to compute wind matrices
+3) Output is stored in w->JPHI
+4) Height-integrated J_phi is stored in w->JPHI_HI
+*/
+
+static int
+pde_calc_Jp(pde_workspace *w)
+{
+  const double dr = pde_dr(w);
+  size_t h, i, j;
+
+  for (h = 0; h < w->nrhs; ++h)
+    {
+      for (i = 0; i < w->nr; ++i)
+        {
+          for (j = 0; j < w->ntheta; ++j)
+            {
+              size_t k = PDE_IDX(i, j, w);
+              gsl_matrix *s = w->sigma[k];
+              double s_pr = gsl_matrix_get(s, IDX_PHI, IDX_R);
+              double s_pt = gsl_matrix_get(s, IDX_PHI, IDX_THETA);
+              double s_pp = gsl_matrix_get(s, IDX_PHI, IDX_PHI);
+              double Er = gsl_matrix_get(w->ER, k, h);
+              double Et = gsl_matrix_get(w->ETHETA, k, h);
+              double Ep = gsl_matrix_get(w->EPHI, k, h);
+              double Wp = gsl_matrix_get(w->WPHI, k, h);
+              double Jp = s_pr * Er + s_pt * Et + s_pp * Ep + Wp;
+
+              gsl_matrix_set(w->JPHI, k, h, Jp);
+            }
+        }
+
+      /* compute height integrated J_phi */
+      for (j = 0; j < w->ntheta; ++j)
+        {
+          double J_sum = 0.0;
+
+          for (i = 0; i < w->nr; ++i)
+            {
+              size_t k = PDE_IDX(i, j, w);
+              J_sum += gsl_matrix_get(w->JPHI, k, h) * dr;
+            }
+
+          gsl_matrix_set(w->JPHI_HI, j, h, J_sum);
+        }
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
 pde_calc_E()
   Compute electric field matrices E_r and E_t
 
 Inputs: w   - workspace
 
 Notes:
-1) w->ER and w->ETHETA are filled
+1) w->ER, w->ETHETA and w->EPHI are filled
 */
 
 static int
@@ -1837,21 +1908,25 @@ pde_calc_E(pde_workspace *w)
               double s_rt = gsl_matrix_get(s, IDX_R, IDX_THETA);
               double s_tr = gsl_matrix_get(s, IDX_THETA, IDX_R);
               double s_tt = gsl_matrix_get(s, IDX_THETA, IDX_THETA);
-              double Er, Et;
+              double Er, Et, Ep;
 
               Er = (s_tt * (Jr - Wr) - s_rt * (Jt - Wt)) / w->alpha[k];
               Et = -(s_tr * (Jr - Wr) - s_rr * (Jt - Wt)) / w->alpha[k];
+              Ep = 0.0;
 
               if (h == 0)
                 {
+                  Ep = ratio / sint;
+
                   /* add term multiplying E_{phi0} */
-                  Er -= w->beta[k] / w->alpha[k] * ratio / sint;
-                  Et += w->gamma[k] / w->alpha[k] * ratio / sint;
+                  Er -= w->beta[k] / w->alpha[k] * Ep;
+                  Et += w->gamma[k] / w->alpha[k] * Ep;
                 }
 
               /* store electric field */
               gsl_matrix_set(w->ER, k, h, Er);
               gsl_matrix_set(w->ETHETA, k, h, Et);
+              gsl_matrix_set(w->EPHI, k, h, Ep);
             }
         }
     }

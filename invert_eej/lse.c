@@ -39,7 +39,7 @@ lse()
 min_x || A x - c ||_2 subject to: B x = d
 */
 
-int
+static int
 lse(const gsl_matrix *A, const gsl_matrix *B, const gsl_vector *c,
     const gsl_vector *d, gsl_vector *x)
 {
@@ -116,7 +116,7 @@ min_x || A x - c ||_2 subject to: B x = d
 where we are performing a weighted least squares fit with weights w
 */
 
-int
+static int
 wlse(const gsl_matrix *A, const gsl_matrix *B, const gsl_vector *c,
      const gsl_vector *d, const gsl_vector *w, gsl_vector *x)
 {
