@@ -162,16 +162,18 @@ int
 initial_guess(gsl_vector *c, mfield_workspace *w)
 {
   size_t i;
+  msynth_workspace *msynth_p = msynth_igrf_read(MSYNTH_IGRF_FILE);
 
   gsl_vector_set_zero(c);
 
+  mfield_fill_g(c, msynth_p, NULL, w);
+
+#if 0
   {
-    msynth_workspace *msynth_p = msynth_igrf_read(MSYNTH_IGRF_FILE);
     const size_t nmax = GSL_MIN(w->nmax_max, msynth_p->nmax);
     const double t = w->epoch;                       /* desired epoch */
-    const double t0 = msynth_get_epoch(t, msynth_p); /* IGRF epoch */
-    const double dt = t - t0;
-    size_t n;
+    const size_t ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
+    size_t n, j;
     int m;
 
     for (n = 1; n <= nmax; ++n)
@@ -183,20 +185,18 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
             size_t midx = msynth_nmidx(n, m, msynth_p);
             size_t cidx = mfield_coeff_nmidx(n, m);
             double gnm = msynth_get_mf(t, midx, msynth_p);
-            double dgnm = msynth_get_sv(t, midx, msynth_p);
 
-            /*
-             * use SV prediction to update main field coefficients for new
-             * epoch
-             */
-            mfield_set_mf(c, cidx, gnm + dt * dgnm, w);
-            mfield_set_sv(c, cidx, dgnm, w);
-            mfield_set_sa(c, cidx, 0.0, w);
+            for (j = 0; j < ncontrol; ++j)
+              {
+                size_t idx = CIDX2(j, ncontrol, cidx, w->nnm_mf);
+                gsl_vector_set(c, idx, gnm);
+              }
           }
       }
 
     msynth_free(msynth_p);
   }
+#endif
 
   /* initialize fluxgate calibration scale factors to 1.0, leaving offsets and angles at 0 */
   for (i = 0; i < w->nsat; ++i)
@@ -213,6 +213,8 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
           gsl_matrix_set_all(&m.matrix, 1.0);
         }
     }
+
+  msynth_free(msynth_p);
 
   return 0;
 }
@@ -334,6 +336,10 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
       return -1;
     }
 
+  if (config_lookup_int(&cfg, "nmax_core", &ival))
+    mfield_params->nmax_core = (size_t) ival;
+  if (config_lookup_int(&cfg, "nmax", &ival))
+    mfield_params->nmax = (size_t) ival;
   if (config_lookup_int(&cfg, "nmax_mf", &ival))
     mfield_params->nmax_mf = (size_t) ival;
   if (config_lookup_int(&cfg, "nmax_sv", &ival))
@@ -345,6 +351,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->epoch = fval;
   if (config_lookup_float(&cfg, "R", &fval))
     mfield_params->R = fval;
+  if (config_lookup_float(&cfg, "gauss_period", &fval))
+    mfield_params->gauss_period = fval;
   if (config_lookup_float(&cfg, "euler_period", &fval))
     mfield_params->euler_period = fval;
   if (config_lookup_float(&cfg, "fluxcal_period", &fval))
@@ -372,6 +380,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
   if (config_lookup_int(&cfg, "fit_cbias", &ival))
     mfield_params->fit_cbias = ival;
 
+  if (config_lookup_int(&cfg, "gauss_spline_order", &ival))
+    mfield_params->gauss_spline_order = ival;
   if (config_lookup_int(&cfg, "euler_spline_order", &ival))
     mfield_params->euler_spline_order = ival;
   if (config_lookup_int(&cfg, "fluxcal_spline_order", &ival))
@@ -647,6 +657,8 @@ main(int argc, char *argv[])
   parse_config_file(config_file, &mfield_params, &data_params);
   fprintf(stderr, "done\n");
 
+  mfield_params.nmax = GSL_MAX(mfield_params.nmax_core, mfield_params.nmax);
+
   /* check if any command-line arguments should override config file values */
   if (epoch > 0.0)
     mfield_params.epoch = epoch;
@@ -681,8 +693,10 @@ main(int argc, char *argv[])
       data_params.fit_DXDT = data_params.fit_DYDT = data_params.fit_DZDT = 0;
     }
 
-  fprintf(stderr, "main: epoch = %.2f\n", mfield_params.epoch);
-  fprintf(stderr, "main: radius = %g [km]\n", mfield_params.R);
+  fprintf(stderr, "main: epoch           = %.2f\n", mfield_params.epoch);
+  fprintf(stderr, "main: radius          = %g [km]\n", mfield_params.R);
+  fprintf(stderr, "main: core field nmax = %zu\n", mfield_params.nmax_core);
+  fprintf(stderr, "main: total nmax      = %zu\n", mfield_params.nmax);
 
   if (mfield_params.fit_mf)
     {
@@ -702,6 +716,7 @@ main(int argc, char *argv[])
       fprintf(stderr, "main: SA damping = %g\n", mfield_params.lambda_sa);
     }
 
+  fprintf(stderr, "main: Gauss period   = %g [days]\n", mfield_params.gauss_period);
   fprintf(stderr, "main: euler period   = %g [days]\n", mfield_params.euler_period);
   fprintf(stderr, "main: fluxcal period = %g [days]\n", mfield_params.fluxcal_period);
   fprintf(stderr, "main: tmin = %g\n", tmin);
@@ -798,11 +813,10 @@ main(int argc, char *argv[])
       exit(1);
     }
 
-  fprintf(stderr, "main: number of main field parameters:           %zu\n", mfield_workspace_p->nnm_mf);
-  fprintf(stderr, "main: number of secular variation parameters:    %zu\n", mfield_workspace_p->nnm_sv);
-  fprintf(stderr, "main: number of secular acceleration parameters: %zu\n", mfield_workspace_p->nnm_sa);
+  fprintf(stderr, "main: number of core field spline parameters:    %zu\n", mfield_workspace_p->p_core);
+  fprintf(stderr, "main: number of crustal field parameters:        %zu\n", mfield_workspace_p->p_crust);
   fprintf(stderr, "main: number of Euler angle parameters:          %zu\n", mfield_workspace_p->p_euler);
-  fprintf(stderr, "main: number of fluxgate calibration parameters  %zu\n", mfield_workspace_p->p_fluxcal);
+  fprintf(stderr, "main: number of fluxgate calibration parameters: %zu\n", mfield_workspace_p->p_fluxcal);
   fprintf(stderr, "main: number of external field parameters:       %zu\n", mfield_workspace_p->p_ext);
   fprintf(stderr, "main: number of crustal bias parameters:         %zu\n", mfield_workspace_p->p_bias);
 
@@ -845,7 +859,7 @@ main(int argc, char *argv[])
       /* output coefficients for this iteration */
       sprintf(buf, "coef.txt.iter%zu", iter);
       fprintf(stderr, "main: writing coefficient file %s...", buf);
-      mfield_write_ascii(buf, mfield_workspace_p->epoch, 0, mfield_workspace_p);
+      mfield_write_ascii(buf, mfield_workspace_p->epoch, coeffs, mfield_workspace_p);
       fprintf(stderr, "done\n");
 
       /* output spectrum for this iteration */
@@ -886,7 +900,7 @@ main(int argc, char *argv[])
 
   sprintf(buf, "mfield_coeffs.txt");
   fprintf(stderr, "main: writing coefficients to %s...", buf);
-  mfield_write_ascii(buf, mfield_workspace_p->epoch, 1, mfield_workspace_p);
+  mfield_write_ascii(buf, mfield_workspace_p->epoch, coeffs, mfield_workspace_p);
   fprintf(stderr, "done\n");
 
   {
@@ -1052,22 +1066,30 @@ main(int argc, char *argv[])
           }
       }
 
-    fprintf(stderr, "main: printing internal coefficients up to degree 3\n");
-    for (n = 1; n <= GSL_MIN(3, mfield_workspace_p->nmax_max); ++n)
-      {
-        int ni = (int) n;
-        for (m = -ni; m <= ni; ++m)
-          {
-            int mabs = abs(m);
-            size_t cidx = mfield_coeff_nmidx(n, m);
-            char c = (m < 0) ? 'h' : 'g';
-            double gnm = mfield_get_mf(coeffs, cidx, mfield_workspace_p);
-            double dgnm = mfield_get_sv(coeffs, cidx, mfield_workspace_p);
-            double ddgnm = mfield_get_sa(coeffs, cidx, mfield_workspace_p);
+    {
+      gsl_bspline2_workspace *gauss_spline_p = mfield_workspace_p->gauss_spline_workspace_p[0];
+      size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+      double t = mfield_params.epoch;
 
-            fprintf(stderr, "%c(%d,%d) = %12g (%12g,%12g)\n", c, ni, mabs,
-                    gnm, dgnm, ddgnm);
-          }
+      fprintf(stderr, "main: printing internal coefficients up to degree 3\n");
+      for (n = 1; n <= GSL_MIN(3, mfield_workspace_p->nmax_max); ++n)
+        {
+          int ni = (int) n;
+          for (m = -ni; m <= ni; ++m)
+            {
+              int mabs = abs(m);
+              size_t cidx = mfield_coeff_nmidx(n, m);
+              gsl_vector_view v = gsl_vector_subvector_with_stride(coeffs, cidx, mfield_workspace_p->nnm_mf, ncontrol);
+              char c = (m < 0) ? 'h' : 'g';
+              double gnm, dgnm, ddgnm;
+
+              gsl_bspline2_eval(t, &v.vector, &gnm, gauss_spline_p);
+              gsl_bspline2_eval_deriv(t, &v.vector, 1, &dgnm, gauss_spline_p);
+              gsl_bspline2_eval_deriv(t, &v.vector, 2, &ddgnm, gauss_spline_p);
+
+              fprintf(stderr, "%c(%d,%d) = %12g (%12g,%12g)\n", c, ni, mabs, gnm, dgnm, ddgnm);
+            }
+        }
       }
   }
 

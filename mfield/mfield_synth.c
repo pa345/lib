@@ -11,9 +11,12 @@
 
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
+#include <gsl/gsl_permutation.h>
+#include <gsl/gsl_linalg.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
+#include <common/common.h>
 #include <msynth/msynth.h>
 
 #include "euler.h"
@@ -31,62 +34,19 @@ static int mfield_synth_calc_dBdt(const double t, const double r, const double t
 int
 mfield_synth_g(gsl_vector * g, mfield_workspace * w)
 {
-  const mfield_parameters *params = &(w->params);
+  msynth_workspace *core_p = msynth_shc_read(MSYNTH_CHAOS_FILE);
+  msynth_workspace *crust_p = msynth_mf7_read(MSYNTH_MF7_FILE);
 
   gsl_vector_set_zero(g);
 
-  /* initialize MF/SV coefficients g from CHAOS */
-  {
-    msynth_workspace *msynth_p = msynth_swarm_read(MSYNTH_CHAOS_FILE);
-    const double epoch = 2010.0;
-    size_t nmin = params->synth_nmin;
-    size_t nmax = GSL_MIN(GSL_MIN(msynth_p->nmax, w->nmax_max), 15);
-    size_t n;
+  /* initialize internal field coefficients using CHAOS */
+  mfield_fill_g(g, core_p, crust_p, w);
 
-    for (n = nmin; n <= nmax; ++n)
-      {
-        int M = (int) n;
-        int m;
+  msynth_free(core_p);
+  msynth_free(crust_p);
 
-        for (m = -M; m <= M; ++m)
-          {
-            size_t cidx = mfield_coeff_nmidx(n, m);
-            double gnm = msynth_get_gnm(epoch, n, m, msynth_p);
-            double dgnm = msynth_get_dgnm(epoch, n, m, msynth_p);
-            double ddgnm = (double)n + (double)m / (double)n; /* choose some SA value */
-
-            mfield_set_mf(g, cidx, gnm, w);
-            mfield_set_sv(g, cidx, dgnm, w);
-            mfield_set_sa(g, cidx, ddgnm, w);
-          }
-      }
-
-    msynth_free(msynth_p);
-  }
-
-  /* fill in crustal field part of g with MF7 values */
-  if (w->nmax_mf >= 16)
-    {
-      msynth_workspace *crust_p = msynth_mf7_read(MSYNTH_MF7_FILE);
-      size_t nmin = GSL_MAX(params->synth_nmin, crust_p->eval_nmin);
-      size_t nmax = GSL_MIN(w->nmax_mf, crust_p->eval_nmax);
-      size_t n;
-
-      for (n = nmin; n <= nmax; ++n)
-        {
-          int M = (int) n;
-          int m;
-
-          for (m = -M; m <= M; ++m)
-            {
-              size_t cidx = mfield_coeff_nmidx(n, m);
-              double gnm = msynth_get_gnm(2008.0, n, m, crust_p);
-              mfield_set_mf(g, cidx, gnm, w);
-            }
-        }
-
-      msynth_free(crust_p);
-    }
+  /*XXX*/
+  mfield_write_ascii("synth_coeff.txt", 2015.5, g, w);
 
   return 0;
 }
@@ -169,7 +129,7 @@ mfield_synth_replace(mfield_workspace *w)
 #endif
 
           /* synthesize magnetic field vector */
-          mfield_synth_calc(t, r, theta, phi, g, B, mfield_p);
+          mfield_synth_calc(mptr->t[j], r, theta, phi, g, B, mfield_p);
 
           if (params->synth_noise)
             {
@@ -218,8 +178,7 @@ mfield_synth_replace(mfield_workspace *w)
           if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DF_NS |
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW | MAGDATA_FLG_DF_EW))
             {
-              t = satdata_epoch2year(mptr->t_ns[j]);
-              mfield_synth_calc(t, mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j], g, B, mfield_p);
+              mfield_synth_calc(mptr->t_ns[j], mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j], g, B, mfield_p);
 
               mptr->Bx_nec_ns[j] = B[0];
               mptr->By_nec_ns[j] = B[1];
@@ -264,13 +223,14 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
                   double B[3], mfield_workspace *w)
 {
   int s = 0;
-  const double t0 = w->epoch;
-  const double t1 = t - t0;
-  const double t2 = 0.5 * t1 * t1;
-  const size_t nmax = w->nmax_max;
+  gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+  const size_t nmax_core = w->nmax_core;
+  const size_t nmax = w->nmax;
   const double ratio = w->R / r;
   const double sint = sin(theta);
   const double cost = cos(theta);
+  const double tyr = epoch2year(t);
   double rterm = ratio * ratio;
   double *Plm = w->Plm;
   double *dPlm = w->dPlm;
@@ -304,16 +264,29 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
           size_t cidx = mfield_coeff_nmidx(n, m);
           double gnm, hnm = 0.0;
 
-          gnm = mfield_get_mf(g, cidx, w) +
-                mfield_get_sv(g, cidx, w) * t1 +
-                mfield_get_sa(g, cidx, w) * t2;
+          if (n <= nmax_core)
+            {
+              gsl_vector_const_view v1 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_mf, ncontrol);
+              gsl_bspline2_eval(tyr, &v1.vector, &gnm, gauss_spline_p);
+            }
+          else
+            {
+              gnm = gsl_vector_get(g, cidx + (w->p_core - w->nnm_core));
+            }
 
           if (m > 0)
             {
               cidx = mfield_coeff_nmidx(n, -m);
-              hnm = mfield_get_mf(g, cidx, w) +
-                    mfield_get_sv(g, cidx, w) * t1 +
-                    mfield_get_sa(g, cidx, w) * t2;
+
+              if (n <= nmax_core)
+                {
+                  gsl_vector_const_view v2 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_mf, ncontrol);
+                  gsl_bspline2_eval(tyr, &v2.vector, &hnm, gauss_spline_p);
+                }
+              else
+                {
+                  hnm = gsl_vector_get(g, cidx + (w->p_core - w->nnm_core));
+                }
             }
 
           B[0] += rterm * (gnm * c + hnm * s) * dPlm[pidx];

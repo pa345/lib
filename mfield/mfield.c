@@ -107,6 +107,8 @@ mfield_alloc(const mfield_parameters *params)
   w->nsat = params->nsat;
   w->epoch = params->epoch;
   w->R = params->R;
+  w->nmax_core = params->nmax_core;
+  w->nmax = GSL_MAX(params->nmax, w->nmax_core);
   w->nmax_mf = params->nmax_mf;
   w->nmax_sv = params->nmax_sv;
   w->nmax_sa = params->nmax_sa;
@@ -135,9 +137,15 @@ mfield_alloc(const mfield_parameters *params)
    */
 
   /* subtract 1 to exclude the (0,0) coefficient */
+  w->nnm_core = (w->nmax_core + 1) * (w->nmax_core + 1) - 1;
+  w->nnm_tot = (w->nmax + 1) * (w->nmax + 1) - 1;
+  w->nnm_crust = w->nnm_tot - w->nnm_core;
   w->nnm_mf = (w->nmax_mf + 1) * (w->nmax_mf + 1) - 1;
   w->nnm_sv = (w->nmax_sv + 1) * (w->nmax_sv + 1) - 1;
   w->nnm_sa = (w->nmax_sa + 1) * (w->nmax_sa + 1) - 1;
+
+  /*XXX*/
+  w->nnm_max = w->nnm_tot;
 
   if (!params->fit_mf)
     {
@@ -157,8 +165,42 @@ mfield_alloc(const mfield_parameters *params)
       w->nnm_sa = 0;
     }
 
-  /* total (internal) model coefficients */
-  w->p_int = w->nnm_mf + w->nnm_sv + w->nnm_sa;
+  /* compute total (internal) model coefficients */
+
+  w->p_core = 0;
+  w->p_crust = w->nnm_crust;
+  if (params->fit_mf && w->data_workspace_p)
+    {
+      /*
+       * reprsent the g_{nm}(t) splines in terms of decimal years instead
+       * of CDF_EPOCH, so that the SV/SA derivatives will be in nT/year,
+       * nT/year^2 etc
+       */
+      double t0 = epoch2year(w->data_workspace_p->t0_data);
+      double t1 = epoch2year(w->data_workspace_p->t1_data);
+      double dt = t1 - t0;
+      size_t nbreak, ncontrol;
+
+      if (params->gauss_period <= 0.0)
+        nbreak = 2;
+      else
+        nbreak = GSL_MAX((size_t) (dt / params->gauss_period) + 1, 2);
+
+      w->gauss_spline_workspace_p = calloc(w->max_threads, sizeof(gsl_bspline2_workspace *));
+
+      for (j = 0; j < w->max_threads; ++j)
+        {
+          w->gauss_spline_workspace_p[j] = gsl_bspline2_alloc(params->gauss_spline_order, nbreak);
+          gsl_bspline2_init_uniform(t0, t1, w->gauss_spline_workspace_p[j]);
+        }
+
+      ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
+      w->p_core = w->nnm_core * ncontrol;
+
+      fprintf(stderr, "mfield_alloc: number of Gauss coefficient control points: %zu\n", ncontrol);
+    }
+
+  w->p_int = w->p_core + w->p_crust;
 
   if (w->p_int == 0)
     {
@@ -168,19 +210,13 @@ mfield_alloc(const mfield_parameters *params)
 
   w->p = w->p_int;
 
-  /* compute max nnm */
-  w->nnm_max = 0;
-  w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_mf);
-  w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_sv);
-  w->nnm_max = GSL_MAX(w->nnm_max, w->nnm_sa);
-
   /* compute max nmax */
   w->nmax_max = 0;
   w->nmax_max = GSL_MAX(w->nmax_max, w->nmax_mf);
   w->nmax_max = GSL_MAX(w->nmax_max, w->nmax_sv);
   w->nmax_max = GSL_MAX(w->nmax_max, w->nmax_sa);
 
-  plm_size = gsl_sf_legendre_array_n(w->nmax_max);
+  plm_size = gsl_sf_legendre_array_n(w->nmax);
 
   w->p_euler = 0;
   if (params->fit_euler && w->data_workspace_p)
@@ -386,15 +422,17 @@ mfield_alloc(const mfield_parameters *params)
       GSL_ERROR_NULL("no parameters to fit", GSL_EINVAL);
     }
 
+  /*XXX*/
   w->sv_offset = w->nnm_mf;
   w->sa_offset = w->sv_offset + w->nnm_sv;
-  w->euler_offset = w->sa_offset + w->nnm_sa;
+
+  w->euler_offset = w->p_int;
   w->ext_offset = w->euler_offset + w->p_euler;
   w->fluxcal_offset = w->ext_offset + w->p_ext;
   w->bias_offset = w->fluxcal_offset + w->p_fluxcal;
 
-  w->cosmphi = malloc((w->nmax_max + 1) * sizeof(double));
-  w->sinmphi = malloc((w->nmax_max + 1) * sizeof(double));
+  w->cosmphi = malloc((w->nmax + 1) * sizeof(double));
+  w->sinmphi = malloc((w->nmax + 1) * sizeof(double));
 
   w->Plm = malloc(plm_size * sizeof(double));
   w->dPlm = malloc(plm_size * sizeof(double));
@@ -410,12 +448,12 @@ mfield_alloc(const mfield_parameters *params)
   /* covariance matrix of the internal field coefficients */
   w->covar = gsl_matrix_alloc(w->p, w->p);
 
-  w->dX = malloc(w->nnm_max * sizeof(double));
-  w->dY = malloc(w->nnm_max * sizeof(double));
-  w->dZ = malloc(w->nnm_max * sizeof(double));
+  w->dX = malloc(w->nnm_tot * sizeof(double));
+  w->dY = malloc(w->nnm_tot * sizeof(double));
+  w->dZ = malloc(w->nnm_tot * sizeof(double));
 
-  w->green_workspace_p = mfield_green_alloc(w->nmax_max, w->R);
-  w->green_workspace_p2 = green_alloc(w->nmax_max, w->nmax_max, w->R);
+  w->green_workspace_p = mfield_green_alloc(w->nmax, w->R);
+  w->green_workspace_p2 = green_alloc(w->nmax, w->nmax, w->R);
 
   w->diag = gsl_vector_alloc(w->p_int);
 
@@ -440,12 +478,13 @@ mfield_alloc(const mfield_parameters *params)
   w->lambda_diag = gsl_vector_calloc(w->p);
   w->LTL = gsl_vector_calloc(w->p);
 
-  w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_max);
-  w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_max);
-  w->omp_dZ = gsl_matrix_alloc(w->max_threads, w->nnm_max);
-  w->omp_dX_grad = gsl_matrix_alloc(w->max_threads, w->nnm_max);
-  w->omp_dY_grad = gsl_matrix_alloc(w->max_threads, w->nnm_max);
-  w->omp_dZ_grad = gsl_matrix_alloc(w->max_threads, w->nnm_max);
+  w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
+  w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
+  w->omp_dZ = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
+  w->omp_dF = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
+  w->omp_dX_grad = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
+  w->omp_dY_grad = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
+  w->omp_dZ_grad = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
 
   /* initialize green workspaces and omp_J */
   {
@@ -469,11 +508,13 @@ mfield_alloc(const mfield_parameters *params)
 
     for (i = 0; i < w->max_threads; ++i)
       {
-        w->green_array_p[i] = green_alloc(w->nmax_max, w->nmax_max, w->R);
+        w->green_array_p[i] = green_alloc(w->nmax, w->nmax, w->R);
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
-        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_max, w->nnm_max);
+        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_tot, w->nnm_tot);
         w->omp_JTJ[i] = gsl_matrix_alloc(w->p_int, w->p_int);
       }
+
+    fprintf(stderr, "mfield_alloc: data_block = %zu\n", w->data_block);
   }
 
   return w;
@@ -592,6 +633,9 @@ mfield_free(mfield_workspace *w)
   if (w->omp_dZ)
     gsl_matrix_free(w->omp_dZ);
 
+  if (w->omp_dF)
+    gsl_matrix_free(w->omp_dF);
+
   if (w->omp_dX_grad)
     gsl_matrix_free(w->omp_dX_grad);
 
@@ -620,6 +664,17 @@ mfield_free(mfield_workspace *w)
   free(w->omp_rowidx);
   free(w->omp_GTG);
   free(w->omp_JTJ);
+
+  if (w->gauss_spline_workspace_p)
+    {
+      for (i = 0; i < w->max_threads; ++i)
+        {
+          if (w->gauss_spline_workspace_p[i])
+            gsl_bspline2_free(w->gauss_spline_workspace_p[i]);
+        }
+
+      free(w->gauss_spline_workspace_p);
+    }
 
   if (w->euler_spline_workspace_p)
     {
@@ -652,10 +707,13 @@ mfield_init_params(mfield_parameters * params)
 {
   params->epoch = -1.0;
   params->R = -1.0;
+  params->nmax_core = 0;
+  params->nmax = 0;
   params->nmax_mf = 0;
   params->nmax_sv = 0;
   params->nmax_sa = 0;
   params->nsat = 0;
+  params->gauss_period = -1.0;
   params->euler_period = -1.0;
   params->fluxcal_period = -1.0;
   params->max_iter = 0;
@@ -684,6 +742,7 @@ mfield_init_params(mfield_parameters * params)
   params->synth_data = 0;
   params->synth_noise = 0;
   params->synth_nmin = 0;
+  params->gauss_spline_order = 3;   /* quadratic spline */
   params->euler_spline_order = 2;   /* linear spline */
   params->fluxcal_spline_order = 3; /* quadratic spline */
 
@@ -1494,19 +1553,23 @@ mfield_read(const char *filename)
 /*
 mfield_write_ascii()
   Write ascii coefficient file
+
+Inputs: filename - output file
+        epoch    - epoch to evaluate B-splines (decimal years)
+        c        - coefficient vector, length at least p_int
+        w        - workspace
 */
 
 int
 mfield_write_ascii(const char *filename, const double epoch,
-                   const int write_delta, mfield_workspace *w)
+                   const gsl_vector * c, mfield_workspace *w)
 {
   int s = 0;
   const mfield_parameters *params = &(w->params);
+  gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
   FILE *fp;
-  size_t n, i;
-  gsl_vector_view d = gsl_matrix_diagonal(w->covar);
-  gsl_vector_view v = gsl_vector_subvector(&d.vector, 0, w->p_int);
-  gsl_vector_view cov = gsl_vector_subvector(w->c_copy, 0, w->p_int);
+  size_t n;
 
   fp = fopen(filename, "w");
   if (!fp)
@@ -1515,19 +1578,6 @@ mfield_write_ascii(const char *filename, const double epoch,
               filename, strerror(errno));
       return GSL_FAILURE;
     }
-
-  /* convert coefficients to physical time units */
-  mfield_coeffs(1, w->c, w->c, w);
-
-  gsl_vector_memcpy(&cov.vector, &v.vector);
-  for (i = 0; i < w->p_int; ++i)
-    {
-      double ci = gsl_vector_get(&cov.vector, i);
-      gsl_vector_set(&cov.vector, i, sqrt(ci));
-    }
-
-  /* convert covariance vector to physical units */
-  mfield_coeffs(1, w->c_copy, w->c_copy, w);
 
   /* print header information */
   fprintf(fp, "%% Magnetic field model coefficients\n");
@@ -1538,74 +1588,48 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% lambda_sv: %.2f\n", params->lambda_sv);
   fprintf(fp, "%% lambda_sa: %.2f\n", params->lambda_sa);
 
-  if (write_delta)
-    {
-      fprintf(fp, "%% %3s %5s %20s %20s %20s %20s %20s %20s\n",
-              "n",
-              "m",
-              "MF gnm (nT)",
-              "MF dgnm (nT)",
-              "SV gnm (nT/year)",
-              "SV dgnm (nT/year)",
-              "SA gnm (nT/year^2)",
-              "SA dgnm (nT/year^2)");
-    }
-  else
-    {
-      fprintf(fp, "%% %3s %5s %20s %20s %20s\n",
-              "n",
-              "m",
-              "MF gnm (nT)",
-              "SV gnm (nT/year)",
-              "SA gnm (nT/year^2)");
-    }
+  fprintf(fp, "%% %3s %5s %20s %20s %20s\n",
+          "n",
+          "m",
+          "MF gnm (nT)",
+          "SV gnm (nT/year)",
+          "SA gnm (nT/year^2)");
 
-  for (n = 1; n <= w->nmax_max; ++n)
+  for (n = 1; n <= w->nmax; ++n)
     {
       int m, ni = (int) n;
 
       for (m = -ni; m <= ni; ++m)
         {
           size_t cidx = mfield_coeff_nmidx(n, m);
-          double gnm = mfield_get_mf(w->c, cidx, w); 
-          double dgnm = mfield_get_sv(w->c, cidx, w);
-          double ddgnm = mfield_get_sa(w->c, cidx, w); 
+          double gnm, dgnm, ddgnm;
 
-          if (write_delta)
+          if (n <= w->nmax_core)
             {
-              double gnm_delta = mfield_get_mf(&cov.vector, cidx, w); 
-              double dgnm_delta = mfield_get_sv(&cov.vector, cidx, w); 
-              double ddgnm_delta = mfield_get_sa(&cov.vector, cidx, w); 
-
-              fprintf(fp, "%5zu %5d %20.4f %20.4f %20.4f %20.4f %20.4f %20.4f\n",
-                      n,
-                      m,
-                      gnm,
-                      gnm_delta,
-                      dgnm,
-                      dgnm_delta,
-                      ddgnm,
-                      ddgnm_delta);
+              gsl_vector_const_view v = gsl_vector_const_subvector_with_stride(c, cidx, w->nnm_mf, ncontrol);
+              gsl_bspline2_eval(epoch, &v.vector, &gnm, gauss_spline_p);
+              gsl_bspline2_eval_deriv(epoch, &v.vector, 1, &dgnm, gauss_spline_p);
+              gsl_bspline2_eval_deriv(epoch, &v.vector, 2, &ddgnm, gauss_spline_p);
             }
           else
             {
-              fprintf(fp, "%5zu %5d %20.4f %20.4f %20.4f\n",
-                      n,
-                      m,
-                      gnm,
-                      dgnm,
-                      ddgnm);
+              gnm = gsl_vector_get(c, cidx - w->nnm_core + w->p_core);
+              dgnm = ddgnm = 0.0;
             }
+
+          fprintf(fp, "%5zu %5d %20.4f %20.4f %20.4f\n",
+                  n,
+                  m,
+                  gnm,
+                  dgnm,
+                  ddgnm);
         }
     }
 
   fclose(fp);
 
-  /* convert coefficients to dimensionless time units */
-  mfield_coeffs(-1, w->c, w->c, w);
-
   return s;
-} /* mfield_write_ascii() */
+}
 
 /*
 mfield_new_epoch()
@@ -1698,17 +1722,17 @@ mfield_green(const double r, const double theta, const double phi, mfield_worksp
   double term = ratio * ratio;     /* (a/r)^{n+2} */
 
   /* precompute cos(m phi) and sin(m phi) */
-  for (n = 0; n <= w->nmax_max; ++n)
+  for (n = 0; n <= w->nmax; ++n)
     {
       w->cosmphi[n] = cos(n * phi);
       w->sinmphi[n] = sin(n * phi);
     }
 
   /* compute associated legendres */
-  gsl_sf_legendre_deriv_alt_array(GSL_SF_LEGENDRE_SCHMIDT, w->nmax_max, cost,
+  gsl_sf_legendre_deriv_alt_array(GSL_SF_LEGENDRE_SCHMIDT, w->nmax, cost,
                                   w->Plm, w->dPlm);
 
-  for (n = 1; n <= w->nmax_max; ++n)
+  for (n = 1; n <= w->nmax; ++n)
     {
       int ni = (int) n;
 
@@ -1871,6 +1895,107 @@ mfield_set_sa(gsl_vector *c, const size_t idx,
     gsl_vector_set(c, idx + w->sa_offset, x);
 
   return GSL_SUCCESS;
+}
+
+/*
+mfield_fill_g()
+  Fill in internal coefficient vector of g_{nm}(t) values using
+a field model
+*/
+
+int
+mfield_fill_g(gsl_vector * g, msynth_workspace * core_p, msynth_workspace * crust_p, mfield_workspace * w)
+{
+  gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const mfield_parameters *params = &(w->params);
+  const size_t ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
+  const size_t n_epochs = 1000;
+  const double t0 = w->data_workspace_p->t0_data;
+  const double t1 = w->data_workspace_p->t1_data;
+  const double dt = (t1 - t0) / (n_epochs - 1.0);
+  size_t nmin = params->synth_nmin;
+  size_t nmax_core = GSL_MIN(core_p->nmax, w->nmax_core);
+  size_t n;
+
+  gsl_vector *epochs = gsl_vector_alloc(n_epochs); /* epochs in decimal years */
+  gsl_matrix *X = gsl_matrix_alloc(n_epochs, ncontrol);
+  gsl_vector *tau = gsl_vector_alloc(GSL_MIN(X->size1, X->size2));
+  gsl_permutation *perm = gsl_permutation_alloc(X->size2);
+  gsl_vector *residual = gsl_vector_alloc(n_epochs);
+  gsl_vector *work = gsl_vector_alloc(ncontrol);
+  gsl_vector *b = gsl_vector_alloc(n_epochs);
+  int signum;
+  size_t i;
+
+  gsl_vector_set_zero(g);
+
+  /* n_epochs is set large enough so when we sample the msynth field model g_{nm} and
+   * invert for our control points, there are enough points to constrain
+   * all control points in our gnm splines */
+  for (i = 0; i < n_epochs; ++i)
+    gsl_vector_set(epochs, i, epoch2year(t0 + i * dt));
+
+  gsl_bspline2_colmat(epochs, X, gauss_spline_p);
+  gsl_linalg_QRPT_decomp(X, tau, perm, &signum, work);
+
+  /* initialize internal field spline coefficients using msynth */
+  for (n = nmin; n <= nmax_core; ++n)
+    {
+      int M = (int) n;
+      int m;
+
+      for (m = -M; m <= M; ++m)
+        {
+          size_t cidx = mfield_coeff_nmidx(n, m);
+
+          for (i = 0; i < n_epochs; ++i)
+            {
+              double epoch = gsl_vector_get(epochs, i);
+              double gnm = msynth_get_gnm(epoch, n, m, core_p);
+
+              gsl_vector_set(b, i, gnm);
+            }
+
+          /* solve: work = X\b */
+          gsl_linalg_QRPT_lssolve(X, tau, perm, b, work, residual);
+
+          /* store result in coefficient vector */
+          for (i = 0; i < ncontrol; ++i)
+            {
+              size_t idx = CIDX2(i, ncontrol, cidx, w->nnm_mf);
+              double gnmi = gsl_vector_get(work, i);
+              gsl_vector_set(g, idx, gnmi);
+            }
+        }
+    }
+
+  if (crust_p != NULL && w->nmax > nmax_core)
+    {
+      size_t nmax = GSL_MIN(crust_p->nmax, w->nmax);
+
+      for (n = nmax_core + 1; n <= nmax; ++n)
+        {
+          int M = (int) n;
+          int m;
+
+          for (m = -M; m <= M; ++m)
+            {
+              size_t cidx = mfield_coeff_nmidx(n, m) - w->nnm_core;
+              double gnm = msynth_get_gnm(2008.0, n, m, crust_p);
+              gsl_vector_set(g, cidx + w->p_core, gnm);
+            }
+        }
+    }
+
+  gsl_vector_free(epochs);
+  gsl_vector_free(tau);
+  gsl_vector_free(residual);
+  gsl_vector_free(work);
+  gsl_vector_free(b);
+  gsl_matrix_free(X);
+  gsl_permutation_free(perm);
+
+  return 0;
 }
 
 static int

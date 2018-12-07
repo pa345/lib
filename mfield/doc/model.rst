@@ -5,7 +5,7 @@ Model Parameterization
 .. |epsiloni| replace:: :math:`\boldsymbol{\epsilon}_i`
 .. |deltai| replace:: :math:`\boldsymbol{\delta}_i`
 .. |fi| replace:: :math:`f_i`
-.. |partialg| replace:: :math:`\frac{\partial}{\partial g_{nm}}`
+.. |partialg| replace:: :math:`\frac{\partial}{\partial g_{n,k}^m}`
 .. |partialdg| replace:: :math:`\frac{\partial}{\partial \dot{g}_{nm}}`
 .. |partialddg| replace:: :math:`\frac{\partial}{\partial \ddot{g}_{nm}}`
 .. |partialgp| replace:: :math:`\frac{\partial}{\partial g_{n'm'}}`
@@ -17,13 +17,10 @@ Model Parameterization
 .. |partialcp| replace:: :math:`\frac{\partial}{\partial \mathbf{c}'}`
 .. |partialk| replace:: :math:`\frac{\partial}{\partial k(t)}`
 .. |partialkp| replace:: :math:`\frac{\partial}{\partial k(t')}`
-.. |depsdg| replace:: :math:`-d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |depsdgv| replace:: :math:`-(t_i - t_0) d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |depsdga| replace:: :math:`-\frac{1}{2}(t_i - t_0)^2 d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdg| replace:: :math:`-\frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdgv| replace:: :math:`-\frac{t_i - t_0}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
-.. |dfdga| replace:: :math:`-\frac{\frac{1}{2} (t_i - t_0)^2}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)`
+.. |depsdg| replace:: :math:`-N_k(t_i) \mathbf{B}_n^m(\mathbf{r}_i)`
+.. |dfdg| replace:: :math:`-N_k(t_i) \mathbf{b}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k}) \cdot \mathbf{B}_n^m(\mathbf{r}_i)`
 .. |dfdc| replace:: :math:`\frac{1}{F_i(\mathbf{c})} \mathbf{B}^{VFM}_i(\mathbf{c}) \cdot \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
+.. |ddeltadg| replace:: :math:`-\dot{N}_k(t_i) \mathbf{B}_n^m(\mathbf{r}_i)`
 .. |depsdeuler| replace:: :math:`R_q \left[ \frac{\partial}{\partial \boldsymbol{\alpha}} R_3(\boldsymbol{\alpha}) \right] \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdc| replace:: :math:`R_q R_3(\boldsymbol{\alpha}) \frac{\partial}{\partial \mathbf{c}} \mathbf{B}^{VFM}_i(\mathbf{c})`
 .. |depsdk| replace:: :math:`-d\mathbf{B}^{ext}(\mathbf{r}_i)`
@@ -131,7 +128,12 @@ The time derivative of the model vector is:
 .. math:: \dot{\mathbf{B}}^{model}(\mathbf{r}, t; \mathbf{g},\mathbf{k}) = \dot{\mathbf{B}}^{int}(\mathbf{r}, t; \mathbf{g}) + \dot{\mathbf{B}}^{ext,correction}(\mathbf{r}, t; \mathbf{k})
 
 We don't include :math:`\dot{\mathbf{B}}^{ext}(\mathbf{r}, t)` since an external field model is removed from the observatory
-time series prior to calculating the secular variation measurements. The internal field model and its time derivative are
+time series prior to calculating the secular variation measurements.
+
+Internal Field Model
+--------------------
+
+The internal field model and its time derivative are
 given below.
 
 .. math::
@@ -161,6 +163,25 @@ given below.
      -(n+1) S_n^m
    \end{pmatrix} = \mathbf{B}^{int}(\mathbf{r}, t; \dot{\mathbf{g}})
 
+where
+
+.. math::
+
+   \tilde{g}_n^m(t) =
+     \left\{
+       \begin{array}{cc}
+         g_n^m(t) & m \ge 0 \\
+         h_n^{|m|}(t) & m < 0
+       \end{array}
+     \right.
+
+and :math:`g_n^m(t), h_n^m(t)` are parameterized with B-splines:
+
+.. math::
+
+   g_n^m(t) &= \sum_k g_{n,k}^m N_k(t) \\
+   h_n^m(t) &= \sum_k h_{n,k}^m N_k(t)
+
 Jacobian
 ========
 
@@ -174,13 +195,13 @@ Internal field
 
 The internal field model can be expressed as
 
-.. math:: \mathbf{B}^{int}(\mathbf{r}, t; \mathbf{g}) = \sum_{nm} g_{nm}(t) d\mathbf{B}^{int}_{nm}(\mathbf{r})
+.. math:: \mathbf{B}^{int}(\mathbf{r}, t; \mathbf{g}) = \sum_{nm} g_n^m(t) \mathbf{B}_n^m(\mathbf{r}) = \sum_{nmk} g_{n,k}^m N_k(t) \mathbf{B}_n^m(\mathbf{r})
 
 where
 
 .. math::
 
-   d\mathbf{B}^{int}_{nm}(\mathbf{r}) =
+   \mathbf{B}_n^m(\mathbf{r}) =
    \left\{
    \begin{array}{cc}
    \left( \frac{a}{r} \right)^{n+2}
@@ -201,6 +222,14 @@ where
    \right) & m < 0
    \end{array}
    \right.
+
+Then,
+
+.. math::
+
+   \frac{\partial \boldsymbol{\epsilon}_i}{\partial g_{n,k}^m} &= -N_k(t_i) \mathbf{B}_n^m(\mathbf{r}_i) \\
+   \frac{\partial f_i}{\partial g_{n,k}^m} &= -N_k(t_i) \frac{\mathbf{B}^{model}(\mathbf{r}_i,t;\mathbf{g},\mathbf{k})}{|| \mathbf{B}^{model}(\mathbf{r}_i,t;\mathbf{g},\mathbf{k}) ||} \cdot \mathbf{B}_n^m(\mathbf{r}_i) \\
+   \frac{\partial \boldsymbol{\delta}_i}{\partial g_{n,k}^m} &= -\dot{N}_k(t_i) \mathbf{B}_n^m(\mathbf{r}_i)
 
 Euler angles
 ------------
@@ -258,13 +287,15 @@ The following table summarizes the first derivatives of the residuals needed for
 ============== ========================== =========================== ========================
 Derivative     Vector residual |epsiloni| Scalar residual :math:`f_i` Vector residual |deltai|
 ============== ========================== =========================== ========================
-|partialg|     |depsdg|                   |dfdg|                      0
-|partialdg|    |depsdgv|                  |dfdgv|                     |depsdg|
-|partialddg|   |depsdga|                  |dfdga|                     |depsdgv|
+|partialg|     |depsdg|                   |dfdg|                      |ddeltadg|
 |partialeuler| |depsdeuler|               0                           0
 |partialc|     |depsdc|                   |dfdc|                      0
 |partialk|     |depsdk|                   |dfdk|
 ============== ========================== =========================== ========================
+
+where we define
+
+.. math:: \mathbf{b}^{model}(\mathbf{r}, t; \mathbf{g}, \mathbf{k}) = \frac{\mathbf{B}^{model}(\mathbf{r}, t; \mathbf{g}, \mathbf{k})}{|| \mathbf{B}^{model}(\mathbf{r}, t; \mathbf{g}, \mathbf{k}) || }
 
 Second derivatives
 ------------------
@@ -308,11 +339,7 @@ For the scalar residuals, we have
 
 In the above table,
 
-.. math:: \xi_i = \frac{\partial^2 f_i}{\partial g_{nm} \partial g_{n'm'}} = \frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \left[ (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{nm}(\mathbf{r}_i)) (\mathbf{b}^{model} \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i)) + d\mathbf{B}^{int}_{nm}(\mathbf{r}_i) \cdot d\mathbf{B}^{int}_{n'm'}(\mathbf{r}_i) \right]
-
-and
-
-.. math:: \mathbf{b}^{model}(\mathbf{r}_i, t_i; \mathbf{g}, \mathbf{k}) = \frac{\mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g}, \mathbf{k})}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g}, \mathbf{k}) || }
+.. math:: \xi_i = \frac{\partial^2 f_i}{\partial g_{nm} \partial g_{n'm'}} = \frac{1}{|| \mathbf{B}^{model}(\mathbf{r}_i, t_i; \mathbf{g},\mathbf{k})||} \left[ (\mathbf{b}^{model} \cdot \mathbf{B}_n^m(\mathbf{r}_i)) (\mathbf{b}^{model} \cdot \mathbf{B}_{n'}^{m'}(\mathbf{r}_i)) + \mathbf{B}_n^m(\mathbf{r}_i) \cdot \mathbf{B}_{n'}^{m'}(\mathbf{r}_i) \right]
 
 Therefore, the second directional derivative of the scalar residual |fi| is
 
@@ -335,71 +362,112 @@ Therefore, the second directional derivative of the scalar residual |fi| is
 Optimization
 ------------
 
-Since the cost function :math:`\chi^2` depends on both vector and scalar
-residuals, we can write the Jacobian as
+The Jacobian matrix can be separated as
 
 .. math::
 
-   \mathbf{J} =
+   \mathbf{J}(\mathbf{x}) =
    \left(
-   \begin{array}{ccccc}
-   \mathbf{J}_{MF}^{vec} & \mathbf{J}_{SV}^{vec} & \mathbf{J}_{SA}^{vec} & \mathbf{J}_{Euler}^{vec}(\mathbf{x}) & \mathbf{J}_{ext}^{vec}(\mathbf{x}) \\
-   \mathbf{J}_{MF}^{scal}(\mathbf{x}) & \mathbf{J}^{scal}_{SV}(\mathbf{x}) & \mathbf{J}^{scal}_{SA}(\mathbf{x}) & 0 & \mathbf{J}^{scal}_{ext}(\mathbf{x}) \\
-   0 & \dot{\mathbf{J}}_{SV}^{vec} & \dot{\mathbf{J}}_{SA}^{vec} & 0 & 0
+   \begin{array}{cc}
+     \mathbf{J}_1(\mathbf{x}) & \mathbf{J}_2(\mathbf{x})
    \end{array}
    \right)
 
-where the top portion corresponds to vector residuals |epsiloni|, the middle portion
-corresponds to scalar residuals :math:`f_i`, and the bottom portion to |deltai|.
-Even if the vector and scalar residuals are "mixed", so that
-the Jacobian does not separate vertically as shown above, we can consider the above matrix
-without loss of generality, since we can always rearrange the rows of the matrix as needed.
-For simplicity, we define
+where :math:`\mathbf{J}_1` is the Jacobian relating to the internal Gauss coefficients
+:math:`g_{n,k}^m` and :math:`\mathbf{J}_2` relates to the Euler angles, fluxgate
+calibration, and external field parameters. Specifically,
 
 .. math::
 
-   \mathbf{J}_{int} =
-   \left(
-   \begin{array}{ccc}
-   \mathbf{J}_{MF} & \mathbf{J}_{SV} & \mathbf{J}_{SA}
-   \end{array}
-   \right)
+   \mathbf{J}_1 &=
+     \frac{\partial}{\partial g_{n,k}^m}
+     \begin{pmatrix}
+       \boldsymbol{\epsilon}_i \\
+       f_i \\
+       \boldsymbol{\delta}_i
+     \end{pmatrix} =
+     \begin{pmatrix}
+       \mathbf{J}_{MF}^{vec} \\
+       \mathbf{J}_{MF}^{scal}(\mathbf{x}) \\
+       \dot{\mathbf{J}}_{MF}^{vec}
+     \end{pmatrix} \\
+   \mathbf{J}_2 &=
+     \begin{pmatrix}
+       \frac{\partial}{\partial \alpha_{jk}}
+       \begin{bmatrix}
+         \boldsymbol{\epsilon}_i \\
+         f_i \\
+         \boldsymbol{\delta}_i
+       \end{bmatrix} &
+       \frac{\partial}{\partial s_{jk}}
+       \begin{bmatrix}
+         \boldsymbol{\epsilon}_i \\
+         f_i \\
+         \boldsymbol{\delta}_i
+       \end{bmatrix} &
+       \frac{\partial}{\partial o_{jk}}
+       \begin{bmatrix}
+         \boldsymbol{\epsilon}_i \\
+         f_i \\
+         \boldsymbol{\delta}_i
+       \end{bmatrix} &
+       \frac{\partial}{\partial u_{jk}}
+       \begin{bmatrix}
+         \boldsymbol{\epsilon}_i \\
+         f_i \\
+         \boldsymbol{\delta}_i
+       \end{bmatrix}
+     \end{pmatrix} =
+     \begin{pmatrix}
+       \mathbf{J}_{Euler}^{vec}(\mathbf{x}) & \mathbf{J}_{Fluxgate}^{vec}(\mathbf{x}) \\
+       0 & \mathbf{J}_{Fluxgate}^{scal}(\mathbf{x}) \\
+       0 & 0
+     \end{pmatrix}
 
-and note :math:`\mathbf{J}_{SV} = t \mathbf{J}_{MF}` and :math:`\mathbf{J}_{SA} = \frac{1}{2} t^2 \mathbf{J}_{MF}`,
-where :math:`t` is the timestamp of measurement :math:`i`. The Jacobian then becomes
+The matrix :math:`\mathbf{J}_2` is quite sparse, and can be stored efficiently in CSR format
+for example. During nonlinear least squares iterations, we must construct the normal
+equations matrix
 
 .. math::
 
-   \mathbf{J} =
-   \left(
-   \begin{array}{ccc}
-   \mathbf{J}_{int}^{vec} & \mathbf{J}_{Euler}^{vec}(\mathbf{x}) & \mathbf{J}_{ext}^{vec}(\mathbf{x}) \\
-   \mathbf{J}_{int}^{scal}(\mathbf{x}) & 0 & \mathbf{J}^{scal}_{ext}(\mathbf{x}) \\
-   \dot{\mathbf{J}}_{int}^{vec} & 0 & 0
-   \end{array}
-   \right)
+   \mathbf{J}^T \mathbf{J} = \begin{pmatrix}
+                               \mathbf{J}_1^T \mathbf{J}_1 & X \\
+                               \mathbf{J}_2^T \mathbf{J}_1 & \mathbf{J}_2^T \mathbf{J}_2
+                             \end{pmatrix}
 
-Note that for vector residuals, :math:`\mathbf{J}_{int}` does not depend on the model parameters
-:math:`\mathbf{x}`. Also, the scalar residuals do not depend on the Euler angles, resulting in the
-block of zeros in the above matrix. Additionally, while the matrices :math:`\mathbf{J}_{int}^{vec}`
-and :math:`\mathbf{J}_{int}^{scal}(\mathbf{x})` are dense, the rest of the Jacobian corresponding
-to the Euler angles and external field parameters has a lot of sparse structure.
-During the nonlinear least squares iterations, we require the normal equations matrix
-:math:`\mathbf{J}^T \mathbf{J}`. This matrix can be computed very efficiently by accounting
-for the sparse structure in the above matrix. Writing it all out, we have:
+The :math:`X` entry above indicates the matrix is symmetric and this portion does not need
+to be computed. The upper left block is
 
-.. math::
+.. math:: \mathbf{J}_1^T \mathbf{J}_1 = \mathbf{J}_{MF}^{T,vec} \mathbf{J}_{MF}^{vec} + \mathbf{J}_{MF}^{T,scal}(\mathbf{x}) \mathbf{J}_{MF}^{scal}(\mathbf{x}) + \dot{\mathbf{J}}_{MF}^{T,vec} \dot{\mathbf{J}}_{MF}^{vec}
 
-   \mathbf{J}^T \mathbf{J} =
-   \left(
-   \begin{array}{ccc}
-   \mathbf{J}_{int}^T \mathbf{J}_{int}^{vec} + \mathbf{J}_{int}^T(\mathbf{x}) \mathbf{J}_{int}^{scal}(\mathbf{x}) + \dot{\mathbf{J}}_{int}^T \dot{\mathbf{J}}_{int}^{vec} & X & X \\
-   \mathbf{J}_{Euler}^T(\mathbf{x}) \mathbf{J}_{int}^{vec} & \mathbf{J}_{Euler}^T(\mathbf{x}) \mathbf{J}_{Euler}(\mathbf{x}) & X \\
-   \mathbf{J}_{ext}^T(\mathbf{x}) \mathbf{J}_{int}^{vec} + \mathbf{J}_{ext}^T(\mathbf{x}) \mathbf{J}_{int}^{scal}(\mathbf{x})  & \mathbf{J}_{ext}^T(\mathbf{x}) \mathbf{J}_{Euler}(\mathbf{x}) & \mathbf{J}_{ext}^T(\mathbf{x}) \mathbf{J}_{ext}^{vec}(\mathbf{x}) + \mathbf{J}_{ext}^T(\mathbf{x}) \mathbf{J}_{ext}^{scal}(\mathbf{x}) \\
-   \end{array}
-   \right)
+Note that the term :math:`\mathbf{J}_{MF}^{T,vec} \mathbf{J}_{MF}^{vec} + \dot{\mathbf{J}}_{MF}^{T,vec} \dot{\mathbf{J}}_{MF}^{vec}`
+does not depend on the model parameters :math:`\mathbf{x}` and can be precomputed.
 
-The :math:`X` entries above indicate that the matrix is symmetric and so only the lower half needs to
-be computed. The :math:`(1,1)` term :math:`\mathbf{J}_{int}^{T,vec} \mathbf{J}_{int}^{vec} + \dot{\mathbf{J}}_{int}^{T,vec} \dot{\mathbf{J}}_{int}^{vec}`
-can be precomputed since it does not depend on :math:`\mathbf{x}`, which saves significant computations during the
-iteration.
+Jacobian-vector products
+________________________
+
+For the normal equations method, we also
+need to calculate matrix-vector products of the form :math:`\mathbf{J}^T u`. With the above structure, we have
+
+.. math:: \mathbf{J}^T u = \begin{pmatrix}
+                             \mathbf{J}_1^T \\
+                             \mathbf{J}_2^T
+                           \end{pmatrix} u =
+                           \begin{pmatrix}
+                             \mathbf{J}_1^T u \\
+                             \mathbf{J}_2^T u
+                           \end{pmatrix}
+
+The matrix :math:`\mathbf{J}_2` is stored fully in CSR format, so :math:`\mathbf{J}_2^T u` can easily be
+computed with a sparse BLAS operation. The matrix :math:`\mathbf{J}_1` is constructed row by row,
+and so :math:`\mathbf{J}_1^T u` must be updated incrementally. Let row :math:`i` of :math:`\mathbf{J}_1`
+be :math:`\mathbf{a}_i^T`. Then,
+
+.. math:: \mathbf{J}_1^T u &= \begin{pmatrix}
+                                \mathbf{a}_1 & \mathbf{a}_2 & \cdots & \mathbf{a}_n
+                              \end{pmatrix} u \\
+                           &= \sum_i u_i \mathbf{a}_i
+
+With the B-spline representation of the Gauss coeffficients, the vectors :math:`\mathbf{a}_i` can
+themselves be sparse, with :math:`k \times nnm` non-zero elements, where :math:`k` is the order
+of the B-spline. This can be accounted for when updating the sum above.

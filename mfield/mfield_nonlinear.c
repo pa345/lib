@@ -36,9 +36,6 @@ static inline int mfield_jacobian_row_F(CBLAS_TRANSPOSE_t TransJ, const double t
                                         const double B_model[4], const size_t extidx, const double dB_ext[3],
                                         gsl_vector *J_int, gsl_matrix *JTJ, gsl_vector *v,
                                         const mfield_workspace *w);
-static int mfield_nonlinear_vector_precompute(const gsl_vector *weights, mfield_workspace *w);
-static int mfield_vector_green(const double t, const double weight, const gsl_vector *g,
-                               gsl_vector *G, mfield_workspace *w);
 static int mfield_vector_green_SV(const double t, const double weight, const gsl_vector *g,
                                   gsl_vector *G, mfield_workspace *w);
 static int mfield_vector_green_grad(const double t, const double t_grad, const double weight, const gsl_vector *g,
@@ -1734,270 +1731,6 @@ mfield_jacobian_row_F(CBLAS_TRANSPOSE_t TransJ, const double t, const double wei
 }
 
 /*
-mfield_nonlinear_vector_precompute()
-  Precompute J_int^T W J_int for vector measurements, since
-this submatrix is independent of the model parameters and
-only needs to be computed once per iteration. This function
-uses OpenMP to speed up the calculation
-
-Inputs: weights - weight vector
-        w       - workspace
-
-Notes:
-1) w->JTJ_vec is updated with J_int^T W J_int for vector
-residuals
-
-2) J_int^T W J_int is stored in lower triangle of w->JTJ_vec
-*/
-
-static int
-mfield_nonlinear_vector_precompute(const gsl_vector *weights, mfield_workspace *w)
-{
-  int s = GSL_SUCCESS;
-  size_t i, j;
-  size_t *omp_nrows; /* number of rows processed by each thread */
-  size_t nres_vec = w->nres_vec + w->nres_vec_grad + w->nres_vec_SV;
-
-  gsl_matrix_set_zero(w->JTJ_vec);
-
-  /* check for quick return */
-  if (nres_vec == 0)
-    return GSL_SUCCESS;
-
-  omp_nrows = malloc(w->max_threads * sizeof(size_t));
-
-  /*
-   * omp_rowidx[thread_id] contains the number of currently filled rows
-   * of omp_J[thread_id]. When omp_J[thread_id] is filled, it is folded
-   * into the JTJ_vec matrix and then omp_rowidx[thread_id] is reset to 0
-   */
-  for (i = 0; i < w->max_threads; ++i)
-    {
-      omp_nrows[i] = 0;
-      w->omp_rowidx[i] = 0;
-    }
-
-  fprintf(stderr, "\n");
-
-  for (i = 0; i < w->nsat; ++i)
-    {
-      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-
-#pragma omp parallel for private(j)
-      for (j = 0; j < mptr->n; ++j)
-        {
-          int thread_id = omp_get_thread_num();
-          size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-          double t = mptr->ts[j];
-          double r = mptr->r[j];
-          double theta = mptr->theta[j];
-          double phi = mptr->phi[j];
-
-          gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
-          gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
-          gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
-
-          gsl_vector_view vx_grad = gsl_matrix_row(w->omp_dX_grad, thread_id);
-          gsl_vector_view vy_grad = gsl_matrix_row(w->omp_dY_grad, thread_id);
-          gsl_vector_view vz_grad = gsl_matrix_row(w->omp_dZ_grad, thread_id);
-
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
-          /* calculate internal Green's functions */
-          green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector,
-                          w->green_array_p[thread_id]);
-
-          /* calculate internal Green's functions for gradient point (N/S or E/W) */
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
-                                MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
-            {
-              green_calc_int2(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
-                              &vx_grad.vector, &vy_grad.vector, &vz_grad.vector,
-                              w->green_array_p[thread_id]);
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_X)
-            {
-              double wj = gsl_vector_get(weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(t, wj, &vx.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_Y)
-            {
-              double wj = gsl_vector_get(weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(t, wj, &vy.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_Z)
-            {
-              double wj = gsl_vector_get(weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(t, wj, &vz.vector, &v.vector, w);
-                }
-            }
-
-          if (MAGDATA_ExistScalar(mptr->flags[j]) &&
-              MAGDATA_FitMF(mptr->flags[j]))
-            {
-              ++ridx;
-            }
-
-          if (MAGDATA_FitMF(mptr->flags[j]))
-            {
-              if (mptr->flags[j] & MAGDATA_FLG_DXDT)
-                {
-                  double wj = gsl_vector_get(weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, wj, &vx.vector, &v.vector, w);
-                }
-
-              if (mptr->flags[j] & MAGDATA_FLG_DYDT)
-                {
-                  double wj = gsl_vector_get(weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, wj, &vy.vector, &v.vector, w);
-                }
-
-              if (mptr->flags[j] & MAGDATA_FLG_DZDT)
-                {
-                  double wj = gsl_vector_get(weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, wj, &vz.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
-            {
-              double wj = gsl_vector_get(weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], wj, &vx.vector, &vx_grad.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DY_NS | MAGDATA_FLG_DY_EW))
-            {
-              double wj = gsl_vector_get(weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], wj, &vy.vector, &vy_grad.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DZ_EW))
-            {
-              double wj = gsl_vector_get(weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], wj, &vz.vector, &vz_grad.vector, &v.vector, w);
-                }
-            }
-
-          /*
-           * check if omp_J[thread_id] is full and should be folded into JTJ; the
-           * 15 is just some slop to prevent trying to fill rows past the matrix buffer
-           * in the loop above
-           */
-          if (w->omp_rowidx[thread_id] >= w->omp_J[thread_id]->size1 - 15)
-            {
-              /* fold current matrix block into JTJ_vec, one thread at a time */
-              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[thread_id], 0, 0, w->omp_rowidx[thread_id], w->p_int);
-
-              /* keep cumulative total of rows processed by this thread for progress bar */
-              omp_nrows[thread_id] += w->omp_rowidx[thread_id];
-              w->omp_rowidx[thread_id] = 0;
-
-#pragma omp critical
-              {
-                gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
-              }
-
-              if (thread_id == 0)
-                {
-                  double progress = 0.0;
-                  size_t k;
-
-                  for (k = 0; k < w->max_threads; ++k)
-                    progress += (double) omp_nrows[k];
-
-                  progress /= (double) nres_vec;
-
-                  fprintf(stderr, "\t");
-                  progress_bar(stderr, progress, 70);
-                }
-            }
-        } /* for (j = 0; j < mptr->n; ++j) */
-    } /* for (i = 0; i < w->nsat; ++i) */
-
-  /* now loop through to see if any rows were not accumulated into JTJ_vec */
-  for (i = 0; i < w->max_threads; ++i)
-    {
-      if (w->omp_rowidx[i] > 0)
-        {
-          /* accumulate final Green's functions into JTJ_vec */
-          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[i], 0, 0, w->omp_rowidx[i], w->p_int);
-          gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
-        }
-    }
-
-  free(omp_nrows);
-
-#if 0
-  printsym_octave(w->JTJ_vec, "JTJ_vec");
-  exit(1);
-#endif
-
-  return s;
-}
-
-/*
-mfield_vector_green()
-  Function to compute sqrt(w) [ J_mf J_sv J_sa ] for a given set of
-vector Green's functions
-
-Inputs: t      - scaled timestamp
-        weight - weight for this measurement
-        g      - vector Green's functions J_mf, size nnm_max
-        G      - (output) combined vector G = sqrt(w) [ g ; t*g ; 0.5*t*t*g ],
-                 size w->p_int
-        w      - workspace
-*/
-
-static int
-mfield_vector_green(const double t, const double weight, const gsl_vector *g,
-                    gsl_vector *G, mfield_workspace *w)
-{
-  const double sqrt_weight = sqrt(weight);
-  size_t i;
-
-  /* form G */
-  for (i = 0; i < w->nnm_max; ++i)
-    {
-      double gi = sqrt_weight * gsl_vector_get(g, i);
-
-      mfield_set_mf(G, i, gi, w);
-      mfield_set_sv(G, i, t * gi, w);
-      mfield_set_sa(G, i, 0.5 * t * t * gi, w);
-    }
-
-  return GSL_SUCCESS;
-}
-
-/*
 mfield_vector_green_SV()
   Function to compute sqrt(w) [ 0 J_sv J_sa ] for a given set of
 vector Green's functions for SV calculation
@@ -2742,20 +2475,38 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
   if (w->nnm_mf > 0)
     {
-      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
-              "dipole:",
-              mfield_get_mf(x, mfield_coeff_nmidx(1, 0), w),
-              mfield_get_mf(x, mfield_coeff_nmidx(1, 1), w),
-              mfield_get_mf(x, mfield_coeff_nmidx(1, -1), w));
-    }
+      gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+      const double t0 = epoch2year(w->data_workspace_p->t0_data);
+      const double t1 = epoch2year(w->data_workspace_p->t1_data);
+      const double t = 0.5 * (t0 + t1);
+      gsl_vector_view v;
+      double g10, g11, h11;
+      double dg10, dg11, dh11;
+      size_t idx;
 
-  if (w->nnm_sv > 0)
-    {
+      idx = mfield_coeff_nmidx(1, 0);
+      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
+      gsl_bspline2_eval(t, &v.vector, &g10, gauss_spline_p);
+      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg10, gauss_spline_p);
+
+      idx = mfield_coeff_nmidx(1, 1);
+      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
+      gsl_bspline2_eval(t, &v.vector, &g11, gauss_spline_p);
+      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg11, gauss_spline_p);
+
+      idx = mfield_coeff_nmidx(1, -1);
+      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
+      gsl_bspline2_eval(t, &v.vector, &h11, gauss_spline_p);
+      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dh11, gauss_spline_p);
+
+      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+              "dipole:", g10, g11, h11);
       fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
               "SV dipole:",
-              mfield_get_sv(x, mfield_coeff_nmidx(1, 0), w),
-              mfield_get_sv(x, mfield_coeff_nmidx(1, 1), w),
-              mfield_get_sv(x, mfield_coeff_nmidx(1, -1), w));
+              dg10,
+              dg11,
+              dh11);
     }
 
   if (w->params.fit_euler)
@@ -2893,20 +2644,38 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
 
   if (w->nnm_mf > 0)
     {
-      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
-              "dipole:",
-              mfield_get_mf(x, mfield_coeff_nmidx(1, 0), w),
-              mfield_get_mf(x, mfield_coeff_nmidx(1, 1), w),
-              mfield_get_mf(x, mfield_coeff_nmidx(1, -1), w));
-    }
+      gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+      const double t0 = epoch2year(w->data_workspace_p->t0_data);
+      const double t1 = epoch2year(w->data_workspace_p->t1_data);
+      const double t = 0.5 * (t0 + t1);
+      gsl_vector_view v;
+      double g10, g11, h11;
+      double dg10, dg11, dh11;
+      size_t idx;
 
-  if (w->nnm_sv > 0)
-    {
+      idx = mfield_coeff_nmidx(1, 0);
+      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
+      gsl_bspline2_eval(t, &v.vector, &g10, gauss_spline_p);
+      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg10, gauss_spline_p);
+
+      idx = mfield_coeff_nmidx(1, 1);
+      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
+      gsl_bspline2_eval(t, &v.vector, &g11, gauss_spline_p);
+      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg11, gauss_spline_p);
+
+      idx = mfield_coeff_nmidx(1, -1);
+      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
+      gsl_bspline2_eval(t, &v.vector, &h11, gauss_spline_p);
+      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dh11, gauss_spline_p);
+
+      fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
+              "dipole:", g10, g11, h11);
       fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
               "SV dipole:",
-              mfield_get_sv(x, mfield_coeff_nmidx(1, 0), w),
-              mfield_get_sv(x, mfield_coeff_nmidx(1, 1), w),
-              mfield_get_sv(x, mfield_coeff_nmidx(1, -1), w));
+              dg10,
+              dg11,
+              dh11);
     }
 
   if (w->params.fit_euler)

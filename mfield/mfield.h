@@ -35,6 +35,7 @@
  * approximate matrix size in bytes for precomputing J^T J; each
  * thread gets its own matrix (1 GB)
  */
+/*#define MFIELD_MATRIX_SIZE    (1e9)*/
 #define MFIELD_MATRIX_SIZE    (1e9)
 
 /* define if fitting to the EMAG2 grid */
@@ -62,10 +63,13 @@ typedef struct
 {
   double epoch;                         /* model epoch (decimal year) */
   double R;                             /* reference radius (km) */
+  size_t nmax_core;                     /* core field B-spline representation nmax */
+  size_t nmax;                          /* total nmax including core and crustal field */
   size_t nmax_mf;                       /* MF nmax */
   size_t nmax_sv;                       /* SV nmax */
   size_t nmax_sa;                       /* SA nmax */
   size_t nsat;                          /* number of satellites */
+  double gauss_period;                  /* knot spacing for Gauss coefficient splines (decimal years) */
   double euler_period;                  /* time period for Euler angles (decimal days) */
   double fluxcal_period;                /* knot spacing for fluxgate calibration parameters (decimal days) */
 
@@ -104,6 +108,7 @@ typedef struct
   int synth_noise;                      /* add gaussian noise to synthetic model */
   size_t synth_nmin;                    /* minimum spherical harmonic degree for synthetic model */
 
+  size_t gauss_spline_order;            /* order of spline for Gauss coefficients */
   size_t euler_spline_order;            /* order of spline for Euler angles */
   size_t fluxcal_spline_order;          /* order of spline for fluxgate calibration parameters */
 
@@ -113,6 +118,8 @@ typedef struct
 typedef struct
 {
   size_t nsat;      /* number of different satellites */
+  size_t nmax_core; /* maximum internal spherical harmonic degree for MF splines */
+  size_t nmax;      /* maximum internal spherical harmonic degree MF and crustal field */
   size_t nmax_mf;   /* maximum internal spherical harmonic degree for MF */
   size_t nmax_sv;   /* maximum internal spherical harmonic degree for SV */
   size_t nmax_sa;   /* maximum internal spherical harmonic degree for SA */
@@ -121,11 +128,14 @@ typedef struct
 
   mfield_parameters params;
 
+  size_t nnm_core;  /* number of (n,m) coefficients in model for core field splines */
+  size_t nnm_crust; /* number of (n,m) coefficients in model for crustal field */
+  size_t nnm_tot;   /* total nnm for internal field (core + crust) */
   size_t nnm_mf;    /* number of (n,m) coefficients in model for MF */
   size_t nnm_sv;    /* number of (n,m) coefficients in model for SV */
   size_t nnm_sa;    /* number of (n,m) coefficients in model for SA */
 
-  size_t nnm_max;   /* MAX(nnm_mf, nnm_sv, nnm_sa) */
+  size_t nnm_max;   /* total nnm for internal field (main + crust) */
 
   size_t *offset_euler;   /* start index of each satellite's Euler angles in coefficient vector */
   size_t *offset_fluxcal; /* start index of each satellite's fluxgate calibration parameters in coefficient vector */
@@ -134,7 +144,9 @@ typedef struct
   int ext_fdayi[3 * 366 + 30]; /* sorted array of daily timestamps with data for that day */
 
   size_t p;         /* number of model coefficients */
-  size_t p_int;     /* number of model coefficients for internal field only */
+  size_t p_core;    /* number of model coefficients for internal field represented by B-splines */
+  size_t p_crust;   /* number of model coefficients for internal crustal field */
+  size_t p_int;     /* number of model coefficients for internal field only (p_core + p_crust) */
   size_t p_sparse;  /* number of model coefficients for sparse part of Jacobian (p_euler + p_fluxcal + p_ext + p_bias) */
   size_t p_euler;   /* number of Euler angles parameters in model */
   size_t p_fluxcal; /* number of VFM calibration parameters */
@@ -236,6 +248,7 @@ typedef struct
   gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dY;      /* dY/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dZ;      /* dZ/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dF;      /* dF/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dX_grad; /* gradient dX/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dY_grad; /* gradient dY/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */
@@ -259,6 +272,7 @@ typedef struct
   green_workspace *green_workspace_p2;
   gsl_eigen_symm_workspace *eigen_workspace_p;
 
+  gsl_bspline2_workspace **gauss_spline_workspace_p;
   gsl_bspline2_workspace **euler_spline_workspace_p;
   gsl_bspline2_workspace **fluxcal_spline_workspace_p;
 } mfield_workspace;
@@ -306,7 +320,7 @@ double mfield_spectrum_sa(const size_t n, const mfield_workspace *w);
 int mfield_write(const char *filename, mfield_workspace *w);
 mfield_workspace *mfield_read(const char *filename);
 int mfield_write_ascii(const char *filename, const double epoch,
-                       const int write_delta, mfield_workspace *w);
+                       const gsl_vector * c, mfield_workspace *w);
 int mfield_new_epoch(const double new_epoch, mfield_workspace *w);
 size_t mfield_coeff_nmidx(const size_t n, const int m);
 size_t mfield_extidx(const double t, const mfield_workspace *w);
@@ -316,6 +330,7 @@ extern inline double mfield_get_sa(const gsl_vector *c, const size_t idx, const 
 extern inline int mfield_set_mf(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 extern inline int mfield_set_sv(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 extern inline int mfield_set_sa(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
+int mfield_fill_g(gsl_vector * g, msynth_workspace * core_p, msynth_workspace * crust_p, mfield_workspace * w);
 
 /* mfield_euler.c */
 int mfield_euler_print(const char *filename, const size_t sat_idx, const mfield_workspace *w);
