@@ -45,9 +45,6 @@ mfield_synth_g(gsl_vector * g, mfield_workspace * w)
   msynth_free(core_p);
   msynth_free(crust_p);
 
-  /*XXX*/
-  mfield_write_ascii("synth_coeff.txt", 2015.5, g, w);
-
   return 0;
 }
 
@@ -266,7 +263,7 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
 
           if (n <= nmax_core)
             {
-              gsl_vector_const_view v1 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_mf, ncontrol);
+              gsl_vector_const_view v1 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_core, ncontrol);
               gsl_bspline2_eval(tyr, &v1.vector, &gnm, gauss_spline_p);
             }
           else
@@ -280,7 +277,7 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
 
               if (n <= nmax_core)
                 {
-                  gsl_vector_const_view v2 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_mf, ncontrol);
+                  gsl_vector_const_view v2 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_core, ncontrol);
                   gsl_bspline2_eval(tyr, &v2.vector, &hnm, gauss_spline_p);
                 }
               else

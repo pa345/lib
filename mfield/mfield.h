@@ -294,8 +294,6 @@ int mfield_calc_linear(gsl_vector *c, mfield_workspace *w);
 int mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w);
 gsl_vector *mfield_residual(const gsl_vector *c, mfield_workspace *w);
 int mfield_reset(mfield_workspace *w);
-int mfield_coeffs(const int dir, const gsl_vector *gin, gsl_vector *gout,
-                  const mfield_workspace *w);
 int mfield_eval(const double t, const double r, const double theta, const double phi,
                 double B[4], mfield_workspace *w);
 int mfield_eval_dBdt(const double t, const double r, const double theta,
@@ -311,19 +309,16 @@ int mfield_eval_g_ext(const double t, const double r, const double theta, const 
                       const double E_st, const double I_st,
                       const gsl_vector *g, const gsl_vector *dg,
                       double B[4], mfield_workspace *w);
-int mfield_eval_static(const double r, const double theta, const double phi,
-                       const gsl_vector *g, double B[4], mfield_workspace *w);
 int mfield_calc_evals(gsl_vector *evals, mfield_workspace *w);
-double mfield_spectrum(const size_t n, const mfield_workspace *w);
-double mfield_spectrum_sv(const size_t n, const mfield_workspace *w);
-double mfield_spectrum_sa(const size_t n, const mfield_workspace *w);
+double mfield_spectrum(const double t, const size_t n, const size_t nderiv, mfield_workspace *w);
 int mfield_write(const char *filename, mfield_workspace *w);
 mfield_workspace *mfield_read(const char *filename);
 int mfield_write_ascii(const char *filename, const double epoch,
                        const gsl_vector * c, mfield_workspace *w);
-int mfield_new_epoch(const double new_epoch, mfield_workspace *w);
 size_t mfield_coeff_nmidx(const size_t n, const int m);
 size_t mfield_extidx(const double t, const mfield_workspace *w);
+extern inline double mfield_get_gnm(const double t, const size_t n, const int m,
+                                    const size_t nderiv, const gsl_vector * c, mfield_workspace * w);
 extern inline double mfield_get_mf(const gsl_vector *c, const size_t idx, const mfield_workspace *w);
 extern inline double mfield_get_sv(const gsl_vector *c, const size_t idx, const mfield_workspace *w);
 extern inline double mfield_get_sa(const gsl_vector *c, const size_t idx, const mfield_workspace *w);

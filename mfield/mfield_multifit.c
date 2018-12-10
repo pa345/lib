@@ -293,7 +293,8 @@ mfield_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f)
     }
 
   gettimeofday(&tv1, NULL);
-  mfield_debug("mfield_calc_Wf: leaving function (%g seconds)\n", time_diff(tv0, tv1));
+  mfield_debug("mfield_calc_Wf: leaving function (%g seconds, ||sqrt(W) f|| = %g)\n",
+               time_diff(tv0, tv1), gsl_blas_dnrm2(f));
 
 #if 0
   printv_octave(f, "f");
@@ -1178,7 +1179,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
   gettimeofday(&tv1, NULL);
   mfield_debug("mfield_calc_df: leaving function (%g seconds)\n", time_diff(tv0, tv1));
 
-#if 1
+#if 0
   print_octave(J, "J");
   exit(1);
 #endif

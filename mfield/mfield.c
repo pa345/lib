@@ -241,7 +241,7 @@ mfield_alloc(const mfield_parameters *params)
           if (params->euler_period <= 0.0)
             nbreak = 2;
           else
-            nbreak = (size_t) (dt / (params->euler_period - 1.0));
+            nbreak = GSL_MAX((size_t) (dt / (params->euler_period - 1.0)), 2);
 
           for (j = 0; j < w->max_threads; ++j)
             {
@@ -283,7 +283,7 @@ mfield_alloc(const mfield_parameters *params)
           if (params->fluxcal_period <= 0.0)
             nbreak = 2;
           else
-            nbreak = (size_t) (dt / (params->fluxcal_period - 1.0));
+            nbreak = GSL_MAX((size_t) (dt / (params->fluxcal_period - 1.0)), 2);
 
           for (j = 0; j < w->max_threads; ++j)
             {
@@ -955,93 +955,6 @@ mfield_calc_evals(gsl_vector *evals, mfield_workspace *w)
 }
 
 /*
-mfield_coeffs()
-  After the least squares system has been solved, convert
-coefficients to physical units and store in a given vector
-
-Inputs: dir  - direction of transformation
-                1: from dimensionless to physical
-               -1: from physical to dimensionless
-        gin  - input coefficients
-        gout - (output) where to store coefficients
-               dir = 1:
-                 MF coefficients: nT
-                 SV coefficients: nT/year
-                 SA coefficients: nT/year^2
-               dir = -1:
-                 MF coefficients: nT
-                 SV coefficients: nT/dimensionless_time
-                 SA coefficients: nT/dimensionless_time^2
-        w    - workspace
-
-Notes:
-1) It is allowed for gin = gout
-*/
-
-int
-mfield_coeffs(const int dir, const gsl_vector *gin, gsl_vector *gout,
-              const mfield_workspace *w)
-{
-  int s = 0;
-  size_t n;
-  int m;
-  double ratio = w->t_mu / w->t_sigma;
-  double ratio_sq = ratio * ratio;
-  double sigma_inv = 1.0 / w->t_sigma;
-  double sigma_inv_sq = sigma_inv * sigma_inv;
-  double sigma = w->t_sigma;
-  double sigma_sq = sigma * sigma;
-  double mu = w->t_mu;
-  double mu_sq = mu * mu;
-
-  /* this will copy any external coefficients over */
-  gsl_vector_memcpy(gout, gin);
-
-  for (n = 1; n <= w->nmax_max; ++n)
-    {
-      int ni = (int) n;
-
-      for (m = -ni; m <= ni; ++m)
-        {
-          size_t cidx = mfield_coeff_nmidx(n, m);
-          double gnm = mfield_get_mf(gin, cidx, w);
-          double dgnm = mfield_get_sv(gin, cidx, w);
-          double ddgnm = mfield_get_sa(gin, cidx, w);
-
-          if (dir == 1)
-            {
-              /*
-               * From dimensionless to physical units;
-               * undo the scaling transformation t~ = (t - t0 - mu) / sigma
-               *
-               * gnm_orig = gnm - (mu/sigma)*dgnm + 1/2*(mu/sigma)^2*ddgnm
-               * dgnm_orig = (dgnm - (mu/sigma)*ddgnm) / sigma
-               * ddgnm_orig = ddgnm / sigma^2
-               */
-              mfield_set_mf(gout, cidx, gnm - ratio * dgnm + 0.5 * ratio_sq * ddgnm, w);
-              mfield_set_sv(gout, cidx, (dgnm - ratio * ddgnm) * sigma_inv, w);
-              mfield_set_sa(gout, cidx, ddgnm * sigma_inv_sq, w);
-            }
-          else
-            {
-              /*
-               * From physical to dimensionless units
-               *
-               * gnm_new = gnm + mu*dgnm + 1/2*mu^2*ddgnm
-               * dgnm_new = sigma*(dgnm + mu*ddgnm)
-               * ddgnm_new = sigma^2 ddgnm
-               */
-              mfield_set_mf(gout, cidx, gnm + mu * dgnm + 0.5 * mu_sq * ddgnm, w);
-              mfield_set_sv(gout, cidx, sigma * (dgnm + mu * ddgnm), w);
-              mfield_set_sa(gout, cidx, ddgnm * sigma_sq, w);
-            }
-        }
-    }
-
-  return s;
-} /* mfield_coeffs() */
-
-/*
 mfield_eval()
   Evaluate magnetic field model at given point
 
@@ -1061,16 +974,9 @@ int
 mfield_eval(const double t, const double r, const double theta,
             const double phi, double B[4], mfield_workspace *w)
 {
-  int s = 0;
-  gsl_vector *c = w->c_copy;
-
-  /* convert coefficients to physical time units */
-  mfield_coeffs(1, w->c, c, w);
-
-  s = mfield_eval_g(t, r, theta, phi, c, B, w);
-
+  int s = mfield_eval_g(t, r, theta, phi, w->c, B, w);
   return s;
-} /* mfield_eval() */
+}
 
 /*
 mfield_eval_dBdt()
@@ -1092,16 +998,9 @@ int
 mfield_eval_dBdt(const double t, const double r, const double theta,
                  const double phi, double dBdt[4], mfield_workspace *w)
 {
-  int s = 0;
-  gsl_vector *c = w->c_copy;
-
-  /* convert coefficients to physical time units */
-  mfield_coeffs(1, w->c, c, w);
-
-  s = mfield_eval_dgdt(t, r, theta, phi, c, dBdt, w);
-
+  int s = mfield_eval_dgdt(t, r, theta, phi, w->c, dBdt, w);
   return s;
-} /* mfield_eval_dBdt() */
+}
 
 /*
 mfield_eval_g()
@@ -1125,39 +1024,37 @@ mfield_eval_g(const double t, const double r, const double theta, const double p
               const gsl_vector *c, double B[4], mfield_workspace *w)
 {
   int s = 0;
+  const double tyear = epoch2year(t);
   size_t n;
-  int m;
+  green_workspace * green_p = w->green_array_p[0];
+  gsl_vector_view vx = gsl_matrix_row(w->omp_dX, 0);
+  gsl_vector_view vy = gsl_matrix_row(w->omp_dY, 0);
+  gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, 0);
 
-  /* convert to years and subtract epoch */
-  const double t1 = satdata_epoch2year(t) - w->epoch; /* SV term (years) */
-  const double t2 = 0.5 * t1 * t1;                    /* SA term (years^2) */
-
-  s += mfield_green(r, theta, phi, w);
+  green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, green_p);
 
   B[0] = B[1] = B[2] = 0.0;
 
-  for (n = 1; n <= w->nmax_max; ++n)
+  for (n = 1; n <= w->nmax; ++n)
     {
       int ni = (int) n;
+      int m;
 
       for (m = -ni; m <= ni; ++m)
         {
-          size_t cidx = mfield_coeff_nmidx(n, m);
-          double g = mfield_get_mf(c, cidx, w);
-          double dg = mfield_get_sv(c, cidx, w);
-          double ddg = mfield_get_sa(c, cidx, w);
-          double gnm = g + dg * t1 + ddg * t2;
+          size_t gidx = green_nmidx(n, m, green_p);
+          double gnm = mfield_get_gnm(tyear, n, m, 0, c, w);
 
-          B[0] += gnm * w->dX[cidx];
-          B[1] += gnm * w->dY[cidx];
-          B[2] += gnm * w->dZ[cidx];
+          B[0] += gnm * gsl_vector_get(&vx.vector, gidx);
+          B[1] += gnm * gsl_vector_get(&vy.vector, gidx);
+          B[2] += gnm * gsl_vector_get(&vz.vector, gidx);
         }
     }
 
   B[3] = gsl_hypot3(B[0], B[1], B[2]);
 
   return s;
-} /* mfield_eval_g() */
+}
 
 /*
 mfield_eval_dgdt()
@@ -1364,69 +1261,27 @@ mfield_eval_g_ext(const double t, const double r, const double theta, const doub
 } /* mfield_eval_g_ext() */
 
 /*
-mfield_eval_static()
-  Evaluate magnetic field model
+mfield_spectrum()
+  Calculate spectrum of Gauss coefficients
 
-Inputs: r     - radius (km)
-        theta - colatitude (radians)
-        phi   - longitude (radians)
-        g     - spherical harmonic coefficients in units of
-                nT, nT/year, nT/year^2
-        B     - (output) magnetic field in nT
-                B[0] = B_x
-                B[1] = B_y
-                B[2] = B_z
-                B[3] = |B|
-        w     - workspace
+Inputs: t      - time in decimal years
+        n      - SH degree
+        nderiv - derivative order
+                 0: compute MF spectrum [nT^2]
+                 1: compute SV spectrum [(nT/year)^2]
+                 2: compute SA spectrum [(nT/year^2)^2]
+        w      - workspace
 */
 
-int
-mfield_eval_static(const double r, const double theta, const double phi,
-                   const gsl_vector *g, double B[4], mfield_workspace *w)
-{
-  int s = 0;
-  size_t n;
-  int m;
-
-  s += mfield_green(r, theta, phi, w);
-
-  B[0] = B[1] = B[2] = 0.0;
-
-  for (n = 1; n <= w->nmax_max; ++n)
-    {
-      int ni = (int) n;
-
-      for (m = -ni; m <= ni; ++m)
-        {
-          size_t cidx = mfield_coeff_nmidx(n, m);
-          double gnm = gsl_vector_get(g, cidx);
-
-          B[0] += gnm * w->dX[cidx];
-          B[1] += gnm * w->dY[cidx];
-          B[2] += gnm * w->dZ[cidx];
-        }
-    }
-
-  B[3] = gsl_hypot3(B[0], B[1], B[2]);
-
-  return s;
-} /* mfield_eval_static() */
-
 double
-mfield_spectrum(const size_t n, const mfield_workspace *w)
+mfield_spectrum(const double t, const size_t n, const size_t nderiv, mfield_workspace *w)
 {
   int m, ni = (int) n;
   double sum = 0.0;
-  gsl_vector *c = w->c_copy;
-
-  /* undo time scaling of coefficients */
-  mfield_coeffs(1, w->c, c, w);
 
   for (m = -ni; m <= ni; ++m)
     {
-      size_t cidx = mfield_coeff_nmidx(n, m);
-      double gnm = mfield_get_mf(c, cidx, w);
-
+      double gnm = mfield_get_gnm(t, n, m, nderiv, w->c, w);
       sum += gnm * gnm;
     }
 
@@ -1434,57 +1289,7 @@ mfield_spectrum(const size_t n, const mfield_workspace *w)
   sum *= (n + 1.0);
 
   return sum;
-} /* mfield_spectrum() */
-
-/* SV spectrum */
-double
-mfield_spectrum_sv(const size_t n, const mfield_workspace *w)
-{
-  int m, ni = (int) n;
-  double sum = 0.0;
-  gsl_vector *c = w->c_copy;
-
-  /* undo time scaling of coefficients */
-  mfield_coeffs(1, w->c, c, w);
-
-  for (m = -ni; m <= ni; ++m)
-    {
-      size_t cidx = mfield_coeff_nmidx(n, m);
-      double dgnm = mfield_get_sv(c, cidx, w);
-
-      sum += dgnm * dgnm;
-    }
-
-  /* see Backus (4.4.22) */
-  sum *= (n + 1.0);
-
-  return sum;
-} /* mfield_spectrum_sv() */
-
-/* SA spectrum */
-double
-mfield_spectrum_sa(const size_t n, const mfield_workspace *w)
-{
-  int m, ni = (int) n;
-  double sum = 0.0;
-  gsl_vector *c = w->c_copy;
-
-  /* undo time scaling of coefficients */
-  mfield_coeffs(1, w->c, c, w);
-
-  for (m = -ni; m <= ni; ++m)
-    {
-      size_t cidx = mfield_coeff_nmidx(n, m);
-      double ddgnm = mfield_get_sa(c, cidx, w);
-
-      sum += ddgnm * ddgnm;
-    }
-
-  /* see Backus (4.4.22) */
-  sum *= (n + 1.0);
-
-  return sum;
-} /* mfield_spectrum_sa() */
+}
 
 int
 mfield_write(const char *filename, mfield_workspace *w)
@@ -1581,7 +1386,7 @@ mfield_write_ascii(const char *filename, const double epoch,
 
   /* print header information */
   fprintf(fp, "%% Magnetic field model coefficients\n");
-  fprintf(fp, "%% nmax:  %zu\n", w->nmax_max);
+  fprintf(fp, "%% nmax:  %zu\n", w->nmax);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
   fprintf(fp, "%% lambda_mf: %.2f\n", params->lambda_mf);
@@ -1606,7 +1411,7 @@ mfield_write_ascii(const char *filename, const double epoch,
 
           if (n <= w->nmax_core)
             {
-              gsl_vector_const_view v = gsl_vector_const_subvector_with_stride(c, cidx, w->nnm_mf, ncontrol);
+              gsl_vector_const_view v = gsl_vector_const_subvector_with_stride(c, cidx, w->nnm_core, ncontrol);
               gsl_bspline2_eval(epoch, &v.vector, &gnm, gauss_spline_p);
               gsl_bspline2_eval_deriv(epoch, &v.vector, 1, &dgnm, gauss_spline_p);
               gsl_bspline2_eval_deriv(epoch, &v.vector, 2, &ddgnm, gauss_spline_p);
@@ -1630,61 +1435,6 @@ mfield_write_ascii(const char *filename, const double epoch,
 
   return s;
 }
-
-/*
-mfield_new_epoch()
-  Extrapolate model coefficients to new epoch. The
-old Taylor series is:
-
-gnm(t) = gnm + (t - t0) dgnm + 1/2 (t - t0)^2 ddgnm
-
-We want a taylor series around a new epoch:
-
-gnm(t) = new_gnm + (t - new_t0) new_dgnm + 1/2 (t - new_t0)^2 new_ddgnm
-
-The new taylor coefficients are given as:
-
-new_gnm   = gnm + a dgnm + 1/2 a^2 ddgnm
-new_dgnm  = dgnm + a ddgnm
-new_ddgnm = ddgnm
-
-with: a = new_t0 - t0
-*/
-
-int
-mfield_new_epoch(const double new_epoch, mfield_workspace *w)
-{
-  int s = 0;
-  size_t n;
-  gsl_vector *c = w->c_copy;
-  double t1 = new_epoch - w->epoch;
-  double t2 = 0.5 * t1 * t1;
-
-  /* convert coefficients to physical time units */
-  mfield_coeffs(1, w->c, c, w);
-
-  for (n = 1; n <= w->nmax_max; ++n)
-    {
-      int m, ni = (int) n;
-
-      for (m = -ni; m <= ni; ++m)
-        {
-          size_t cidx = mfield_coeff_nmidx(n, m);
-          double gnm = mfield_get_mf(c, cidx, w); 
-          double dgnm = mfield_get_sv(c, cidx, w);
-          double ddgnm = mfield_get_sa(c, cidx, w);
-
-          mfield_set_mf(c, cidx, gnm + t1 * dgnm + t2 * ddgnm, w);
-          mfield_set_sv(c, cidx, dgnm + t1 * ddgnm, w);
-          mfield_set_sa(c, cidx, ddgnm, w);
-        }
-    }
-
-  /* convert back to dimensionless units */
-  mfield_coeffs(-1, c, w->c, w);
-
-  return s;
-} /* mfield_new_epoch() */
 
 /*******************************************************
  *      INTERNAL ROUTINES                              *
@@ -1837,6 +1587,44 @@ mfield_coeff_nmidx(const size_t n, const int m)
   return nmidx - 1;
 } /* mfield_coeff_nmidx() */
 
+/*
+mfield_get_gnm()
+  Return g_n^m(t) coefficient or one of its derivatives
+for a given (n,m) and time t.
+
+Inputs: t      - time in decimal years
+        n      - SH degree
+        m      - SH order
+        nderiv - derivative order
+        c      - coefficient vector
+        w      - workspace
+
+Return: g_n^m(t)
+*/
+
+inline double
+mfield_get_gnm(const double t, const size_t n, const int m,
+               const size_t nderiv, const gsl_vector * c, mfield_workspace * w)
+{
+  const size_t cidx = mfield_coeff_nmidx(n, m);
+  double gnm = 0.0;
+
+  if (n <= w->nmax_core)
+    {
+      gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+      gsl_vector_const_view v = gsl_vector_const_subvector_with_stride(c, cidx, w->nnm_core, ncontrol);
+
+      gsl_bspline2_eval_deriv(t, &v.vector, nderiv, &gnm, gauss_spline_p);
+    }
+  else if (nderiv == 0)
+    {
+      gnm = gsl_vector_get(c, cidx + (w->p_core - w->nnm_core));
+    }
+
+  return gnm;
+}
+
 inline double
 mfield_get_mf(const gsl_vector *c, const size_t idx,
               const mfield_workspace *w)
@@ -1962,7 +1750,7 @@ mfield_fill_g(gsl_vector * g, msynth_workspace * core_p, msynth_workspace * crus
           /* store result in coefficient vector */
           for (i = 0; i < ncontrol; ++i)
             {
-              size_t idx = CIDX2(i, ncontrol, cidx, w->nnm_mf);
+              size_t idx = CIDX2(i, ncontrol, cidx, w->nnm_core);
               double gnmi = gsl_vector_get(work, i);
               gsl_vector_set(g, idx, gnmi);
             }

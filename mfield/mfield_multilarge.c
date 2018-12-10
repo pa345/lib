@@ -148,6 +148,7 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
               ++ridx;
             }
 
+#if 0 /*XXX*/
           if (MAGDATA_FitMF(mptr->flags[j]))
             {
               if (mptr->flags[j] & MAGDATA_FLG_DXDT)
@@ -201,6 +202,7 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
                   mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vz.vector, &vz_grad.vector, &v.vector, w);
                 }
             }
+#endif /*XXX*/
 
           /*
            * check if omp_J[thread_id] is full and should be folded into JTJ; the
@@ -772,7 +774,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       gsl_vector_add(&v.vector, w->LTL);
     }
 
-#if 1
+#if 0
   if (u)
     printv_octave(u, "u");
 
@@ -973,6 +975,17 @@ mfield_jacobian_F(CBLAS_TRANSPOSE_t TransJ, const size_t istart, const gsl_vecto
         {
           gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], istart * w->nnm_core, order * w->nnm_core);
           gsl_blas_daxpy(Ad[p], &vJ_core.vector, &out.vector);
+        }
+
+      if (w->nnm_crust > 0)
+        {
+          gsl_vector_const_view vJ_crust = gsl_vector_const_subvector(J_int, w->p_core, w->nnm_crust);
+
+          for (p = Ap[ridx]; p < Ap[ridx + 1]; ++p)
+            {
+              gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->p_core, w->nnm_crust);
+              gsl_blas_daxpy(Ad[p], &vJ_crust.vector, &out.vector);
+            }
         }
     }
 

@@ -471,3 +471,32 @@ be :math:`\mathbf{a}_i^T`. Then,
 With the B-spline representation of the Gauss coeffficients, the vectors :math:`\mathbf{a}_i` can
 themselves be sparse, with :math:`k \times nnm` non-zero elements, where :math:`k` is the order
 of the B-spline. This can be accounted for when updating the sum above.
+
+Indexing
+--------
+
+The parameter vector :math:`\mathbf{x}` is organized as follows:
+
+.. math:: \mathbf{x} = \begin{pmatrix}
+                         \mathbf{x}_{core} \\
+                         \mathbf{x}_{crust} \\
+                         \mathbf{x}_{Euler} \\
+                         \mathbf{x}_{fluxcal}
+                       \end{pmatrix}
+
+The parameters :math:`\mathbf{x}_{core}` are the B-spline control points
+for the Gauss coefficient splines up to degree :code:`nmax_core`. They are
+organized as follows:
+
+.. math:: \mathbf{x}_{core} = \begin{pmatrix}
+                                \mathbf{g}_{n,0}^m \\
+                                \mathbf{g}_{n,1}^m \\
+                                \vdots \\
+                                \mathbf{g}_{n,ncontrol}^m \\
+                              \end{pmatrix}
+
+where each :math:`\mathbf{g}_{n,k}^m` is a vector of Gauss coefficients
+of length :code:`nnm_core`.
+
+The parameters :math:`\mathbf{x}_{crust}` are the static Gauss coefficients
+representing the crustal field, of length :code:`nnm_crust`.

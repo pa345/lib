@@ -78,8 +78,6 @@ Notes:
 4) static coefficients have units of nT
 5) SV coefficients have units of nT/dimensionless_time
 6) SA coefficients have units of nT/dimensionless_time^2
-7) call mfield_coeffs() to convert coefficients to physical
-   time units
 */
 
 int
@@ -107,9 +105,6 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
   fdf.params = w;
 
   printv_octave(c, "c0");
-
-  /* convert input vector from physical to dimensionless time units */
-  mfield_coeffs(-1, c, c, w);
 
   /* compute robust weights with coefficients from previous iteration */
   if (w->niter > 0)
@@ -194,12 +189,10 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
     gsl_vector *x_final = gsl_multifit_nlinear_position(w->multifit_nlinear_p);
 
     gsl_vector_memcpy(w->c, x_final);
-    mfield_coeffs(1, w->c, c, w);
   }
 #endif
 
-  /* convert coefficients to physical units */
-  mfield_coeffs(1, w->c, c, w);
+  gsl_vector_memcpy(c, w->c);
 
   printv_octave(c, "cfinal");
 
@@ -250,7 +243,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
 
   fprintf(stderr, "mfield_calc_nonlinear: precomputing vector J_int^T W J_int...");
   gettimeofday(&tv0, NULL);
-  mfield_nonlinear_vector_precompute(w->wts_final, w);
+  mfield_nonlinear_vector_precompute(w->sqrt_wts_final, w);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
@@ -1140,8 +1133,6 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   return GSL_SUCCESS;
 }
 
-#endif
-
 /*
 mfield_jacobian_JTu()
   Update the J^T u vector with a new row of the Jacobian matrix,
@@ -1798,6 +1789,8 @@ mfield_vector_green_grad(const double t, const double t_grad, const double weigh
 
   return GSL_SUCCESS;
 }
+
+#endif /* 0 */
 
 /*
 mfield_nonlinear_model_ext()
@@ -2473,32 +2466,22 @@ mfield_nonlinear_callback(const size_t iter, void *params,
           gsl_multifit_nlinear_name(multifit_p),
           gsl_multifit_nlinear_trs_name(multifit_p));
 
-  if (w->nnm_mf > 0)
+  if (w->nnm_core > 0)
     {
-      gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
-      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
       const double t0 = epoch2year(w->data_workspace_p->t0_data);
       const double t1 = epoch2year(w->data_workspace_p->t1_data);
       const double t = 0.5 * (t0 + t1);
-      gsl_vector_view v;
       double g10, g11, h11;
       double dg10, dg11, dh11;
-      size_t idx;
 
-      idx = mfield_coeff_nmidx(1, 0);
-      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
-      gsl_bspline2_eval(t, &v.vector, &g10, gauss_spline_p);
-      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg10, gauss_spline_p);
+      g10 = mfield_get_gnm(t, 1, 0, 0, x, w);
+      dg10 = mfield_get_gnm(t, 1, 0, 1, x, w);
 
-      idx = mfield_coeff_nmidx(1, 1);
-      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
-      gsl_bspline2_eval(t, &v.vector, &g11, gauss_spline_p);
-      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg11, gauss_spline_p);
+      g11 = mfield_get_gnm(t, 1, 1, 0, x, w);
+      dg11 = mfield_get_gnm(t, 1, 1, 1, x, w);
 
-      idx = mfield_coeff_nmidx(1, -1);
-      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
-      gsl_bspline2_eval(t, &v.vector, &h11, gauss_spline_p);
-      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dh11, gauss_spline_p);
+      h11 = mfield_get_gnm(t, 1, -1, 0, x, w);
+      dh11 = mfield_get_gnm(t, 1, -1, 1, x, w);
 
       fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
               "dipole:", g10, g11, h11);
@@ -2642,32 +2625,22 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
           gsl_multilarge_nlinear_name(multilarge_p),
           gsl_multilarge_nlinear_trs_name(multilarge_p));
 
-  if (w->nnm_mf > 0)
+  if (w->nnm_core > 0)
     {
-      gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
-      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
       const double t0 = epoch2year(w->data_workspace_p->t0_data);
       const double t1 = epoch2year(w->data_workspace_p->t1_data);
       const double t = 0.5 * (t0 + t1);
-      gsl_vector_view v;
       double g10, g11, h11;
       double dg10, dg11, dh11;
-      size_t idx;
 
-      idx = mfield_coeff_nmidx(1, 0);
-      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
-      gsl_bspline2_eval(t, &v.vector, &g10, gauss_spline_p);
-      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg10, gauss_spline_p);
+      g10 = mfield_get_gnm(t, 1, 0, 0, x, w);
+      dg10 = mfield_get_gnm(t, 1, 0, 1, x, w);
 
-      idx = mfield_coeff_nmidx(1, 1);
-      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
-      gsl_bspline2_eval(t, &v.vector, &g11, gauss_spline_p);
-      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dg11, gauss_spline_p);
+      g11 = mfield_get_gnm(t, 1, 1, 0, x, w);
+      dg11 = mfield_get_gnm(t, 1, 1, 1, x, w);
 
-      idx = mfield_coeff_nmidx(1, -1);
-      v = gsl_vector_subvector_with_stride(x, idx, w->nnm_mf, ncontrol);
-      gsl_bspline2_eval(t, &v.vector, &h11, gauss_spline_p);
-      gsl_bspline2_eval_deriv(t, &v.vector, 1, &dh11, gauss_spline_p);
+      h11 = mfield_get_gnm(t, 1, -1, 0, x, w);
+      dh11 = mfield_get_gnm(t, 1, -1, 1, x, w);
 
       fprintf(stderr, "\t %-10s %12.4f %12.4f %12.4f [nT]\n",
               "dipole:", g10, g11, h11);

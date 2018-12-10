@@ -163,10 +163,13 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
 {
   size_t i;
   msynth_workspace *msynth_p = msynth_igrf_read(MSYNTH_IGRF_FILE);
+  /*msynth_workspace *msynth_p = msynth_shc_read(MSYNTH_CHAOS_FILE);*/
 
   gsl_vector_set_zero(c);
 
   mfield_fill_g(c, msynth_p, NULL, w);
+
+  mfield_write_ascii("initial.txt", 2015.5, c, w);
 
 #if 0
   {
@@ -224,10 +227,12 @@ print_spectrum(const char *filename, mfield_workspace *w)
 {
   const double c = 3485.0;               /* Earth core radius */
   const double ratio = w->params.R / c;  /* a / c */
+  const double epoch = w->params.epoch;
   size_t n;
   FILE *fp = fopen(filename, "w");
 
   n = 1;
+  fprintf(fp, "# Spectrum epoch: %g\n", epoch);
   fprintf(fp, "# Field %zu: spherical harmonic degree n\n", n++);
   fprintf(fp, "# Field %zu: MF power R_n at Earth surface\n", n++);
   fprintf(fp, "# Field %zu: SV power R_n at Earth surface\n", n++);
@@ -237,11 +242,11 @@ print_spectrum(const char *filename, mfield_workspace *w)
   fprintf(fp, "# Field %zu: SA power R_n at CMB\n", n++);
 
   fprintf(stderr, "print_spectrum: writing spectrum to %s...", filename);
-  for (n = 1; n <= w->nmax_max; ++n)
+  for (n = 1; n <= w->nmax; ++n)
     {
-      double gn = mfield_spectrum(n, w);
-      double dgn = mfield_spectrum_sv(n, w);
-      double ddgn = mfield_spectrum_sa(n, w);
+      double gn = mfield_spectrum(epoch, n, 0, w);
+      double dgn = mfield_spectrum(epoch, n, 1, w);
+      double ddgn = mfield_spectrum(epoch, n, 2, w);
       double rterm = pow(ratio, 2.0*n + 4.0);
 
       fprintf(fp, "%zu %.12e %.12e %.12e %.12e %.12e %.12e\n",
@@ -258,7 +263,7 @@ print_spectrum(const char *filename, mfield_workspace *w)
   fclose(fp);
 
   return 0;
-} /* print_spectrum() */
+}
 
 static int
 check_parameters(const mfield_parameters * mfield_params,
@@ -819,6 +824,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of fluxgate calibration parameters: %zu\n", mfield_workspace_p->p_fluxcal);
   fprintf(stderr, "main: number of external field parameters:       %zu\n", mfield_workspace_p->p_ext);
   fprintf(stderr, "main: number of crustal bias parameters:         %zu\n", mfield_workspace_p->p_bias);
+  fprintf(stderr, "main: number of total parameters:                %zu\n", mfield_workspace_p->p);
 
   if (mfield_params.synth_data)
     {
@@ -1072,14 +1078,14 @@ main(int argc, char *argv[])
       double t = mfield_params.epoch;
 
       fprintf(stderr, "main: printing internal coefficients up to degree 3\n");
-      for (n = 1; n <= GSL_MIN(3, mfield_workspace_p->nmax_max); ++n)
+      for (n = 1; n <= GSL_MIN(3, mfield_workspace_p->nmax); ++n)
         {
           int ni = (int) n;
           for (m = -ni; m <= ni; ++m)
             {
               int mabs = abs(m);
               size_t cidx = mfield_coeff_nmidx(n, m);
-              gsl_vector_view v = gsl_vector_subvector_with_stride(coeffs, cidx, mfield_workspace_p->nnm_mf, ncontrol);
+              gsl_vector_view v = gsl_vector_subvector_with_stride(coeffs, cidx, mfield_workspace_p->nnm_core, ncontrol);
               char c = (m < 0) ? 'h' : 'g';
               double gnm, dgnm, ddgnm;
 

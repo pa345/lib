@@ -49,7 +49,7 @@ mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfie
   fprintf(fp, "# Field %zu: (d/dt)^2 g(n,m) error (nT)\n", n++);
   fprintf(fp, "# Field %zu: uncertainty in SA g(n,m) (dimensionless)\n", n++);
 
-  for (n = 1; n <= w->nmax_max; ++n)
+  for (n = 1; n <= w->nmax; ++n)
     {
       int m, ni = (int) n;
 
