@@ -1,9 +1,14 @@
 #define OLD_FDF     0
 
+#include <gsl/gsl_integration.h>
+
 typedef struct
 {
-  mfield_workspace *w;
-} mfield_nonlinear_params;
+  size_t i;
+  size_t j;
+  size_t nderiv;
+  gsl_bspline2_workspace * w;
+} splineint_params;
 
 static int mfield_init_nonlinear(mfield_workspace *w);
 static int mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w);
@@ -45,6 +50,7 @@ static int mfield_nonlinear_model_ext(const double r, const double theta,
                                       double dB[3], const mfield_workspace *w);
 static int mfield_nonlinear_regularize(gsl_vector *diag,
                                        mfield_workspace *w);
+static int mfield_nonlinear_regularize_init(mfield_workspace *w);
 static void mfield_nonlinear_callback(const size_t iter, void *params,
                                       const gsl_multifit_nlinear_workspace *multifit_p);
 static void mfield_nonlinear_callback2(const size_t iter, void *params,
@@ -53,6 +59,7 @@ static int mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_
 static double huber(const double x);
 static double bisquare(const double x);
 static int mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs, mfield_workspace * w);
+static int mfield_bspline2_pmatrix(const size_t nderiv, gsl_matrix * A, gsl_bspline2_workspace * w);
 
 #include "mfield_multifit.c"
 #include "mfield_multilarge.c"
@@ -269,7 +276,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
       fprintf(stderr, "done\n");
 
       /* regularize JTJ matrix */
-      gsl_vector_add(&diag.vector, w->LTL);
+      gsl_spmatrix_add_to_dense(JTJ, w->LTL);
 
       fprintf(stderr, "mfield_calc_nonlinear: solving linear normal equations system...");
       gettimeofday(&tv0, NULL);
@@ -671,20 +678,24 @@ mfield_init_nonlinear(mfield_workspace *w)
   if (params->regularize && !params->synth_data)
     {
       fprintf(stderr, "mfield_init_nonlinear: calculating regularization matrix...");
+      mfield_nonlinear_regularize_init(w);
+      fprintf(stderr, "done\n");
 
+#if 0 /*XXX*/
       /* compute diag(L) */
       mfield_nonlinear_regularize(w->lambda_diag, w);
 
       /* compute L^T L */
       gsl_vector_memcpy(w->LTL, w->lambda_diag);
       gsl_vector_mul(w->LTL, w->lambda_diag);
-
-      fprintf(stderr, "done\n");
+#endif
     }
   else
     {
-      gsl_vector_set_all(w->lambda_diag, 0.0);
-      gsl_vector_set_all(w->LTL, 0.0);
+#if 0 /*XXX*/
+      gsl_vector_set_zero(w->lambda_diag);
+#endif
+      gsl_spmatrix_set_zero(w->LTL);
     }
 
   return s;
@@ -1873,6 +1884,9 @@ mfield_nonlinear_regularize()
 with
 
 L_{nm} = (n+1)/sqrt(2n + 1) (a/c)^{n+2}
+
+Inputs: diag - diagonal of regularization matrix
+        w    - workspace
 */
 
 static int
@@ -1886,6 +1900,16 @@ mfield_nonlinear_regularize(gsl_vector *diag, mfield_workspace *w)
   size_t n;
 
   gsl_vector_set_zero(diag);
+
+  {
+    gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[0];
+    const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+    gsl_matrix * A = gsl_matrix_alloc(ncontrol, gauss_spline_p->spline_order);
+
+    mfield_bspline2_pmatrix(2, A, gauss_spline_p);
+
+    gsl_matrix_free(A);
+  }
 
   for (n = 1; n <= nmax; ++n)
     {
@@ -1905,6 +1929,165 @@ mfield_nonlinear_regularize(gsl_vector *diag, mfield_workspace *w)
 
   return s;
 } /* mfield_nonlinear_regularize() */
+
+/*
+mfield_nonlinear_regularize_init()
+  Construct the p-by-p regularization matrix L.
+
+                    p_core           p_crust         p_euler          p_fluxcal
+L = p_core    [ N^{(3)} x Lambda |              |               |                ]
+    p_crust   [                  |      0       |               |                ]
+    p_euler   [                  |              | N^{(2)} x I_3 |                ]
+    p_fluxcal [                  |              |               | N^{(2)} x I_9  ]
+
+Here, "x" denotes Kronecker product.
+N^{(n)} denotes the matrix N_{ij} = 1 / dt * \int_{min(knots)}^{max(knots)} d^n/dt^n N_i(t) d^n/dt^n N_j(t) dt
+Lambda is a diagonal matrix given by:
+
+Lambda_{nm,n'm'} = (a/c)^{n+2} (n+1) / sqrt(2n + 1} delta_{mm'} delta_{nn'}
+
+Inputs: w - workspace
+
+Notes:
+1) on output, w->L contains the regularization matrix L; only the lower triangle is stored
+since the matrix is symmetric
+
+2) on output, w->LTL contains L^T L stored in the lower triangle
+*/
+
+static int
+mfield_nonlinear_regularize_init(mfield_workspace *w)
+{
+  int s = 0;
+
+  gsl_spmatrix_set_zero(w->L);
+
+#if 0 /*XXX*/
+  /*XXX*/
+  {
+    gsl_bspline2_workspace *b = gsl_bspline2_alloc2(4, 10);
+    gsl_matrix *A = gsl_matrix_alloc(10, 4);
+    gsl_vector *v = gsl_vector_alloc(10);
+
+    gsl_bspline2_init_uniform(0.0, 1.0, b);
+    printv_octave(b->knots, "knots");
+
+    gsl_bspline2_eval_basis(0.2, v, b);
+    fprintf(stderr, "x = 0.2, B = %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
+            gsl_vector_get(v,0),
+            gsl_vector_get(v,1),
+            gsl_vector_get(v,2),
+            gsl_vector_get(v,3),
+            gsl_vector_get(v,4),
+            gsl_vector_get(v,5),
+            gsl_vector_get(v,6),
+            gsl_vector_get(v,7),
+            gsl_vector_get(v,8),
+            gsl_vector_get(v,9));
+    gsl_bspline2_eval_basis(0.5, v, b);
+    fprintf(stderr, "x = 0.5, B = %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
+            gsl_vector_get(v,0),
+            gsl_vector_get(v,1),
+            gsl_vector_get(v,2),
+            gsl_vector_get(v,3),
+            gsl_vector_get(v,4),
+            gsl_vector_get(v,5),
+            gsl_vector_get(v,6),
+            gsl_vector_get(v,7),
+            gsl_vector_get(v,8),
+            gsl_vector_get(v,9));
+
+    mfield_bspline2_pmatrix(1, A, b);
+    printsb_octave(A, "A");
+    exit(1);
+  }
+#endif
+
+  if (w->p_core > 0)
+    {
+      gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[0];
+      const double t0 = gsl_vector_get(gauss_spline_p->knots, 0);
+      const double t1 = gsl_vector_get(gauss_spline_p->knots, gauss_spline_p->knots->size - 1);
+      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+      const size_t order = gsl_bspline2_order(gauss_spline_p);
+      const double c = 3485.0;       /* Earth core radius */
+      const double a = w->params.R;  /* Earth surface radius */
+      const double ratio = a / c;
+      double rterm = ratio * ratio * ratio; /* (a/c)^{n+2} */
+      size_t n, i, j;
+      gsl_vector * c_core = gsl_vector_calloc(w->nnm_core);
+      gsl_matrix * N_core = gsl_matrix_alloc(ncontrol, order);
+
+      /*
+       * construct vector c_core = diag(C) for minimizing
+       *
+       * < d^3/dt^3 B_r > averaged over CMB. c_core contains the spatial
+       * part:
+       *
+       * (a/c)^{n+2} (n+1) / sqrt(2n + 1)
+       */
+
+      for (n = 1; n <= w->nmax_core; ++n)
+        {
+          int ni = (int) n;
+          int m;
+          double term = (n + 1.0) / sqrt(2.0*n + 1.0) * rterm;
+
+          for (m = -ni; m <= ni; ++m)
+            {
+              size_t cidx = mfield_coeff_nmidx(n, m);
+              gsl_vector_set(c_core, cidx, term);
+            }
+
+          rterm *= ratio;
+        }
+
+      printv_octave(c_core, "lambda");
+      printv_octave(gauss_spline_p->knots, "knots");
+
+      /* construct N_{ij} = 1/dt * \int N^{(3)}_i(t) N^{(3)}_j(t) dt for Gauss coefficient splines */
+      mfield_bspline2_pmatrix(3, N_core, gauss_spline_p);
+      gsl_matrix_scale(N_core, 1.0 / (t1 - t0));
+      printsb_octave(N_core, "N_core");
+
+#if 0 /*XXX*/
+      gsl_linalg_cholesky_band_decomp(N_core);
+      printlb_octave(N_core, "L_core");
+#endif
+
+      /* construct L(1:p_core,1:p_core) = N^{(3)} x C */
+      for (j = 0; j < ncontrol; ++j)
+        {
+          for (i = 0; i < order && i + j < ncontrol; ++i)
+            {
+              size_t row = i + j;
+              double Nij = gsl_matrix_get(N_core, j, i);
+              size_t k;
+
+              for (k = 0; k < w->nnm_core; ++k)
+                {
+                  double ck = gsl_vector_get(c_core, k);
+                  gsl_spmatrix_set(w->L, row * w->nnm_core + k, j * w->nnm_core + k, w->lambda_mf * Nij * ck); /*XXX*/
+                  gsl_spmatrix_set(w->LTL, row * w->nnm_core + k, j * w->nnm_core + k, w->lambda_mf * Nij * ck * ck);
+                }
+            }
+        }
+
+      gsl_vector_free(c_core);
+      gsl_matrix_free(N_core);
+    }
+
+#if 0 /*XXX*/
+  {
+    gsl_matrix *L = gsl_matrix_alloc(w->p, w->p);
+    gsl_spmatrix_sp2d(L, w->L);
+    print_octave(L, "L");
+  }
+  exit(1);
+#endif
+
+  return s;
+}
 
 static int
 mfield_robust_print_stat(const char *str, const double value, const gsl_rstat_workspace *rstat_p)
@@ -2775,4 +2958,93 @@ mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs,
   w->nlinear_workspace_p = gsl_multilarge_nlinear_alloc(T, &fdf_params, w->nres_tot, w->p);
 
   return 0;
+}
+
+static double
+splineint_func (double x, void * params)
+{
+  splineint_params * p = (splineint_params *) params;
+  gsl_bspline2_workspace * w = p->w;
+  const size_t order = w->spline_order;
+  const size_t i = p->i;
+  const size_t j = p->j;
+  size_t istart;
+
+  gsl_bspline2_eval_deriv_basis_nonzero(x, p->nderiv, w->dB, &istart, w);
+
+  if (i < istart || j < istart)
+    return 0.0;
+  else if (i >= istart + order || j >= istart + order)
+    return 0.0;
+  else
+    {
+      double Ni = gsl_matrix_get(w->dB, i - istart, p->nderiv);
+      double Nj = gsl_matrix_get(w->dB, j - istart, p->nderiv);
+      return (Ni * Nj);
+    }
+}
+
+/*
+mfield_bspline2_pmatrix()
+  Compute the matrix of integrals of products of B-splines.
+
+A_{ij} = \int_{min(knots)}^{max(knots)} N^{(nderiv)}_i(x) N^{(nderiv)}_j(x) dx
+
+The matrix is ncontrol-by-ncontrol, symmetric and banded, with lower bandwidth k-1.
+
+Inputs: nderiv - derivative order
+        A      - (output) product matrix in symmetric banded format,
+                 ncontrol-by-order
+        w      - workspace
+*/
+
+static int
+mfield_bspline2_pmatrix(const size_t nderiv, gsl_matrix * A, gsl_bspline2_workspace * w)
+{
+  const size_t ncontrol = w->ncontrol;
+  const size_t order = w->spline_order;
+
+  if (A->size1 != ncontrol)
+    {
+      GSL_ERROR ("first matrix dimension does not match workspace", GSL_EBADLEN);
+    }
+  else if (A->size2 != order)
+    {
+      GSL_ERROR ("second matrix dimension does not match workspace", GSL_EBADLEN);
+    }
+  else
+    {
+      const double a = gsl_vector_get(w->knots, 0);
+      const double b = gsl_vector_get(w->knots, ncontrol + order - 1);
+      const double epsabs = 0.0;
+      const double epsrel = 1.0e-8;
+      gsl_integration_romberg_workspace * romberg_p = gsl_integration_romberg_alloc(20);
+      gsl_function F;
+      splineint_params params;
+      size_t i, j;
+
+      F.function = splineint_func;
+      F.params = &params;
+
+      for (j = 0; j < ncontrol; ++j)
+        {
+          for (i = 0; i < order && i + j < ncontrol; ++i)
+            {
+              double result;
+              size_t neval;
+
+              params.i = i + j;
+              params.j = j;
+              params.nderiv = nderiv;
+              params.w = w;
+
+              gsl_integration_romberg(&F, a, b, epsabs, epsrel, &result, &neval, romberg_p);
+              gsl_matrix_set(A, j, i, result);
+            }
+        }
+
+      gsl_integration_romberg_free(romberg_p);
+
+      return GSL_SUCCESS;
+    }
 }

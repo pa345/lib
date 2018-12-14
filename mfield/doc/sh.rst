@@ -156,11 +156,17 @@ and
 
 then we can write :math:`V_{int}(r,\theta,\phi)` more compactly as
 
-.. math::
+.. math:: V_{int}(r,\theta,\phi) = \sum_{n=1}^N \sum_{m=-n}^n \tilde{g}_n^m V_n^m(r,\theta,\phi)
 
-   V_{int}(r,\theta,\phi) = a \sum_{n=1}^N \sum_{m=-n}^n \left( \frac{a}{r} \right)^{n+1} \tilde{g}_n^m S_n^m(\theta,\phi)
+with
+
+.. math:: V_n^m(r,\theta,\phi) = a \left( \frac{a}{r} \right)^{n+1} S_n^m(\theta,\phi)
 
 Defining :math:`\mathbf{B} = - \nabla V` gives
+
+.. math:: \mathbf{B}(r,\theta,\phi) = \sum_{n=1}^N \sum_{m=-n}^n \tilde{g}_n^m \mathbf{B}_n^m(r,\theta,\phi)
+
+where :math:`\mathbf{B}_n^m = -\nabla V_n^m`. Writing out components, we have
 
 .. math::
 
@@ -251,4 +257,7 @@ Useful Identities
 
 The following identities are useful for developing regularization conditions in inverse problems.
 
-.. math:: \int_0^{2\pi} e^{i(m - m')\phi} d\phi = 2 \pi \delta_{m m'}
+.. math::
+   
+   \int_0^{2\pi} e^{i(m - m')\phi} d\phi &= 2 \pi \delta_{m m'} \\
+   \int S_n^m(\theta,\phi) S_{n'}^{m'}(\theta,\phi) d\Omega &= \delta_{m m'} \delta_{n n'} \frac{4 \pi}{2n + 1}

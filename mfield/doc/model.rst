@@ -473,7 +473,7 @@ themselves be sparse, with :math:`k \times nnm` non-zero elements, where :math:`
 of the B-spline. This can be accounted for when updating the sum above.
 
 Indexing
---------
+========
 
 The parameter vector :math:`\mathbf{x}` is organized as follows:
 
@@ -500,3 +500,30 @@ of length :code:`nnm_core`.
 
 The parameters :math:`\mathbf{x}_{crust}` are the static Gauss coefficients
 representing the crustal field, of length :code:`nnm_crust`.
+
+Regularization
+==============
+
+Core Field Regularization
+-------------------------
+
+The core field is regularized by minimizing the third time derivative of
+:math:`B_r` at the CMB:
+
+.. math:: \left< \left| \frac{\partial^3 B_r}{\partial t^3} \right|^2 \right> = \frac{1}{\Delta t} \int dt \int d\Omega_c \left| \frac{\partial^3 B_r}{\partial t^3} \right|^2
+
+The time integral is taken over the full time range of the Gauss coefficients with
+:math:`\Delta t` equal to that time range. The surface integral is taken over the
+core mantle boundary with radius :math:`c = 3485` km. Minimizing this quantity
+is equivalent to minimizing the following:
+
+.. math:: \mathbf{x}_{core}^T \Lambda_{core} \mathbf{x}_{core}
+
+where :math:`\Lambda_{core} = N^{(3)} \otimes C` is a symmetric :code:`nnm * ncontrol`-by-:code:`nnm * ncontrol` matrix,
+:math:`N^{(a)}` is a :code:`ncontrol`-by-:code:`ncontrol` symmetric indefinite banded matrix with entries
+
+.. math:: N^{(a)}_{ij} = \frac{1}{\Delta t} \int dt \left( \frac{d^a N_i(t)}{dt^a} \right) \left( \frac{d^a N_j(t)}{dt^a} \right)
+
+and :math:`C` is a diagonal :code:`nnm`-by-:code:`nnm` matrix with entries
+
+.. math:: C_{nm,n'm'} = 4 \pi \left( \frac{a}{c} \right)^{2n+4} \frac{(n+1)^2}{2n + 1} \delta_{mm'} \delta_{nn'}

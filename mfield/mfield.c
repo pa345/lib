@@ -168,7 +168,7 @@ mfield_alloc(const mfield_parameters *params)
   /* compute total (internal) model coefficients */
 
   w->p_core = 0;
-  w->p_crust = w->nnm_crust;
+  w->p_crust = 0;
   if (params->fit_mf && w->data_workspace_p)
     {
       /*
@@ -195,9 +195,10 @@ mfield_alloc(const mfield_parameters *params)
         }
 
       ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
-      w->p_core = w->nnm_core * ncontrol;
-
       fprintf(stderr, "mfield_alloc: number of Gauss coefficient control points: %zu\n", ncontrol);
+
+      w->p_core = w->nnm_core * ncontrol;
+      w->p_crust = w->nnm_crust;
     }
 
   w->p_int = w->p_core + w->p_crust;
@@ -475,8 +476,8 @@ mfield_alloc(const mfield_parameters *params)
 
   w->eigen_workspace_p = gsl_eigen_symm_alloc(w->p);
 
-  w->lambda_diag = gsl_vector_calloc(w->p);
-  w->LTL = gsl_vector_calloc(w->p);
+  w->L = gsl_spmatrix_alloc(w->p, w->p);
+  w->LTL = gsl_spmatrix_alloc(w->p, w->p);
 
   w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
   w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
@@ -561,11 +562,11 @@ mfield_free(mfield_workspace *w)
   if (w->bias_idx)
     free(w->bias_idx);
 
-  if (w->lambda_diag)
-    gsl_vector_free(w->lambda_diag);
+  if (w->L)
+    gsl_spmatrix_free(w->L);
 
   if (w->LTL)
-    gsl_vector_free(w->LTL);
+    gsl_spmatrix_free(w->LTL);
 
   if (w->wts_spatial)
     gsl_vector_free(w->wts_spatial);

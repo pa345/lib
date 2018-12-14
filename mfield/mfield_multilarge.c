@@ -43,16 +43,40 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
 {
   int s = GSL_SUCCESS;
   size_t i, j;
-  size_t *omp_nrows; /* number of rows processed by each thread */
-  size_t nres_vec = w->nres_vec + w->nres_vec_grad + w->nres_vec_SV;
+  size_t nres_vec = 0;
+  size_t nres_completed = 0;
 
   gsl_matrix_set_zero(w->JTJ_vec);
+
+  /*
+   * w->nres_vec includes vector residuals which don't have a core/crustal
+   * field component (i.e. Euler angles). So recalculate nres_vec restricting
+   * count to main field fitting
+   */
+  for (i = 0; i < w->nsat; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+
+      for (j = 0; j < mptr->n; ++j)
+        {
+          if (MAGDATA_Discarded(mptr->flags[j]))
+            continue;
+
+          if (!MAGDATA_FitMF(mptr->flags[j]))
+            continue;
+
+          if (MAGDATA_ExistX(mptr->flags[j]))
+            ++nres_vec;
+          if (MAGDATA_ExistY(mptr->flags[j]))
+            ++nres_vec;
+          if (MAGDATA_ExistZ(mptr->flags[j]))
+            ++nres_vec;
+        }
+    }
 
   /* check for quick return */
   if (nres_vec == 0)
     return GSL_SUCCESS;
-
-  omp_nrows = malloc(w->max_threads * sizeof(size_t));
 
   /*
    * omp_rowidx[thread_id] contains the number of currently filled rows
@@ -60,10 +84,7 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
    * into the JTJ_vec matrix and then omp_rowidx[thread_id] is reset to 0
    */
   for (i = 0; i < w->max_threads; ++i)
-    {
-      omp_nrows[i] = 0;
-      w->omp_rowidx[i] = 0;
-    }
+    w->omp_rowidx[i] = 0;
 
   fprintf(stderr, "\n");
 
@@ -76,7 +97,6 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
         {
           int thread_id = omp_get_thread_num();
           size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-          double t = mptr->ts[j];
           double r = mptr->r[j];
           double theta = mptr->theta[j];
           double phi = mptr->phi[j];
@@ -214,31 +234,24 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
               /* fold current matrix block into JTJ_vec, one thread at a time */
               gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[thread_id], 0, 0, w->omp_rowidx[thread_id], w->p_int);
 
-              /* keep cumulative total of rows processed by this thread for progress bar */
-              omp_nrows[thread_id] += w->omp_rowidx[thread_id];
-              w->omp_rowidx[thread_id] = 0;
-
 #pragma omp critical
               {
                 gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
               }
 
+              /* keep cumulative total of rows processed for progress bar */
+#pragma omp atomic
+              nres_completed += w->omp_rowidx[thread_id];
+
               /*XXX*/
               gsl_matrix_set_zero(&m.matrix);
+              w->omp_rowidx[thread_id] = 0;
 
-              if (thread_id == 0)
-                {
-                  double progress = 0.0;
-                  size_t k;
-
-                  for (k = 0; k < w->max_threads; ++k)
-                    progress += (double) omp_nrows[k];
-
-                  progress /= (double) nres_vec;
-
-                  fprintf(stderr, "\t");
-                  progress_bar(stderr, progress, 70);
-                }
+#pragma omp critical
+              {
+                fprintf(stderr, "\t");
+                progress_bar(stderr, (double) nres_completed / (double) nres_vec, 70);
+              }
             }
         } /* for (j = 0; j < mptr->n; ++j) */
     } /* for (i = 0; i < w->nsat; ++i) */
@@ -251,10 +264,13 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
           /* accumulate final Green's functions into JTJ_vec */
           gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[i], 0, 0, w->omp_rowidx[i], w->p_int);
           gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
+          nres_completed += w->omp_rowidx[i];
         }
     }
 
-  free(omp_nrows);
+  fprintf(stderr, "\t");
+  progress_bar(stderr, (double) nres_completed / (double) nres_vec, 70);
+  fprintf(stderr, "\n");
 
 #if 0
   printsym_octave(w->JTJ_vec, "JTJ_vec");
@@ -270,7 +286,7 @@ mfield_vector_green()
 vector Green's functions, where
 
                           core                    crust
-J_1(ridx,:) = [ -N_k(t(ridx)) B_n^m(r(ridx)) ; B_n^m(ridx) ]
+J_1(ridx,:) = [ -N_k(t(ridx)) B_n^m(r(ridx)) ; -B_n^m(ridx) ]
 
 Inputs: N           - B-spline functions for t(ridx)
         istart      - index of first non-zero B-spline in [0, ncontrol-1]
@@ -767,11 +783,10 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
         }
     }
 
-  /* regularize by adding L^T L to diag(J^T J) */
+  /* regularize by adding L^T L to J^T J */
   if (JTJ)
     {
-      gsl_vector_view v = gsl_matrix_diagonal(JTJ);
-      gsl_vector_add(&v.vector, w->LTL);
+      gsl_spmatrix_add_to_dense(JTJ, w->LTL);
     }
 
 #if 0

@@ -240,9 +240,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
     {
       /* store L*x in bottom of f for regularization */
       gsl_vector_view v = gsl_vector_subvector(f, w->nres, w->p);
-
-      gsl_vector_memcpy(&v.vector, x);
-      gsl_vector_mul(&v.vector, w->lambda_diag);
+      gsl_spblas_dssmv(CblasLower, 1.0, w->L, x, 0.0, &v.vector);
     }
 
   gettimeofday(&tv1, NULL);

@@ -209,8 +209,10 @@ typedef struct
   size_t nres_vec_SV;      /* number of secular variation vector residuals to minimize */
   size_t nres_vec_grad;    /* number of vector gradient residuals to minimize */
   size_t data_block;       /* maximum observations to accumulate at once in LS system */
-  gsl_vector *lambda_diag; /* diag(L) regularization matrix */
-  gsl_vector *LTL;         /* L^T L regularization matrix */
+
+  /* regularization parameters */
+  gsl_spmatrix *L;         /* regularization matrix, p-by-p */
+  gsl_spmatrix *LTL;       /* L^T L regularization matrix, p-by-p */
   double lambda_mf;        /* main field damping */
   double lambda_sv;        /* SV damping */
   double lambda_sa;        /* SA damping */
