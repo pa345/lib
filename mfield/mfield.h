@@ -256,8 +256,8 @@ typedef struct
   gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */
   gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p_int */
   size_t *omp_rowidx;      /* row indices for omp_J */
-  gsl_matrix **omp_GTG;    /* max_threads matrices, each nnm_max-by-nnm_max */
-  gsl_matrix **omp_JTJ;    /* max_threads matrices, each p_int-by-p_int */
+  gsl_matrix **omp_GTG;    /* max_threads matrices, each nnm_core-by-nnm_core */
+  gsl_matrix **omp_JTJ;    /* max_threads matrices, each p_core-by-p_core */
   green_workspace **green_array_p; /* array of green workspaces, size max_threads */
 
   int lls_solution;        /* 1 if inverse problem is linear (no scalar residuals or Euler angles) */

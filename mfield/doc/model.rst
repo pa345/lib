@@ -472,6 +472,63 @@ With the B-spline representation of the Gauss coeffficients, the vectors :math:`
 themselves be sparse, with :math:`k \times nnm` non-zero elements, where :math:`k` is the order
 of the B-spline. This can be accounted for when updating the sum above.
 
+Precomputation
+______________
+
+The vector residuals :math:`\boldsymbol{\epsilon}_i,\boldsymbol{\delta}_i` are linear
+in the Gauss coefficients :math:`g_{n,k}^m` and so the portion of :math:`J^T J`
+corresponding to these can be precomputed. The matrix :math:`\mathbf{J}_1`
+corresponds to the core and crustal field parts of the model, which can be
+further separated into vector and scalar parts:
+
+.. math:: \mathbf{J}_1 =
+            \begin{pmatrix}
+              \mathbf{J}_{core} & \mathbf{J}_{crust}
+            \end{pmatrix} =
+            \begin{pmatrix}
+              \mathbf{J}_{core}^{vec} & \mathbf{J}_{crust}^{vec} \\
+              \mathbf{J}_{core}^{scal}(\mathbf{x}) & \mathbf{J}_{crust}^{scal}(\mathbf{x})
+            \end{pmatrix}
+
+The matrix :math:`\mathbf{J}_{core}` is somewhat sparse due to its B-spline parameterization,
+while :math:`\mathbf{J}_{crust}` is dense. We have
+
+.. math:: \mathbf{J}_1^T \mathbf{J}_1 =
+            \begin{pmatrix}
+              \mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec} & X \\
+              \mathbf{J}_{crust}^{vec,T} \mathbf{J}_{core}^{vec} & \mathbf{J}_{crust}^{vec,T} \mathbf{J}_{crust}^{vec}
+            \end{pmatrix} +
+            \begin{pmatrix}
+              \mathbf{J}_{core}^{scal,T}(\mathbf{x}) \mathbf{J}_{core}^{scal}(\mathbf{x}) & X \\
+              \mathbf{J}_{crust}^{scal,T}(\mathbf{x}) \mathbf{J}_{core}^{scal}(\mathbf{x}) & \mathbf{J}_{crust}^{scal,T}(\mathbf{x}) \mathbf{J}_{crust}^{scal}(\mathbf{x})
+            \end{pmatrix}
+
+The first term above can be precomputed, while the second must be computed during each
+nonlinear least squares iteration. The term :math:`\mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec}`
+has a block representation as follows:
+
+.. math:: \mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec} =
+            \begin{pmatrix}
+              A_{11} & A_{12} & \cdots & A_{1n} \\
+              \vdots & \vdots & \ddots & \vdots \\
+              A_{n1} & A_{n2} & \cdots & A_{nn}
+            \end{pmatrix}
+
+where :math:`n` is the number of control points for each Gauss spline, and each
+:math:`A_{ij}` is :code:`nnm`-by-:code:`nnm`. The matrix :math:`\mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec}`
+itself is :code:`nnm * ncontrol`-by-:code:`nnm * ncontrol`. The block entries are
+
+.. math:: A_{ij} = \sum_{k=1}^{N_{vec}} N_i(t_k) N_j(t_k) B(\mathbf{r}_k) B^T(\mathbf{r}_k)
+
+where :math:`B` is a :code:`nnm`-by-:code:`3` matrix given by
+
+.. math:: B(\mathbf{r}) =
+            \begin{pmatrix}
+              X_n^m & Y_n^m & Z_n^m
+            \end{pmatrix}
+
+i.e. the Green's functions of the internal field model expansion.
+
 Indexing
 ========
 
@@ -519,10 +576,11 @@ is equivalent to minimizing the following:
 
 .. math:: \mathbf{x}_{core}^T \Lambda_{core} \mathbf{x}_{core}
 
-where :math:`\Lambda_{core} = N^{(3)} \otimes C` is a symmetric :code:`nnm * ncontrol`-by-:code:`nnm * ncontrol` matrix,
-:math:`N^{(a)}` is a :code:`ncontrol`-by-:code:`ncontrol` symmetric indefinite banded matrix with entries
+where :math:`\Lambda_{core} = G^{(3)} \otimes C` is a symmetric :code:`nnm * ncontrol`-by-:code:`nnm * ncontrol` matrix,
+:math:`G^{(a)}` is a :code:`ncontrol`-by-:code:`ncontrol` B-spline Gram matrix, which is symmetric indefinite and banded.
+It has entries
 
-.. math:: N^{(a)}_{ij} = \frac{1}{\Delta t} \int dt \left( \frac{d^a N_i(t)}{dt^a} \right) \left( \frac{d^a N_j(t)}{dt^a} \right)
+.. math:: G^{(a)}_{ij} = \frac{1}{\Delta t} \int dt \left( \frac{d^a N_i(t)}{dt^a} \right) \left( \frac{d^a N_j(t)}{dt^a} \right)
 
 and :math:`C` is a diagonal :code:`nnm`-by-:code:`nnm` matrix with entries
 

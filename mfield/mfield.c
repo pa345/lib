@@ -511,8 +511,8 @@ mfield_alloc(const mfield_parameters *params)
       {
         w->green_array_p[i] = green_alloc(w->nmax, w->nmax, w->R);
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
-        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_tot, w->nnm_tot);
-        w->omp_JTJ[i] = gsl_matrix_alloc(w->p_int, w->p_int);
+        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_core, w->nnm_core);
+        w->omp_JTJ[i] = gsl_matrix_alloc(w->p_core, w->p_core);
       }
 
     fprintf(stderr, "mfield_alloc: data_block = %zu\n", w->data_block);

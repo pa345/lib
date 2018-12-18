@@ -250,7 +250,11 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
 
   fprintf(stderr, "mfield_calc_nonlinear: precomputing vector J_int^T W J_int...");
   gettimeofday(&tv0, NULL);
+#if 1
   mfield_nonlinear_vector_precompute(w->sqrt_wts_final, w);
+#else
+  mfield_nonlinear_vector_precompute2(w->sqrt_wts_final, w);
+#endif
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
