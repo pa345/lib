@@ -4,9 +4,12 @@
  * Contains routines for fitting magnetic field module using gsl_multilarge_nlinear framework
  */
 
-static int mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_workspace *w);
-static int mfield_vector_green(const gsl_vector * N, const size_t istart, const double sqrt_weight,
-                               const gsl_vector *dB, gsl_vector *J, mfield_workspace *w);
+#include <bspline2/gsl_bspline2.h>
+
+static int mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_core, mfield_workspace *w);
+static int mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_crust, mfield_workspace *w);
+static int mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_mixed, mfield_workspace *w);
+static int mfield_nonlinear_precompute(const gsl_vector *sqrt_weights, mfield_workspace *w);
 static int mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector *u,
                            void *params, gsl_vector * v, gsl_matrix * JTJ);
 static inline int mfield_jacobian_J1Tu(const gsl_vector * N, const size_t istart, const double sqrt_wj, const double uj,
@@ -20,10 +23,509 @@ static inline int mfield_jacobian_F(CBLAS_TRANSPOSE_t TransJ, const size_t istar
 static int mfield_jacobian_J2TJ1(const gsl_vector * N, const size_t istart, const double sqrt_wj, const size_t ridx,
                                  const gsl_vector * dB_int, const gsl_spmatrix * J2, gsl_matrix * J2TJ1,
                                  const mfield_workspace * w);
-static int matrix_daxpy(const double alpha, const gsl_matrix * X, gsl_matrix * Y);
 
 /*
-mfield_nonlinear_vector_precompute()
+mfield_nonlinear_precompute_core()
+  Compute J_core^T W J_core for vector residuals
+
+Inputs: sqrt_weights - sqrt(wts), length nres
+        JTJ_core     - (output) output matrix, p_core-by-p_core
+        w            - workspace
+
+Notes:
+1) Lower triangle of JTJ_core is filled
+2) JTJ_core must be initialized to zero by calling function
+*/
+
+static int
+mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_core,
+                                 mfield_workspace *w)
+{
+  int s = 0;
+  const size_t nmax = w->nmax_core;
+  const size_t mmax = nmax;
+  const size_t ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
+  const size_t order = gsl_bspline2_order(w->gauss_spline_workspace_p[0]);
+  size_t ii, jj, i, j;
+  struct timeval tv0, tv1;
+
+  /* compute J_core^T W J_core
+   *
+   * This matrix can be divided into nnm_core-by-nnm_core blocks:
+   *
+   * A_{ij} = \sum_{k=1}^{nres} N_i(t_k) N_j(t_k) B(r_k) B^T(r_k)
+   *
+   * We have outer loops over i,j, followed by threaded loop over the residuals,
+   * accumulate the internal Greens functions into a large block matrix T,
+   * which is then folded into A_{ij} with DSYRK when it is full.
+   */
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "mfield_nonlinear_precompute_core: computing J_core^T W J_core...");
+  fprintf(stderr, "\n");
+  gettimeofday(&tv0, NULL);
+
+  for (ii = 0; ii < ncontrol; ++ii)
+    {
+      for (jj = 0; jj <= ii; ++jj)
+        {
+          gsl_matrix_view JTJ_block = gsl_matrix_submatrix(JTJ_core, ii * w->nnm_core, jj * w->nnm_core,
+                                                           w->nnm_core, w->nnm_core);
+
+          for (i = 0; i < w->max_threads; ++i)
+            w->omp_colidx[i] = 0;
+
+          for (i = 0; i < w->nsat; ++i)
+            {
+              magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+
+#pragma omp parallel for private(j)
+              for (j = 0; j < mptr->n; ++j)
+                {
+                  int thread_id = omp_get_thread_num();
+                  size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
+                  double t = epoch2year(mptr->t[j]);
+                  gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[thread_id];
+                  gsl_vector *N_gauss = gauss_spline_p->B;
+                  size_t left, istart;
+                  double Nii, Njj, alpha;
+                  int flag;
+
+                  gsl_vector *VX = NULL;
+                  gsl_vector *VY = NULL;
+                  gsl_vector *VZ = NULL;
+                  gsl_vector_view vx, vy, vz;
+
+                  if (MAGDATA_Discarded(mptr->flags[j]))
+                    continue;
+
+                  if (!MAGDATA_FitMF(mptr->flags[j]))
+                    continue;
+
+                  if (!(mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
+                    continue;
+
+                  left = gsl_bspline2_find_interval(t, &flag, gauss_spline_p);
+                  if (flag != 0)
+                    continue;
+
+                  if (ii < (left + 1) - order || ii > left)
+                    continue; /* N_{ii}(t) = 0 */
+                  if (jj < (left + 1) - order || jj > left)
+                    continue; /* N_{ii}(t) = 0 */
+
+                  if (mptr->flags[j] & MAGDATA_FLG_X)
+                    {
+                      vx = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_core);
+                      VX = &vx.vector;
+                    }
+
+                  if (mptr->flags[j] & MAGDATA_FLG_Y)
+                    {
+                      vy = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_core);
+                      VY = &vy.vector;
+                    }
+
+                  if (mptr->flags[j] & MAGDATA_FLG_Z)
+                    {
+                      vz = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_core);
+                      VZ = &vz.vector;
+                    }
+
+                  /* calculate internal Green's functions XXX restrict to core field only */
+                  green_calc_intopt(1, nmax, mmax, mptr->r[j], mptr->theta[j], mptr->phi[j], VX, VY, VZ, w->green_array_p[thread_id]);
+
+                  /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
+                  gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, gauss_spline_p);
+
+                  Nii = gsl_vector_get(N_gauss, ii - istart);
+                  Njj = gsl_vector_get(N_gauss, jj - istart);
+                  alpha = sqrt(Nii * Njj);
+
+                  if (mptr->flags[j] & MAGDATA_FLG_X)
+                    {
+                      double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+                      gsl_blas_dscal(alpha * sqrt_wj, VX);
+                    }
+
+                  if (mptr->flags[j] & MAGDATA_FLG_Y)
+                    {
+                      double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+                      gsl_blas_dscal(alpha * sqrt_wj, VY);
+                    }
+
+                  if (mptr->flags[j] & MAGDATA_FLG_Z)
+                    {
+                      double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+                      gsl_blas_dscal(alpha * sqrt_wj, VZ);
+                    }
+
+                  /*
+                   * check if omp_T[thread_id] is full and should be folded into JTJ; the
+                   * 15 is just some slop to prevent trying to fill columns past the matrix buffer
+                   * in the loop above
+                   */
+                  if (w->omp_colidx[thread_id] >= w->omp_T[thread_id]->size2 - 15)
+                    {
+                      /* fold current matrix block into JTJ_vec, one thread at a time */
+                      gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->nnm_core, w->omp_colidx[thread_id]);
+
+#pragma omp critical
+                      {
+                        gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, &JTJ_block.matrix);
+                      }
+
+                      w->omp_colidx[thread_id] = 0;
+                    }
+                } /* for (j = 0; j < mptr->n; ++j) */
+            } /* for (i = 0; i < w->nsat; ++i) */
+
+          for (i = 0; i < w->max_threads; ++i)
+            {
+              if (w->omp_colidx[i] > 0)
+                {
+                  /* accumulate final Green's functions into this (ii,jj) block */
+                  gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->nnm_core, w->omp_colidx[i]);
+                  gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, &JTJ_block.matrix);
+                }
+            }
+
+          /* at this point the (ii, jj) block of JTJ is calculated, but if it is not
+           * a diagonal block, we need to copy the lower triangle to the upper */
+          if (ii != jj)
+            {
+              gsl_matrix_transpose_tricpy('L', 0, &JTJ_block.matrix, &JTJ_block.matrix);
+            }
+
+        } /* for (jj = 0; jj <= ii; ++jj) */
+
+      progress_bar(stderr, (double) ii / (double) ncontrol, 70);
+    } /* for (ii = 0; ii < ncontrol; ++ii) */
+
+  progress_bar(stderr, 1.0, 70);
+  fprintf(stderr, "\n");
+
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  return s;
+}
+
+/*
+mfield_nonlinear_precompute_crust()
+  Compute J_crust^T W J_crust for vector residuals
+
+Inputs: sqrt_weights - sqrt(wts), length nres
+        JTJ_crust    - (output) output matrix, p_crust-by-p_crust
+        w            - workspace
+
+Notes:
+1) Lower triangle of JTJ_crust is filled
+2) JTJ_crust must be initialized to zero by calling function
+*/
+
+static int
+mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_crust,
+                                  mfield_workspace *w)
+{
+  int s = 0;
+  const size_t nmin = w->nmax_core + 1;
+  const size_t nmax = w->nmax;
+  const size_t mmax = nmax;
+  size_t i, j;
+  struct timeval tv0, tv1;
+
+  /* compute J_crust^T W J_crust
+   *
+   * Threaded loop over the residuals, accumulate the internal Greens
+   * functions into a large block matrix T, which is then folded into
+   * JTJ_crust with DSYRK when it is full.
+   */
+
+  fprintf(stderr, "mfield_nonlinear_precompute_crust: computing J_crust^T W J_crust...");
+  fprintf(stderr, "\n");
+  gettimeofday(&tv0, NULL);
+
+  for (i = 0; i < w->max_threads; ++i)
+    w->omp_colidx[i] = 0;
+
+  for (i = 0; i < w->nsat; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+
+#pragma omp parallel for private(j)
+      for (j = 0; j < mptr->n; ++j)
+        {
+          int thread_id = omp_get_thread_num();
+          size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
+          int flag;
+
+          gsl_vector *VX = NULL;
+          gsl_vector *VY = NULL;
+          gsl_vector *VZ = NULL;
+          gsl_vector_view vx, vy, vz;
+
+          if (MAGDATA_Discarded(mptr->flags[j]))
+            continue;
+
+          if (!MAGDATA_FitMF(mptr->flags[j]))
+            continue;
+
+          if (!(mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
+            continue;
+
+          if (mptr->flags[j] & MAGDATA_FLG_X)
+            {
+              vx = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              VX = &vx.vector;
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Y)
+            {
+              vy = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              VY = &vy.vector;
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Z)
+            {
+              vz = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              VZ = &vz.vector;
+            }
+
+          /* calculate internal Green's functions for crustal field only */
+          green_calc_intopt(nmin, nmax, mmax, mptr->r[j], mptr->theta[j], mptr->phi[j], VX, VY, VZ, w->green_array_p[thread_id]);
+
+          if (mptr->flags[j] & MAGDATA_FLG_X)
+            {
+              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+              gsl_blas_dscal(sqrt_wj, VX);
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Y)
+            {
+              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+              gsl_blas_dscal(sqrt_wj, VY);
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Z)
+            {
+              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+              gsl_blas_dscal(sqrt_wj, VZ);
+            }
+
+          /*
+           * check if omp_T[thread_id] is full and should be folded into JTJ; the
+           * 15 is just some slop to prevent trying to fill columns past the matrix buffer
+           * in the loop above
+           */
+          if (w->omp_colidx[thread_id] >= w->omp_T[thread_id]->size2 - 15)
+            {
+              /* fold current matrix block into JTJ_vec, one thread at a time */
+              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->nnm_crust, w->omp_colidx[thread_id]);
+
+#pragma omp critical
+              {
+                gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, JTJ_crust);
+              }
+
+              w->omp_colidx[thread_id] = 0;
+            }
+        } /* for (j = 0; j < mptr->n; ++j) */
+    } /* for (i = 0; i < w->nsat; ++i) */
+
+  for (i = 0; i < w->max_threads; ++i)
+    {
+      if (w->omp_colidx[i] > 0)
+        {
+          /* accumulate final Green's functions */
+          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->nnm_crust, w->omp_colidx[i]);
+          gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, JTJ_crust);
+        }
+    }
+
+  progress_bar(stderr, 1.0, 70);
+  fprintf(stderr, "\n");
+
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  return s;
+}
+
+/*
+mfield_nonlinear_precompute_mixed()
+  Compute J_crust^T W J_core for vector residuals
+
+Inputs: sqrt_weights - sqrt(wts), length nres
+        JTJ_mixed    - (output) output matrix, p_crust-by-p_core
+        w            - workspace
+
+Notes:
+1) Lower triangle of JTJ_mixed is filled
+2) JTJ_mixed must be initialized to zero by calling function
+*/
+
+static int
+mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_mixed,
+                                  mfield_workspace *w)
+{
+  int s = 0;
+  const size_t ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
+  const size_t order = gsl_bspline2_order(w->gauss_spline_workspace_p[0]);
+  size_t ii, i, j;
+  struct timeval tv0, tv1;
+
+  /* compute J_crust^T W J_core
+   *
+   * This matrix can be divided into nnm_crust-by-nnm_core blocks:
+   *
+   * A_i = \sum_{k=1}^{nres} N_i(t_k) B_crust(r_k) B_core^T(r_k)
+   *
+   * We have outer loop over i, followed by threaded loop over the residuals,
+   * accumulate the internal Greens functions into large block matrices T and U,
+   * which are then folded into A_i with DSYRK when it is full.
+   */
+
+  fprintf(stderr, "mfield_nonlinear_precompute_mixed: computing J_crust^T W J_core...");
+  fprintf(stderr, "\n");
+  gettimeofday(&tv0, NULL);
+
+  for (ii = 0; ii < ncontrol; ++ii)
+    {
+      gsl_matrix_view JTJ_block = gsl_matrix_submatrix(JTJ_mixed, 0, ii * w->nnm_core,
+                                                       w->nnm_crust, w->nnm_core);
+
+      for (i = 0; i < w->max_threads; ++i)
+        w->omp_colidx[i] = 0;
+
+      for (i = 0; i < w->nsat; ++i)
+        {
+          magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+
+#pragma omp parallel for private(j)
+          for (j = 0; j < mptr->n; ++j)
+            {
+              int thread_id = omp_get_thread_num();
+              size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
+              double t = epoch2year(mptr->t[j]);
+              gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[thread_id];
+              gsl_vector *N_gauss = gauss_spline_p->B;
+              size_t left, istart;
+              double Nii, alpha;
+              int flag;
+
+              gsl_vector *VX = NULL;
+              gsl_vector *VY = NULL;
+              gsl_vector *VZ = NULL;
+              gsl_vector_view vx, vy, vz;
+
+              if (MAGDATA_Discarded(mptr->flags[j]))
+                continue;
+
+              if (!MAGDATA_FitMF(mptr->flags[j]))
+                continue;
+
+              if (!(mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
+                continue;
+
+              left = gsl_bspline2_find_interval(t, &flag, gauss_spline_p);
+              if (flag != 0)
+                continue;
+
+              if (ii < (left + 1) - order || ii > left)
+                continue; /* N_{ii}(t) = 0 */
+
+              if (mptr->flags[j] & MAGDATA_FLG_X)
+                {
+                  vx = gsl_matrix_column(w->omp_T[thread_id], w->omp_colidx[thread_id]++);
+                  VX = &vx.vector;
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_Y)
+                {
+                  vy = gsl_matrix_column(w->omp_T[thread_id], w->omp_colidx[thread_id]++);
+                  VY = &vy.vector;
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_Z)
+                {
+                  vz = gsl_matrix_column(w->omp_T[thread_id], w->omp_colidx[thread_id]++);
+                  VZ = &vz.vector;
+                }
+
+              /* calculate internal Green's functions for both core and crust */
+              green_calc_int2(mptr->r[j], mptr->theta[j], mptr->phi[j], VX, VY, VZ, w->green_array_p[thread_id]);
+
+              /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
+              gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, gauss_spline_p);
+
+              Nii = gsl_vector_get(N_gauss, ii - istart);
+              alpha = sqrt(Nii);
+
+              if (mptr->flags[j] & MAGDATA_FLG_X)
+                {
+                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+                  gsl_blas_dscal(alpha * sqrt_wj, VX);
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_Y)
+                {
+                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+                  gsl_blas_dscal(alpha * sqrt_wj, VY);
+                }
+
+              if (mptr->flags[j] & MAGDATA_FLG_Z)
+                {
+                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+                  gsl_blas_dscal(alpha * sqrt_wj, VZ);
+                }
+
+              /*
+               * check if omp_T[thread_id] is full and should be folded into JTJ; the
+               * 15 is just some slop to prevent trying to fill columns past the matrix buffer
+               * in the loop above
+               */
+              if (w->omp_colidx[thread_id] >= w->omp_T[thread_id]->size2 - 15)
+                {
+                  /* fold current matrix blocks into JTJ_block, one thread at a time */
+                  gsl_matrix_view m_core = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->nnm_core, w->omp_colidx[thread_id]);
+                  gsl_matrix_view m_crust = gsl_matrix_submatrix(w->omp_T[thread_id], w->nnm_core, 0, w->nnm_crust, w->omp_colidx[thread_id]);
+
+#pragma omp critical
+                  {
+                    gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, &m_crust.matrix, &m_core.matrix, 1.0, &JTJ_block.matrix);
+                  }
+
+                  w->omp_colidx[thread_id] = 0;
+                }
+            } /* for (j = 0; j < mptr->n; ++j) */
+        } /* for (i = 0; i < w->nsat; ++i) */
+
+      for (i = 0; i < w->max_threads; ++i)
+        {
+          if (w->omp_colidx[i] > 0)
+            {
+              /* accumulate final Green's functions into this ii block */
+              gsl_matrix_view m_core = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->nnm_core, w->omp_colidx[i]);
+              gsl_matrix_view m_crust = gsl_matrix_submatrix(w->omp_T[i], w->nnm_core, 0, w->nnm_crust, w->omp_colidx[i]);
+              gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, &m_crust.matrix, &m_core.matrix, 1.0, &JTJ_block.matrix);
+            }
+        }
+
+      progress_bar(stderr, (double) ii / (double) ncontrol, 70);
+    } /* for (ii = 0; ii < ncontrol; ++ii) */
+
+  progress_bar(stderr, 1.0, 70);
+  fprintf(stderr, "\n");
+
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  return s;
+}
+
+/*
+mfield_nonlinear_precompute()
   Precompute J_int^T W J_int for vector measurements, since
 this submatrix is independent of the model parameters and
 only needs to be computed once per iteration. This function
@@ -40,12 +542,11 @@ residuals
 */
 
 static int
-mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_workspace *w)
+mfield_nonlinear_precompute(const gsl_vector *sqrt_weights, mfield_workspace *w)
 {
   int s = GSL_SUCCESS;
-  size_t i, j;
   size_t nres_vec = 0;
-  size_t nres_completed = 0;
+  size_t i, j;
 
   gsl_matrix_set_zero(w->JTJ_vec);
 
@@ -79,203 +580,23 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
   if (nres_vec == 0)
     return GSL_SUCCESS;
 
-  /*
-   * omp_rowidx[thread_id] contains the number of currently filled rows
-   * of omp_J[thread_id]. When omp_J[thread_id] is filled, it is folded
-   * into the JTJ_vec matrix and then omp_rowidx[thread_id] is reset to 0
-   */
-  for (i = 0; i < w->max_threads; ++i)
-    w->omp_rowidx[i] = 0;
-
-  fprintf(stderr, "\n");
-
-  for (i = 0; i < w->nsat; ++i)
+  if (w->p_core > 0)
     {
-      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-
-#pragma omp parallel for private(j)
-      for (j = 0; j < mptr->n; ++j)
-        {
-          int thread_id = omp_get_thread_num();
-          size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-          double r = mptr->r[j];
-          double theta = mptr->theta[j];
-          double phi = mptr->phi[j];
-          gsl_vector *N_gauss = w->gauss_spline_workspace_p[thread_id]->B;
-          size_t istart_gauss;
-          int fit_vec = 0;
-
-          gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
-          gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
-          gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
-
-          gsl_vector_view vx_grad = gsl_matrix_row(w->omp_dX_grad, thread_id);
-          gsl_vector_view vy_grad = gsl_matrix_row(w->omp_dY_grad, thread_id);
-          gsl_vector_view vz_grad = gsl_matrix_row(w->omp_dZ_grad, thread_id);
-
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
-          if (MAGDATA_FitMF(mptr->flags[j]) && 
-              mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z))
-            {
-              /* calculate internal Green's functions */
-              green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
-
-              /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
-
-              fit_vec = 1;
-            }
-
-          /* calculate internal Green's functions for gradient point (N/S or E/W) */
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
-                                MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
-            {
-              green_calc_int2(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
-                              &vx_grad.vector, &vy_grad.vector, &vz_grad.vector,
-                              w->green_array_p[thread_id]);
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_X)
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(N_gauss, istart_gauss, sqrt_wj, &vx.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_Y)
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(N_gauss, istart_gauss, sqrt_wj, &vy.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_Z)
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(N_gauss, istart_gauss, sqrt_wj, &vz.vector, &v.vector, w);
-                }
-            }
-
-          if (MAGDATA_ExistScalar(mptr->flags[j]) &&
-              MAGDATA_FitMF(mptr->flags[j]))
-            {
-              ++ridx;
-            }
-
-#if 0 /*XXX*/
-          if (MAGDATA_FitMF(mptr->flags[j]))
-            {
-              if (mptr->flags[j] & MAGDATA_FLG_DXDT)
-                {
-                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, sqrt_wj, &vx.vector, &v.vector, w);
-                }
-
-              if (mptr->flags[j] & MAGDATA_FLG_DYDT)
-                {
-                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, sqrt_wj, &vy.vector, &v.vector, w);
-                }
-
-              if (mptr->flags[j] & MAGDATA_FLG_DZDT)
-                {
-                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, sqrt_wj, &vz.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vx.vector, &vx_grad.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DY_NS | MAGDATA_FLG_DY_EW))
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vy.vector, &vy_grad.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DZ_EW))
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vz.vector, &vz_grad.vector, &v.vector, w);
-                }
-            }
-#endif /*XXX*/
-
-          /*
-           * check if omp_J[thread_id] is full and should be folded into JTJ; the
-           * 15 is just some slop to prevent trying to fill rows past the matrix buffer
-           * in the loop above
-           */
-          if (w->omp_rowidx[thread_id] >= w->omp_J[thread_id]->size1 - 15)
-            {
-              /* fold current matrix block into JTJ_vec, one thread at a time */
-              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[thread_id], 0, 0, w->omp_rowidx[thread_id], w->p_int);
-
-#pragma omp critical
-              {
-                gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
-              }
-
-              /* keep cumulative total of rows processed for progress bar */
-#pragma omp atomic
-              nres_completed += w->omp_rowidx[thread_id];
-
-              /*XXX*/
-              gsl_matrix_set_zero(&m.matrix);
-              w->omp_rowidx[thread_id] = 0;
-
-#pragma omp critical
-              {
-                fprintf(stderr, "\t");
-                progress_bar(stderr, (double) nres_completed / (double) nres_vec, 70);
-              }
-            }
-        } /* for (j = 0; j < mptr->n; ++j) */
-    } /* for (i = 0; i < w->nsat; ++i) */
-
-  /* now loop through to see if any rows were not accumulated into JTJ_vec */
-  for (i = 0; i < w->max_threads; ++i)
-    {
-      if (w->omp_rowidx[i] > 0)
-        {
-          /* accumulate final Green's functions into JTJ_vec */
-          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[i], 0, 0, w->omp_rowidx[i], w->p_int);
-          gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
-          nres_completed += w->omp_rowidx[i];
-        }
+      gsl_matrix_view JTJ_core = gsl_matrix_submatrix(w->JTJ_vec, 0, 0, w->p_core, w->p_core);
+      mfield_nonlinear_precompute_core(sqrt_weights, &JTJ_core.matrix, w);
     }
 
-  fprintf(stderr, "\t");
-  progress_bar(stderr, (double) nres_completed / (double) nres_vec, 70);
-  fprintf(stderr, "\n");
+  if (w->p_crust > 0)
+    {
+      gsl_matrix_view JTJ_crust = gsl_matrix_submatrix(w->JTJ_vec, w->p_core, w->p_core, w->p_crust, w->p_crust);
+      mfield_nonlinear_precompute_crust(sqrt_weights, &JTJ_crust.matrix, w);
+    }
+
+  if (w->p_core > 0 && w->p_crust > 0)
+    {
+      gsl_matrix_view JTJ_mixed = gsl_matrix_submatrix(w->JTJ_vec, w->p_core, 0, w->p_crust, w->p_core);
+      mfield_nonlinear_precompute_mixed(sqrt_weights, &JTJ_mixed.matrix, w);
+    }
 
 #if 0
   printsym_octave(w->JTJ_vec, "JTJ_vec");
@@ -283,362 +604,6 @@ mfield_nonlinear_vector_precompute(const gsl_vector *sqrt_weights, mfield_worksp
 #endif
 
   return s;
-}
-
-/*
-mfield_nonlinear_vector_precompute()
-  Precompute J_int^T W J_int for vector measurements, since
-this submatrix is independent of the model parameters and
-only needs to be computed once per iteration. This function
-uses OpenMP to speed up the calculation
-
-Inputs: sqrt_weights - sqrt weight vector
-        w            - workspace
-
-Notes:
-1) w->JTJ_vec is updated with J_int^T W J_int for vector
-residuals
-
-2) J_int^T W J_int is stored in lower triangle of w->JTJ_vec
-*/
-
-static int
-mfield_nonlinear_vector_precompute2(const gsl_vector *sqrt_weights, mfield_workspace *w)
-{
-  int s = GSL_SUCCESS;
-  size_t i, j;
-  size_t nres_vec = 0;
-  size_t nres_completed = 0;
-
-  gsl_matrix_set_zero(w->JTJ_vec);
-
-  /*
-   * w->nres_vec includes vector residuals which don't have a core/crustal
-   * field component (i.e. Euler angles). So recalculate nres_vec restricting
-   * count to main field fitting
-   */
-  for (i = 0; i < w->nsat; ++i)
-    {
-      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-
-      for (j = 0; j < mptr->n; ++j)
-        {
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
-          if (!MAGDATA_FitMF(mptr->flags[j]))
-            continue;
-
-          if (MAGDATA_ExistX(mptr->flags[j]))
-            ++nres_vec;
-          if (MAGDATA_ExistY(mptr->flags[j]))
-            ++nres_vec;
-          if (MAGDATA_ExistZ(mptr->flags[j]))
-            ++nres_vec;
-        }
-    }
-
-  /* check for quick return */
-  if (nres_vec == 0)
-    return GSL_SUCCESS;
-
-  /*
-   * omp_rowidx[thread_id] contains the number of currently filled rows
-   * of omp_J[thread_id]. When omp_J[thread_id] is filled, it is folded
-   * into the JTJ_vec matrix and then omp_rowidx[thread_id] is reset to 0
-   */
-  for (i = 0; i < w->max_threads; ++i)
-    {
-      w->omp_rowidx[i] = 0;
-      gsl_matrix_set_zero(w->omp_JTJ[i]);
-    }
-
-  fprintf(stderr, "\n");
-
-  for (i = 0; i < w->nsat; ++i)
-    {
-      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-
-#pragma omp parallel for private(j)
-      for (j = 0; j < mptr->n; ++j)
-        {
-          int thread_id = omp_get_thread_num();
-          size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-          double r = mptr->r[j];
-          double theta = mptr->theta[j];
-          double phi = mptr->phi[j];
-          gsl_vector *N_gauss = w->gauss_spline_workspace_p[thread_id]->B;
-          size_t istart_gauss;
-          int fit_vec = 0;
-
-          gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
-          gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
-          gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
-
-          gsl_vector_view vx_grad = gsl_matrix_row(w->omp_dX_grad, thread_id);
-          gsl_vector_view vy_grad = gsl_matrix_row(w->omp_dY_grad, thread_id);
-          gsl_vector_view vz_grad = gsl_matrix_row(w->omp_dZ_grad, thread_id);
-
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
-          if (MAGDATA_FitMF(mptr->flags[j]) && 
-              mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z))
-            {
-              /* calculate internal Green's functions */
-              green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
-
-              /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
-
-              gsl_matrix_set_zero(w->omp_GTG[thread_id]);
-
-              fit_vec = 1;
-            }
-
-          /* calculate internal Green's functions for gradient point (N/S or E/W) */
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
-                                MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
-            {
-              green_calc_int2(mptr->r_ns[j], mptr->theta_ns[j], mptr->phi_ns[j],
-                              &vx_grad.vector, &vy_grad.vector, &vz_grad.vector,
-                              w->green_array_p[thread_id]);
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_X)
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(N_gauss, istart_gauss, sqrt_wj, &vx.vector, &v.vector, w);
-
-#if 1
-                  v = gsl_vector_subvector(&vx.vector, 0, w->nnm_core);
-                  gsl_blas_dsyr(CblasLower, sqrt_wj * sqrt_wj, &v.vector, w->omp_GTG[thread_id]);
-#endif
-                }
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_Y)
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(N_gauss, istart_gauss, sqrt_wj, &vy.vector, &v.vector, w);
-
-#if 1
-                  v = gsl_vector_subvector(&vy.vector, 0, w->nnm_core);
-                  gsl_blas_dsyr(CblasLower, sqrt_wj * sqrt_wj, &v.vector, w->omp_GTG[thread_id]);
-#endif
-                }
-            }
-
-          if (mptr->flags[j] & MAGDATA_FLG_Z)
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green(N_gauss, istart_gauss, sqrt_wj, &vz.vector, &v.vector, w);
-
-#if 1
-                  v = gsl_vector_subvector(&vz.vector, 0, w->nnm_core);
-                  gsl_blas_dsyr(CblasLower, sqrt_wj * sqrt_wj, &v.vector, w->omp_GTG[thread_id]);
-#endif
-                }
-            }
-
-          if (MAGDATA_ExistScalar(mptr->flags[j]) &&
-              MAGDATA_FitMF(mptr->flags[j]))
-            {
-              ++ridx;
-            }
-
-#if 0 /*XXX*/
-          if (MAGDATA_FitMF(mptr->flags[j]))
-            {
-              if (mptr->flags[j] & MAGDATA_FLG_DXDT)
-                {
-                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, sqrt_wj, &vx.vector, &v.vector, w);
-                }
-
-              if (mptr->flags[j] & MAGDATA_FLG_DYDT)
-                {
-                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, sqrt_wj, &vy.vector, &v.vector, w);
-                }
-
-              if (mptr->flags[j] & MAGDATA_FLG_DZDT)
-                {
-                  double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_SV(t, sqrt_wj, &vz.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DX_EW))
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vx.vector, &vx_grad.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DY_NS | MAGDATA_FLG_DY_EW))
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vy.vector, &vy_grad.vector, &v.vector, w);
-                }
-            }
-
-          if (mptr->flags[j] & (MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DZ_EW))
-            {
-              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view v = gsl_matrix_row(w->omp_J[thread_id], w->omp_rowidx[thread_id]++);
-                  mfield_vector_green_grad(t, mptr->ts_ns[j], sqrt_wj, &vz.vector, &vz_grad.vector, &v.vector, w);
-                }
-            }
-#endif /*XXX*/
-
-          /*
-           * check if omp_J[thread_id] is full and should be folded into JTJ; the
-           * 15 is just some slop to prevent trying to fill rows past the matrix buffer
-           * in the loop above
-           */
-          if (w->omp_rowidx[thread_id] >= w->omp_J[thread_id]->size1 - 15)
-            {
-              /* fold current matrix block into JTJ_vec, one thread at a time */
-              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[thread_id], 0, 0, w->omp_rowidx[thread_id], w->p_int);
-
-#if 0
-#pragma omp critical
-              {
-                gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
-              }
-#endif
-
-              /* keep cumulative total of rows processed for progress bar */
-#pragma omp atomic
-              nres_completed += w->omp_rowidx[thread_id];
-
-              /*XXX*/
-              gsl_matrix_set_zero(&m.matrix);
-              w->omp_rowidx[thread_id] = 0;
-
-#pragma omp critical
-              {
-                fprintf(stderr, "\t");
-                progress_bar(stderr, (double) nres_completed / (double) nres_vec, 70);
-              }
-            }
-
-          if (fit_vec)
-            {
-              /* omp_GTG = vx vx^T + vy vy^T + vz vz^T for the core field - fold this in to
-               * JTJ_vec */
-
-#if 1
-              gsl_matrix_transpose_tricpy('L', 0, w->omp_GTG[thread_id], w->omp_GTG[thread_id]);
-
-/*#pragma omp critical*/
-              {
-                size_t k, l;
-
-                for (k = 0; k < w->params.gauss_spline_order; ++k)
-                  {
-                    double Nk = gsl_vector_get(N_gauss, k);
-
-                    for (l = 0; l <= k; ++l)
-                      {
-                        double Nl = gsl_vector_get(N_gauss, l);
-                        gsl_matrix_view m = gsl_matrix_submatrix(w->omp_JTJ[thread_id],
-                                                                 (k + istart_gauss) * w->nnm_core, (l + istart_gauss) * w->nnm_core,
-                                                                 w->nnm_core, w->nnm_core);
-                        matrix_daxpy(Nk * Nl, w->omp_GTG[thread_id], &m.matrix);
-                      }
-                  }
-              }
-#endif
-            }
-        } /* for (j = 0; j < mptr->n; ++j) */
-    } /* for (i = 0; i < w->nsat; ++i) */
-
-#if 0
-  /* now loop through to see if any rows were not accumulated into JTJ_vec */
-  for (i = 0; i < w->max_threads; ++i)
-    {
-      if (w->omp_rowidx[i] > 0)
-        {
-          /* accumulate final Green's functions into JTJ_vec */
-          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_J[i], 0, 0, w->omp_rowidx[i], w->p_int);
-          gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, w->JTJ_vec);
-          nres_completed += w->omp_rowidx[i];
-        }
-    }
-#endif
-
-  fprintf(stderr, "\t");
-  progress_bar(stderr, (double) nres_completed / (double) nres_vec, 70);
-  fprintf(stderr, "\n");
-
-#if 0
-  printsym_octave(w->JTJ_vec, "JTJ_vec2");
-  exit(1);
-#endif
-
-  return s;
-}
-
-/*
-mfield_vector_green()
-  Function to compute sqrt(w) J_1(ridx,:) for a given set of
-vector Green's functions, where
-
-                          core                    crust
-J_1(ridx,:) = [ -N_k(t(ridx)) B_n^m(r(ridx)) ; -B_n^m(ridx) ]
-
-Inputs: N           - B-spline functions for t(ridx)
-        istart      - index of first non-zero B-spline in [0, ncontrol-1]
-        sqrt_weight - sqrt(weight) for this measurement
-        dB          - vector Green's functions B_n^m, size nnm_tot
-        J           - (output) combined vector G = sqrt(w) J_1(ridx,:), size w->p_int
-        w           - workspace
-*/
-
-static int
-mfield_vector_green(const gsl_vector * N, const size_t istart, const double sqrt_weight,
-                    const gsl_vector *dB, gsl_vector *J, mfield_workspace *w)
-{
-  gsl_vector_const_view dB_core = gsl_vector_const_subvector(dB, 0, w->nnm_core);
-  size_t k;
-
-  for (k = 0; k < w->params.gauss_spline_order; ++k)
-    {
-      double Nk = gsl_vector_get(N, k);
-      gsl_vector_view v = gsl_vector_subvector(J, (k + istart) * w->nnm_core, w->nnm_core);
-      gsl_vector_memcpy_scale(&v.vector, &dB_core.vector, -Nk * sqrt_weight);
-    }
-
-  if (w->nnm_crust > 0)
-    {
-      gsl_vector_const_view dB_crust = gsl_vector_const_subvector(dB, w->nnm_core, w->nnm_crust);
-      gsl_vector_view J_crust = gsl_vector_subvector(J, w->p_core, w->nnm_crust);
-      gsl_vector_memcpy_scale(&J_crust.vector, &dB_crust.vector, -sqrt_weight);
-    }
-
-  return GSL_SUCCESS;
 }
 
 /*
@@ -1405,37 +1370,6 @@ mfield_jacobian_J2TJ1(const gsl_vector * N, const size_t istart, const double sq
               gsl_vector_const_view dB_crust = gsl_vector_const_subvector(dB, w->nnm_core, w->nnm_crust);
               gsl_vector_view out = gsl_matrix_subrow(J2TJ1, Aj[p], w->p_core, w->nnm_crust);
               gsl_blas_daxpy(-sqrt_wj * Ad[p], &dB_crust.vector, &out.vector);
-            }
-        }
-
-      return GSL_SUCCESS;
-    }
-}
-
-static int
-matrix_daxpy(const double alpha, const gsl_matrix * X, gsl_matrix * Y)
-{
-  const size_t M = Y->size1;
-  const size_t N = Y->size2;
-
-  if (X->size1 != M || X->size2 != N)
-    {
-      GSL_ERROR ("matrices must have same dimensions", GSL_EBADLEN);
-    }
-  else
-    {
-      if (alpha != 0.0)
-        {
-          const size_t tda_X = X->tda;
-          const size_t tda_Y = Y->tda;
-          size_t i, j;
-
-          for (i = 0; i < M; ++i)
-            {
-              for (j = 0; j < N; ++j)
-                {
-                  Y->data[tda_Y * i + j] += alpha * X->data[tda_X * i + j];
-                }
             }
         }
 

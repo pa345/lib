@@ -209,6 +209,7 @@ typedef struct
   size_t nres_vec_SV;      /* number of secular variation vector residuals to minimize */
   size_t nres_vec_grad;    /* number of vector gradient residuals to minimize */
   size_t data_block;       /* maximum observations to accumulate at once in LS system */
+  size_t data_block_tot;   /* maximum observations to accumulate at once in J_int matrix */
 
   /* regularization parameters */
   gsl_spmatrix *L;         /* regularization matrix, p-by-p */
@@ -256,8 +257,8 @@ typedef struct
   gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */
   gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p_int */
   size_t *omp_rowidx;      /* row indices for omp_J */
-  gsl_matrix **omp_GTG;    /* max_threads matrices, each nnm_core-by-nnm_core */
-  gsl_matrix **omp_JTJ;    /* max_threads matrices, each p_core-by-p_core */
+  gsl_matrix **omp_T;      /* max_threads matrices, each nnm_tot-by-4*data_block */
+  size_t *omp_colidx;      /* column indices for omp_T */
   green_workspace **green_array_p; /* array of green workspaces, size max_threads */
 
   int lls_solution;        /* 1 if inverse problem is linear (no scalar residuals or Euler angles) */

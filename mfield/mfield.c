@@ -500,22 +500,23 @@ mfield_alloc(const mfield_parameters *params)
      * each omp_J matrix approximately of size 'MFIELD_MATRIX_SIZE'
      */
     w->data_block = MFIELD_MATRIX_SIZE / (ncomp * w->p_int * sizeof(double));
+    w->data_block_tot = MFIELD_MATRIX_SIZE / (ncomp * w->nnm_tot * sizeof(double));
 
     w->green_array_p = malloc(w->max_threads * sizeof(green_workspace *));
     w->omp_J = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_rowidx = malloc(w->max_threads * sizeof(size_t));
-    w->omp_GTG = malloc(w->max_threads * sizeof(gsl_matrix *));
-    w->omp_JTJ = malloc(w->max_threads * sizeof(gsl_matrix *));
+    w->omp_T = malloc(w->max_threads * sizeof(gsl_matrix *));
+    w->omp_colidx = malloc(w->max_threads * sizeof(size_t));
 
     for (i = 0; i < w->max_threads; ++i)
       {
         w->green_array_p[i] = green_alloc(w->nmax, w->nmax, w->R);
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
-        w->omp_GTG[i] = gsl_matrix_alloc(w->nnm_core, w->nnm_core);
-        w->omp_JTJ[i] = gsl_matrix_alloc(w->p_core, w->p_core);
+        w->omp_T[i] = gsl_matrix_alloc(w->nnm_tot, ncomp * w->data_block_tot);
       }
 
-    fprintf(stderr, "mfield_alloc: data_block = %zu\n", w->data_block);
+    fprintf(stderr, "mfield_alloc: data_block     = %zu\n", w->data_block);
+    fprintf(stderr, "mfield_alloc: data_block_tot = %zu\n", w->data_block_tot);
   }
 
   return w;
@@ -656,15 +657,14 @@ mfield_free(mfield_workspace *w)
     {
       green_free(w->green_array_p[i]);
       gsl_matrix_free(w->omp_J[i]);
-      gsl_matrix_free(w->omp_GTG[i]);
-      gsl_matrix_free(w->omp_JTJ[i]);
+      gsl_matrix_free(w->omp_T[i]);
     }
 
   free(w->green_array_p);
   free(w->omp_J);
+  free(w->omp_T);
   free(w->omp_rowidx);
-  free(w->omp_GTG);
-  free(w->omp_JTJ);
+  free(w->omp_colidx);
 
   if (w->gauss_spline_workspace_p)
     {

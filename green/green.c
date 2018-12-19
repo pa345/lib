@@ -295,6 +295,136 @@ green_calc_int2(const double r, const double theta, const double phi,
 }
 
 /*
+green_calc_intopt()
+  Compute internal Green's functions for X,Y,Z spherical harmonic expansion. These
+are simply the basis functions multiplying the g_{nm} and h_{nm} coefficients
+
+Inputs: nmin  - minimum SH degree
+        nmax  - maximum SH degree
+        mmax  - maximum SH order
+        r     - radius (km)
+        theta - colatitude (radians)
+        phi   - longitude (radians)
+        X     - (output) vector of X Green's functions, size nnm
+        Y     - (output) vector of Y Green's functions, size nnm
+        Z     - (output) vector of Z Green's functions, size nnm
+        w     - workspace
+
+Notes:
+1) On output, the following arrays are initialized
+w->Plm
+w->dPlm
+w->sinmphi
+w->cosmphi
+
+2) X,Y,Z can be set to NULL if not desired
+*/
+
+int
+green_calc_intopt(const size_t nmin, const size_t nmax, const size_t mmax,
+                  const double r, const double theta, const double phi,
+                  gsl_vector *X, gsl_vector *Y, gsl_vector *Z, green_workspace *w)
+{
+  const size_t nnm1 = green_calc_nnm(nmax, mmax);
+  const size_t nnm2 = green_calc_nnm(nmin - 1, mmax);
+  const size_t nnm = nnm1 - nnm2;
+
+  if (nmin < 1)
+    {
+      GSL_ERROR ("nmin must be at least 1", GSL_EINVAL);
+    }
+  else if (nmax > w->nmax)
+    {
+      GSL_ERROR ("nmax exceeds workspace", GSL_EINVAL);
+    }
+  else if (nmin > nmax)
+    {
+      GSL_ERROR ("invalid nmin", GSL_EINVAL);
+    }
+  else if (mmax > nmax || mmax > w->mmax)
+    {
+      GSL_ERROR ("invalid mmax", GSL_EINVAL);
+    }
+  else if (X != NULL && X->size != nnm)
+    {
+      GSL_ERROR("X vector does not match workspace", GSL_EBADLEN);
+    }
+  else if (Y != NULL && Y->size != nnm)
+    {
+      GSL_ERROR("Y vector does not match workspace", GSL_EBADLEN);
+    }
+  else if (Z != NULL && Z->size != nnm)
+    {
+      GSL_ERROR("Z vector does not match workspace", GSL_EBADLEN);
+    }
+  else
+    {
+      int s = 0;
+      const size_t cidx0 = green_idx(nmin, -(int)nmin, mmax);
+      size_t n;
+      int m;
+      const double sint = sin(theta);
+      const double cost = cos(theta);
+      double ratio = w->R / r;
+      double term = gsl_pow_int(ratio, nmin + 1); /* (a/r)^{n+2} */
+
+      /* precompute cos(m phi) and sin(m phi) */
+      for (m = 0; m <= (int) mmax; ++m)
+        {
+          w->cosmphi[m] = cos(m * phi);
+          w->sinmphi[m] = sin(m * phi);
+        }
+
+      /* compute associated legendres */
+      gsl_sf_legendre_deriv_array(GSL_SF_LEGENDRE_SCHMIDT,
+                                  nmax, cost, w->Plm, w->dPlm);
+
+      for (n = nmin; n <= nmax; ++n)
+        {
+          int M = (int) GSL_MIN(mmax, n);
+
+          /* (a/r)^{n+2} */
+          term *= ratio;
+
+          /* compute h_{nm} */
+          for (m = -M; m < 0; ++m)
+            {
+              int mabs = -m;
+              size_t cidx = green_idx(n, m, mmax) - cidx0;
+              size_t aidx = gsl_sf_legendre_array_index(n, mabs);
+
+              if (X)
+                gsl_vector_set(X, cidx, term * w->sinmphi[mabs] * w->dPlm[aidx] * (-sint));
+
+              if (Y)
+                gsl_vector_set(Y, cidx, -term / sint * mabs * w->cosmphi[mabs] * w->Plm[aidx]);
+
+              if (Z)
+                gsl_vector_set(Z, cidx, -(n + 1.0) * term * w->sinmphi[mabs] * w->Plm[aidx]);
+            }
+
+          /* compute g_{nm} */
+          for (m = 0; m <= M; ++m)
+            {
+              size_t cidx = green_idx(n, m, mmax) - cidx0;
+              size_t aidx = gsl_sf_legendre_array_index(n, m);
+
+              if (X)
+                gsl_vector_set(X, cidx, term * w->cosmphi[m] * w->dPlm[aidx] * (-sint));
+
+              if (Y)
+                gsl_vector_set(Y, cidx, term / sint * m * w->sinmphi[m] * w->Plm[aidx]);
+
+              if (Z)
+                gsl_vector_set(Z, cidx, -(n + 1.0) * term * w->cosmphi[m] * w->Plm[aidx]);
+            }
+        }
+
+      return s;
+    }
+}
+
+/*
 green_calc_ext()
   Compute Green's functions for X,Y,Z spherical harmonic expansion due to
 external current source. These are simply the basis functions multiplying
@@ -626,7 +756,7 @@ green_nnm(const green_workspace *w)
 /*
 green_calc_nnm()
   Compute total number of spherical harmonic coefficients
-for a given nmax and mmax.
+for a given nmax and mmax, where mmax <= nmax.
 
 nnm = mmax * (mmax + 2) + (nmax - mmax) * (2*mmax + 1)
 
@@ -641,7 +771,8 @@ Return: number of total spherical harmonic coefficients
 size_t
 green_calc_nnm(const size_t nmax, const size_t mmax)
 {
-  size_t nnm = mmax * (mmax + 2) + (nmax - mmax) * (2*mmax + 1);
+  const size_t mmx = GSL_MIN(nmax, mmax);
+  size_t nnm = mmx * (mmx + 2) + (nmax - mmx) * (2*mmx + 1);
   return nnm;
 }
 

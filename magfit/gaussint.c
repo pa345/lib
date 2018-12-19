@@ -374,7 +374,7 @@ build_matrix_row(const double r, const double theta, const double phi,
                  gsl_vector *X, gsl_vector *Y, gsl_vector *Z,
                  gaussint_state_t *state)
 {
-  int s = green_calc_int(r, theta, phi, X->data, Y->data, Z->data, state->green_workspace_p);
+  int s = green_calc_int2(r, theta, phi, X, Y, Z, state->green_workspace_p);
   return s;
 }
 

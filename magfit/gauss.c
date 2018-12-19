@@ -458,7 +458,7 @@ build_matrix_row(const double r, const double theta, const double phi,
       if (Z->data)
         zv = gsl_vector_subvector(Z, 0, state->p_int);
 
-      s = green_calc_int(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_int_p);
+      s = green_calc_int2(r, theta, phi, &xv.vector, &yv.vector, &zv.vector, state->green_int_p);
       if (s)
         return s;
     }

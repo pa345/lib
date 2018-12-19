@@ -34,6 +34,9 @@ int green_calc_int(const double r, const double theta, const double phi,
                    double *X, double *Y, double *Z, green_workspace *w);
 int green_calc_int2(const double r, const double theta, const double phi,
                     gsl_vector *X, gsl_vector *Y, gsl_vector *Z, green_workspace *w);
+int green_calc_intopt(const size_t nmin, const size_t nmax, const size_t mmax,
+                      const double r, const double theta, const double phi,
+                      gsl_vector *X, gsl_vector *Y, gsl_vector *Z, green_workspace *w);
 int green_calc_ext(const double r, const double theta, const double phi,
                    double *X, double *Y, double *Z, green_workspace *w);
 int green_potential_calc_ext(const double r, const double theta, const double phi,
