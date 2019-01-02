@@ -212,8 +212,8 @@ typedef struct
   size_t data_block_tot;   /* maximum observations to accumulate at once in J_int matrix */
 
   /* regularization parameters */
-  gsl_spmatrix *L;         /* regularization matrix, p-by-p */
-  gsl_spmatrix *LTL;       /* L^T L regularization matrix, p-by-p */
+  gsl_spmatrix *L;         /* regularization matrix Cholesky factor, p-by-p */
+  gsl_spmatrix *Lambda;    /* regularization matrix (L * L'), p-by-p */
   double lambda_mf;        /* main field damping */
   double lambda_sv;        /* SV damping */
   double lambda_sa;        /* SA damping */
@@ -248,10 +248,11 @@ typedef struct
   gsl_spmatrix *J2_csr;    /* J2 matrix in CSR format */
 
   size_t max_threads;      /* maximum number of threads/processors available */
-  gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_max */
-  gsl_matrix *omp_dY;      /* dY/dg max_threads-by-nnm_max */
-  gsl_matrix *omp_dZ;      /* dZ/dg max_threads-by-nnm_max */
-  gsl_matrix *omp_dF;      /* dF/dg max_threads-by-nnm_max */
+  gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_tot */
+  gsl_matrix *omp_dY;      /* dY/dg max_threads-by-nnm_tot */
+  gsl_matrix *omp_dZ;      /* dZ/dg max_threads-by-nnm_tot */
+  gsl_matrix *omp_dF;      /* dF/dg max_threads-by-nnm_tot */
+  gsl_matrix **omp_dB;     /* max_threads matrices, dF/dg, each 3-by-nnm_tot */
   gsl_matrix *omp_dX_grad; /* gradient dX/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dY_grad; /* gradient dY/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */

@@ -238,9 +238,9 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 
   if (mparams->regularize && !mparams->synth_data)
     {
-      /* store L*x in bottom of f for regularization */
+      /* store L^T*x in bottom of f for regularization */
       gsl_vector_view v = gsl_vector_subvector(f, w->nres, w->p);
-      gsl_spblas_dssmv(CblasLower, 1.0, w->L, x, 0.0, &v.vector);
+      gsl_spblas_dusmv(CblasTrans, 1.0, w->L, x, 0.0, &v.vector);
     }
 
   gettimeofday(&tv1, NULL);
@@ -860,6 +860,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
   int s = GSL_SUCCESS;
   mfield_workspace *w = (mfield_workspace *) params;
   const size_t gauss_spline_order = gsl_bspline2_order(w->gauss_spline_workspace_p[0]);
+  const mfield_parameters *mparams = &(w->params);
   size_t i, j;
   struct timeval tv0, tv1;
 
@@ -1177,6 +1178,15 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
   gettimeofday(&tv1, NULL);
   mfield_debug("mfield_calc_df: leaving function (%g seconds)\n", time_diff(tv0, tv1));
 
+  if (mparams->regularize && !mparams->synth_data)
+    {
+      /* copy L^T into lower portion of J */
+      gsl_matrix_view m = gsl_matrix_submatrix(J, w->nres, 0, w->p, w->p);
+
+      for (i = 0; i < w->L->nz; ++i)
+        gsl_matrix_set(&m.matrix, w->L->p[i], w->L->i[i], w->L->data[i]);
+    }
+
 #if 0
   print_octave(J, "J");
   exit(1);
@@ -1330,7 +1340,7 @@ mfield_nonlinear_model_int(const gsl_vector * N, const size_t istart, const gsl_
       val += Nj * dot;
     }
 
-  if (w->nnm_crust > 0)
+  if (w->nnm_crust > 0 && dB->size > w->nnm_core)
     {
       gsl_vector_const_view dB_crust = gsl_vector_const_subvector(dB, w->nnm_core, w->nnm_crust);
       gsl_vector_const_view g_crust = gsl_vector_const_subvector(g, w->p_core, w->nnm_crust);

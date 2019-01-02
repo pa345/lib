@@ -887,6 +887,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
 
+#if 0
   /* calculate covariance matrix */
   if (mfield_workspace_p->old_fdf == 0)
     {
@@ -903,6 +904,7 @@ main(int argc, char *argv[])
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
     }
+#endif
 
   sprintf(buf, "mfield_coeffs.txt");
   fprintf(stderr, "main: writing coefficients to %s...", buf);

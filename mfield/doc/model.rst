@@ -228,7 +228,7 @@ Then,
 .. math::
 
    \frac{\partial \boldsymbol{\epsilon}_i}{\partial g_{n,k}^m} &= -N_k(t_i) \mathbf{B}_n^m(\mathbf{r}_i) \\
-   \frac{\partial f_i}{\partial g_{n,k}^m} &= -N_k(t_i) \frac{\mathbf{B}^{model}(\mathbf{r}_i,t;\mathbf{g},\mathbf{k})}{|| \mathbf{B}^{model}(\mathbf{r}_i,t;\mathbf{g},\mathbf{k}) ||} \cdot \mathbf{B}_n^m(\mathbf{r}_i) \\
+   \frac{\partial f_i}{\partial g_{n,k}^m} &= -N_k(t_i) \frac{\mathbf{B}^{model}(\mathbf{r}_i,t_i;\mathbf{g},\mathbf{k})}{|| \mathbf{B}^{model}(\mathbf{r}_i,t_i;\mathbf{g},\mathbf{k}) ||} \cdot \mathbf{B}_n^m(\mathbf{r}_i) \\
    \frac{\partial \boldsymbol{\delta}_i}{\partial g_{n,k}^m} &= -\dot{N}_k(t_i) \mathbf{B}_n^m(\mathbf{r}_i)
 
 Euler angles
@@ -504,7 +504,12 @@ while :math:`\mathbf{J}_{crust}` is dense. We have
             \end{pmatrix}
 
 The first term above can be precomputed, while the second must be computed during each
-nonlinear least squares iteration. The term :math:`\mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec}`
+nonlinear least squares iteration.
+
+Core field normal equations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The term :math:`\mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec}`
 has a block representation as follows:
 
 .. math:: \mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec} =
@@ -515,19 +520,72 @@ has a block representation as follows:
             \end{pmatrix}
 
 where :math:`n` is the number of control points for each Gauss spline, and each
-:math:`A_{ij}` is :code:`nnm`-by-:code:`nnm`. The matrix :math:`\mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec}`
-itself is :code:`nnm * ncontrol`-by-:code:`nnm * ncontrol`. The block entries are
+:math:`A_{ij}` is :code:`nnm_core`-by-:code:`nnm_core`. The matrix :math:`\mathbf{J}_{core}^{vec,T} \mathbf{J}_{core}^{vec}`
+itself is :code:`nnm_core * ncontrol`-by-:code:`nnm_core * ncontrol`. The block entries are
 
 .. math:: A_{ij} = \sum_{k=1}^{N_{vec}} N_i(t_k) N_j(t_k) B(\mathbf{r}_k) B^T(\mathbf{r}_k)
 
-where :math:`B` is a :code:`nnm`-by-:code:`3` matrix given by
+where :math:`B` is a :code:`nnm_core`-by-:code:`3` matrix given by
 
 .. math:: B(\mathbf{r}) =
             \begin{pmatrix}
               X_n^m & Y_n^m & Z_n^m
             \end{pmatrix}
 
-i.e. the Green's functions of the internal field model expansion.
+i.e. the Green's functions of the internal field model expansion. The sum for :math:`A_{ij}`
+can be written as the sum of outer products of larger block matrices:
+
+.. math:: A_{ij} = \sum_{k=1}^{\textrm{nblocks}} U_{ijk} U_{ijk}^T
+
+where :math:`U_{ijk}` are :code:`nnm_core`-by-:code:`block_size` with the structure:
+
+.. math:: U_{ijk} =
+          \begin{pmatrix}
+            \sqrt{N_i(t_1) N_j(t_1)} B(\mathbf{r}_1) & \cdots & \sqrt{N_i(t_b) N_j(t_b)} B(\mathbf{r}_b)
+          \end{pmatrix}
+
+Crustal field normal equations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The crustal term :math:`\mathbf{J}_{crust}^{vec,T} \mathbf{J}_{crust}^{vec}` has the following
+structure:
+
+.. math:: \mathbf{J}_{crust}^{vec,T} \mathbf{J}_{crust}^{vec} = \sum_{k=1}^{N_{vec}} B_{crust}(\mathbf{r}_k) B_{crust}^T(\mathbf{r}_k)
+
+which can be written in block form as
+
+.. math:: \mathbf{J}_{crust}^{vec,T} \mathbf{J}_{crust}^{vec} = \sum_{k=1}^{\textrm{nblocks}} T_k T_k^T
+
+where :math:`T_k` is :code:`nnm_crust`-by-:code:`block_size` and
+
+.. math:: T_k = \begin{pmatrix} B_{crust}(\mathbf{r}_1) & \cdots & B_{crust}(\mathbf{r}_b) \end{pmatrix}
+
+Mixed field normal equations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The cross term :math:`\mathbf{J}_{crust}^{vec,T} \mathbf{J}_{core}^{vec}` has the following block
+structure:
+
+.. math:: \mathbf{J}_{crust}^{vec,T} \mathbf{J}_{core}^{vec} =
+            \begin{pmatrix}
+              A_1 & A_2 & \cdots & A_{\textrm{ncontrol}}
+            \end{pmatrix}
+
+where,
+
+.. math:: A_j = \sum_{k=1}^{N_{vec}} N_j(t_k) B_{crust}(\mathbf{r}_k) B_{core}^T(\mathbf{r}_k)
+
+This can be written in block form as
+
+.. math:: A_j = \sum_{k=1}^{\textrm{nblocks}} T_{jk} U_{jk}^T
+
+where :math:`T_{jk}` is :code:`nnm_crust`-by-:code:`block_size`,
+:math:`U_{jk}` is :code:`nnm_core`-by-:code:`block_size`, and
+
+.. math::
+
+   T_{jk} &= \begin{pmatrix} \sqrt{N_j(t_1)} B_{crust}(\mathbf{r}_1) & \cdots & \sqrt{N_j(t_b)} B_{crust}(\mathbf{r}_b) \end{pmatrix} \\
+   U_{jk} &= \begin{pmatrix} \sqrt{N_j(t_1)} B_{core}(\mathbf{r}_1) & \cdots & \sqrt{N_j(t_b)} B_{core}(\mathbf{r}_b) \end{pmatrix}
 
 Indexing
 ========
@@ -585,3 +643,31 @@ It has entries
 and :math:`C` is a diagonal :code:`nnm`-by-:code:`nnm` matrix with entries
 
 .. math:: C_{nm,n'm'} = 4 \pi \left( \frac{a}{c} \right)^{2n+4} \frac{(n+1)^2}{2n + 1} \delta_{mm'} \delta_{nn'}
+
+Implementation
+--------------
+
+The full minimization problem looks like
+
+.. math:: \min_{\mathbf{x}} || \mathbf{f}(\mathbf{x}) ||^2 + \mathbf{x}^T \Lambda \mathbf{x}
+
+where :math:`\mathbf{f}(\mathbf{x})` is a vector of all residuals and :math:`\Lambda` is the full
+regularization matrix, which is block diagonal. This minimization problem is equivalent to
+
+.. math:: \min_{\mathbf{x}} || \tilde{\mathbf{f}}(\mathbf{x}) ||^2
+
+where the augmented residual vector is
+
+.. math:: \tilde{\mathbf{f}}(\mathbf{x}) =
+            \begin{pmatrix}
+              \mathbf{f}(\mathbf{x}) \\
+              L^T \mathbf{x}
+            \end{pmatrix}
+
+and :math:`L` is the Cholesky factor of :math:`\Lambda = L L^T`. The augmented Jacobian matrix is
+
+.. math:: \tilde{J}(\mathbf{x}) =
+            \begin{pmatrix}
+              J(\mathbf{x}) \\
+              L^T
+            \end{pmatrix}

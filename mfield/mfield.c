@@ -477,7 +477,7 @@ mfield_alloc(const mfield_parameters *params)
   w->eigen_workspace_p = gsl_eigen_symm_alloc(w->p);
 
   w->L = gsl_spmatrix_alloc(w->p, w->p);
-  w->LTL = gsl_spmatrix_alloc(w->p, w->p);
+  w->Lambda = gsl_spmatrix_alloc(w->p, w->p);
 
   w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
   w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
@@ -504,6 +504,7 @@ mfield_alloc(const mfield_parameters *params)
 
     w->green_array_p = malloc(w->max_threads * sizeof(green_workspace *));
     w->omp_J = malloc(w->max_threads * sizeof(gsl_matrix *));
+    w->omp_dB = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_rowidx = malloc(w->max_threads * sizeof(size_t));
     w->omp_T = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_colidx = malloc(w->max_threads * sizeof(size_t));
@@ -512,6 +513,7 @@ mfield_alloc(const mfield_parameters *params)
       {
         w->green_array_p[i] = green_alloc(w->nmax, w->nmax, w->R);
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
+        w->omp_dB[i] = gsl_matrix_alloc(3, w->nnm_tot);
         w->omp_T[i] = gsl_matrix_alloc(w->nnm_tot, ncomp * w->data_block_tot);
       }
 
@@ -566,8 +568,8 @@ mfield_free(mfield_workspace *w)
   if (w->L)
     gsl_spmatrix_free(w->L);
 
-  if (w->LTL)
-    gsl_spmatrix_free(w->LTL);
+  if (w->Lambda)
+    gsl_spmatrix_free(w->Lambda);
 
   if (w->wts_spatial)
     gsl_vector_free(w->wts_spatial);
@@ -657,11 +659,13 @@ mfield_free(mfield_workspace *w)
     {
       green_free(w->green_array_p[i]);
       gsl_matrix_free(w->omp_J[i]);
+      gsl_matrix_free(w->omp_dB[i]);
       gsl_matrix_free(w->omp_T[i]);
     }
 
   free(w->green_array_p);
   free(w->omp_J);
+  free(w->omp_dB);
   free(w->omp_T);
   free(w->omp_rowidx);
   free(w->omp_colidx);
