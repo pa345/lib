@@ -35,6 +35,7 @@
 #include <common/ellipsoid.h>
 #include <common/quat.h>
 #include <common/eci.h>
+#include <common/julian.h>
 
 #include "eph.h"
 #include "eph_data.h"
@@ -60,6 +61,7 @@ dmsp_read_MFR(const char *filename, satdata_mag *data)
     {
       int c;
       double date, sec, lat, lon, alt, X, Y, Z;
+      double caldate, resX, resY, resZ;
       char as[10], istr[10], dstr[10];
       int mid;
       int year, month, day, doy;
@@ -68,7 +70,7 @@ dmsp_read_MFR(const char *filename, satdata_mag *data)
       if (*buf == '#')
         continue;
 
-      c = sscanf(buf, "%lf %lf %d %s %lf %lf %lf %s %s %lf %lf %lf",
+      c = sscanf(buf, "%lf %lf %d %s %lf %lf %lf %s %s %lf %lf %lf %lf %lf %lf %lf",
                  &date,
                  &sec,
                  &mid,
@@ -80,8 +82,12 @@ dmsp_read_MFR(const char *filename, satdata_mag *data)
                  dstr,
                  &X,
                  &Y,
-                 &Z);
-      if (c < 12)
+                 &Z,
+                 &caldate,
+                 &resX,
+                 &resY,
+                 &resZ);
+      if (c < 16)
         continue;
 
       year = (int) (date / 1.0e9);
@@ -126,134 +132,183 @@ dmsp_read_MFR(const char *filename, satdata_mag *data)
 }
 
 /*
-calc_spacecraft_basis()
-  Calculate spacecraft basis to rotate a vector from the spacecraft (S/C) frame
+calc_spacecraft_basis_ECI()
+  Calculate spacecraft basis vectors to rotate a vector from the spacecraft (S/C) frame
 to NEC. We define spacecraft-fixed basis vectors as
 
-s1 = s2 x s3 (velocity direction)
-s2 = (s3 x v) / | s3 x v |
-s3 = -rhat (geocentric downward)
+s1 = s2 x s3                   (velocity direction)
+s2 = (s3 x v) / | s3 x v |     (negative orbit normal direction)
+s3 = -e_mu                     (local geodetic downward)
 
-Note: While the DMSP attitude control is supposed to keep the satellite fixed
-wrt the geodetic normal, the MFR data files provide the geocentric vertical
-component, so it appears we do not need to compute the geodetic direction ourselves,
-and can just use rhat
+Inputs: r_ECI  - position (X,Y,Z) in Cartesian ECI (km)
+        v_ECI  - velocity (VX,VY,VZ) in Cartesian ECI (km/s)
+        s1     - (output) s1 unit vector (ECI)
+        s2     - (output) s2 unit vector (ECI)
+        s3     - (output) s3 unit vector (ECI)
 
-Inputs: r_ECEF - position (X,Y,Z) in Cartesian ECEF (km)
-        v_ECEF - velocity (VX,VY,VZ) in Cartesian ECEF (km/s)
-        s1     - (output) s1 unit vector (ECEF)
-        s2     - (output) s2 unit vector (ECEF)
-        s3     - (output) s3 unit vector (ECEF)
+Notes:
+1) The spacecraft-fixed frame is defined as local-vertical local-horizontal (LVLH)
+by the APSM DMSP processing problem. This frame is given by the (s1,s2,s3) basis
+vectors defined above.
+
+2) Additional rotation matrices are needed to go from NEC to LVLH as defined below.
+I don't fully understand these matrices yet (Jan 24 2019)
+
+B_LVLH = A B1 B2 B_NEC
+
+A = [ s1 ]
+    [ s2 ]
+    [ s3 ]
+
+B1 = [ cos(T) -sin(T) 0 ]
+     [ sin(T)  cos(T) 0 ]
+     [   0       0    1 ]
+
+B2 = [ -cos(theta) 0 -sin(theta) ]
+     [      0      1       0     ]
+     [  sin(theta) 0 -cos(theta) ]
+
+where:
+
+theta is geocentric co-latitude
+T = GAST + phi
+GAST is Greenwich apparent sidereal time
+phi is geocentric longitude
 */
 
 static int
-calc_spacecraft_basis(const double r_ECEF[3], const double v_ECEF[3],
-                      double s1[3], double s2[3], double s3[3])
+calc_spacecraft_basis_ECI(const time_t t, const double r_ECI[3], const double v_ECI[3],
+                          double s1[3], double s2[3], double s3[3])
 {
   int s = 0;
+  double v[3]; /* unit velocity vector */
   size_t i;
-  double norm;
 
-#if 1 /* use s3 = -e_mu */
+#if 1
+  {
+    double r_ECEF[3], tmp[3];
 
-  /* compute ECEF components of ellipsoid basis vectors, storing e_mu in s3 */
-  /*ellipsoid_basis_mu(r_ECEF, WGS84_MU, s3, s1, s2);*/
-  ellipsoid_basis(r_ECEF, s3, s1, s2);
+    /* convert ECI position to ECEF */
+    eci2ecef_pos(t, r_ECI, r_ECEF);
 
-#else /* use s3 = -rhat */
+    /* compute tmp = e_mu in ECEF */
+    ellipsoid_basis(r_ECEF, tmp, s1, s2);
+    /*ellipsoid_basis_mu(r_ECEF, WGS84_MU, tmp, s1, s2);*/
 
-  /* store rhat in s3 */
-  ecef2sph_basis(r_ECEF, s3, s1, s2);
+    /* compute s3 = e_mu in ECI */
+    ecef2eci_pos(t, tmp, s3);
+
+    /* compute s3 = -e_mu in ECI */
+    for (i = 0; i < 3; ++i)
+      s3[i] *= -1.0;
+  }
+
+#else
+
+  /* store -rhat in s3 */
+  for (i = 0; i < 3; ++i)
+    s3[i] = -r_ECI[i];
 
 #endif
+    
+  vec_unit(s3, s3);
 
-  /* reverse s3 to point downward */
   for (i = 0; i < 3; ++i)
-    s3[i] *= -1.0;
+    v[i] = v_ECI[i];
 
-  /* s2 = (s3 x v) / | s3 x v | */
-  vec_cross(s3, v_ECEF, s2);
+  vec_unit(v, v);
 
-  norm = vec_norm(s2);
-  for (i = 0; i < 3; ++i)
-    s2[i] /= norm;
+  /* s2 = (s3 x v) / | s3 x v | = minus orbit normal */
+  vec_cross(s3, v, s2);
+  vec_unit(s2, s2);
 
   /* s1 = s2 x s3 */
   vec_cross(s2, s3, s1);
+  vec_unit(s1, s1);
 
   return s;
 }
 
 /*
-calc_quaternions_ECEF()
-  Calculate quaternions to rotate a vector from the spacecraft (S/C) frame
-to NEC.
+calc_quaternions_ECI()
+  Calculate quaternions which allow a transformation from spacecraft frame
+to NEC:
 
-Inputs: r_ECEF - position (X,Y,Z) in Cartesian ECEF (km)
-        v_ECEF - velocity (VX,VY,VZ) in Cartesian ECEF (km/s)
-        q      - (output) quaternions for rotation
+B_NEC = R_q B_LVLH
+
+where LVLH is the local-vertical local-horizontal reference frame, defined
+by the (s1,s2,s3) basis:
+
+s1 = s2 x s3                   (velocity direction)
+s2 = (s3 x v) / | s3 x v |     (negative orbit normal direction)
+s3 = -e_mu                     (local geodetic downward)
+
+Inputs: t - timestamp
+        theta - geocentric co-latitude (radians)
+        phi   - longitude (radians)
+        r_ECI - ECI position vector (km)
+        v_ECI - ECI velocity vector (km/s)
+        q     - (output) quaternions for rotation from LVLH to NEC
 */
 
 int
-calc_quaternions_ECEF(const double r_ECEF[3], const double v_ECEF[3], double q[4])
+calc_quaternions_ECI(const time_t t, const double theta, const double phi,
+                     const double r_ECI[3], const double v_ECI[3], double q[4])
 {
-  int s = 0;
+  const double jd = (t / 86400.0) + 2440587.5;
+  const double GAST = julian2GAST(jd);
+  const double T = GAST + phi;
+  double A_data[9], B1_data[9], B2_data[9], Rq_data[9], tmp_data[9];
+  gsl_matrix_view A = gsl_matrix_view_array(A_data, 3, 3);
+  gsl_matrix_view B1 = gsl_matrix_view_array(B1_data, 3, 3);
+  gsl_matrix_view B2 = gsl_matrix_view_array(B2_data, 3, 3);
+  gsl_matrix_view Rq = gsl_matrix_view_array(Rq_data, 3, 3);
+  gsl_matrix_view tmp = gsl_matrix_view_array(tmp_data, 3, 3);
+  double s1[3], s2[3], s3[3]; /* spacecraft-fixed basis vectors (ECI) */
   size_t i;
-  double s1[3], s2[3], s3[3];        /* spacecraft-fixed unit basis vectors (ECEF) */
-  double rhat[3], that[3], phat[3];  /* spherical unit basis vectors (ECEF) */
-  double nhat[3], ehat[3], chat[3];  /* NEC unit basis vectors (ECEF) */
-  double R_data[9];
-  gsl_matrix_view R = gsl_matrix_view_array(R_data, 3, 3);
 
-  /* compute spacecraft-fixed basis vectors in ECEF */
-  calc_spacecraft_basis(r_ECEF, v_ECEF, s1, s2, s3);
+  calc_spacecraft_basis_ECI(t, r_ECI, v_ECI, s1, s2, s3);
 
-  /* compute spherical basis vectors in ECEF */
-  ecef2sph_basis(r_ECEF, rhat, that, phat);
+  gsl_matrix_set_zero(&B1.matrix);
+  gsl_matrix_set_zero(&B2.matrix);
 
-  /* convert to NEC vectors */
+  gsl_matrix_set(&B1.matrix, 0, 0, cos(T));
+  gsl_matrix_set(&B1.matrix, 0, 1, -sin(T));
+  gsl_matrix_set(&B1.matrix, 1, 0, sin(T));
+  gsl_matrix_set(&B1.matrix, 1, 1, cos(T));
+  gsl_matrix_set(&B1.matrix, 2, 2, 1.0);
+
+  gsl_matrix_set(&B2.matrix, 0, 0, -cos(theta));
+  gsl_matrix_set(&B2.matrix, 0, 2, -sin(theta));
+  gsl_matrix_set(&B2.matrix, 1, 1, 1.0);
+  gsl_matrix_set(&B2.matrix, 2, 0, sin(theta));
+  gsl_matrix_set(&B2.matrix, 2, 2, -cos(theta));
+
+  /*
+   * A = [ s1 ]
+   *     [ s2 ]
+   *     [ s3 ]
+   */
   for (i = 0; i < 3; ++i)
     {
-      nhat[i] = -that[i];
-      ehat[i] = phat[i];
-      chat[i] = -rhat[i];
+      gsl_matrix_set(&A.matrix, 0, i, s1[i]);
+      gsl_matrix_set(&A.matrix, 1, i, s2[i]);
+      gsl_matrix_set(&A.matrix, 2, i, s3[i]);
     }
 
-  /* build rotation matrix from S/C to NEC */
+  /* tmp = B1 * B2 */
+  gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, &B1.matrix, &B2.matrix, 0.0, &tmp.matrix);
 
-  gsl_matrix_set(&R.matrix, 0, 0, vec_dot(s1, nhat));
-  gsl_matrix_set(&R.matrix, 0, 1, vec_dot(s2, nhat));
-  gsl_matrix_set(&R.matrix, 0, 2, vec_dot(s3, nhat));
+  /* Rq^T = A * tmp */
+  gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, &A.matrix, &tmp.matrix, 0.0, &Rq.matrix);
 
-  gsl_matrix_set(&R.matrix, 1, 0, vec_dot(s1, ehat));
-  gsl_matrix_set(&R.matrix, 1, 1, vec_dot(s2, ehat));
-  gsl_matrix_set(&R.matrix, 1, 2, vec_dot(s3, ehat));
-
-  gsl_matrix_set(&R.matrix, 2, 0, vec_dot(s1, chat));
-  gsl_matrix_set(&R.matrix, 2, 1, vec_dot(s2, chat));
-  gsl_matrix_set(&R.matrix, 2, 2, vec_dot(s3, chat));
+  /* transpose for final matrix */
+  gsl_matrix_transpose(&Rq.matrix);
 
   /* convert to quaternions */
-  quat_R2q(&R.matrix, q);
+  quat_R2q(&Rq.matrix, q);
 
-  /* XXX sanity check */
-  {
-    double Rq_data[9];
-    gsl_matrix_view Rq = gsl_matrix_view_array(Rq_data, 3, 3);
-    gsl_vector_view v1 = gsl_vector_view_array(R_data, 9);
-    gsl_vector_view v2 = gsl_vector_view_array(Rq_data, 9);
-    double norm;
-
-    quat_q2R(q, &Rq.matrix);
-
-    gsl_vector_sub(&v1.vector, &v2.vector);
-    norm = gsl_blas_dnrm2(&v1.vector);
-
-    if (norm > 10.0 * GSL_DBL_EPSILON)
-      fprintf(stderr, "error: || R - Rq || = %.12e\n", gsl_blas_dnrm2(&v1.vector));
-  }
-
-  return s;
+  return 0;
 }
 
 int
@@ -284,22 +339,21 @@ interp_eph(satdata_mag *data, eph_data *eph)
           theta = acos(pos[2] / r);
           phi = atan2(pos[1], pos[0]);
 
-          calc_quaternions_ECEF(pos, vel, q);
+          /*XXXcalc_quaternions_ECEF(pos, vel, q);*/
         }
       else if (w->data->flags & EPH_DATA_FLG_ECI)
         {
-          time_t unix_time = satdata_epoch2timet(data->t[i]);
-          double pos_ECEF[3], vel_ECEF[3];
+          time_t unix_time = epoch2timet(data->t[i]);
+          double r_sph[3];
 
-          /* convert ECI position and velocity to ECEF */
-          eci2ecef(unix_time, pos, vel, pos_ECEF, vel_ECEF);
+          /* compute ECEF (r,theta,phi) from ECI position */
+          eci2sph_pos(unix_time, pos, r_sph);
 
-          /* compute (r,theta,phi) for this point from ECEF position */
-          r = gsl_hypot3(pos_ECEF[0], pos_ECEF[1], pos_ECEF[2]);
-          theta = acos(pos_ECEF[2] / r);
-          phi = atan2(pos_ECEF[1], pos_ECEF[0]);
+          r = r_sph[0];
+          theta = r_sph[1];
+          phi = r_sph[2];
 
-          calc_quaternions_ECEF(pos_ECEF, vel_ECEF, q);
+          calc_quaternions_ECI(unix_time, theta, phi, pos, vel, q);
         }
       else
         {
