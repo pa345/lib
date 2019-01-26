@@ -13,8 +13,8 @@ vbuffer = 0.8
 load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
-satnum = '0'
-iternum = '1'
+satnum = '3'
+iternum = '5'
 set out 'res'.satnum.'_iter'.iternum.'.png'
 
 unset key
@@ -24,8 +24,9 @@ load 'xlaton.cfg'
 
 unset xlabel
 set ylabel "nT"
-#set yrange [-40:40]
-set yrange [-400:400]
+set yrange [-50:50]
+set ytics 25
+#set yrange [-400:400]
 
 set multiplot layout nrow,ncol
 

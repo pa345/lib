@@ -272,14 +272,13 @@ mfield_alloc(const mfield_parameters *params)
       for (i = 0; i < w->nsat; ++i)
         {
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-          double t0, t1, dt;
+          double t0 = epoch2year(w->data_workspace_p->t0_data);
+          double t1 = epoch2year(w->data_workspace_p->t1_data);
+          double dt = (t1 - t0) * 365.25; /* convert to days */
           size_t nbreak, ncontrol;
 
           if (!(mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL))
             continue;
-
-          magdata_t(&t0, &t1, mptr);
-          dt = (t1 - t0) / 86400000.0; /* convert to days */
 
           if (params->fluxcal_period <= 0.0)
             nbreak = 2;
@@ -456,8 +455,6 @@ mfield_alloc(const mfield_parameters *params)
   w->green_workspace_p = mfield_green_alloc(w->nmax, w->R);
   w->green_workspace_p2 = green_alloc(w->nmax, w->nmax, w->R);
 
-  w->diag = gsl_vector_alloc(w->p_int);
-
   w->nobs_cnt = 0;
 
   /* these are computed later in mfield_init() */
@@ -465,9 +462,10 @@ mfield_alloc(const mfield_parameters *params)
   w->t_sigma = 1.0;
   w->t0_data = 0.0;
 
-  w->lambda_mf = 0.0;
-  w->lambda_sv = 0.0;
-  w->lambda_sa = 0.0;
+  w->lambda_3 = params->lambda_3;
+  w->lambda_s = params->lambda_s;
+  w->lambda_o = params->lambda_o;
+  w->lambda_u = params->lambda_u;
 
   w->niter = 0;
 
@@ -493,7 +491,8 @@ mfield_alloc(const mfield_parameters *params)
      * Number of components added to omp_J matrix:
      * X, Y, Z, F, DX_NS, DY_NS, DZ_NS, DF_NS, DX_EW, DY_EW, DZ_EW, DF_EW, dX/dt, dY/dt, dZ/dt
      */
-    const size_t ncomp = 15;
+    /*const size_t ncomp = 15;*/
+    const size_t ncomp = 4;
 
     /*
      * maximum observations to accumulate at once in LS system, calculated to make
@@ -507,6 +506,7 @@ mfield_alloc(const mfield_parameters *params)
     w->omp_dB = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_rowidx = malloc(w->max_threads * sizeof(size_t));
     w->omp_T = malloc(w->max_threads * sizeof(gsl_matrix *));
+    w->omp_S = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_colidx = malloc(w->max_threads * sizeof(size_t));
 
     for (i = 0; i < w->max_threads; ++i)
@@ -514,7 +514,8 @@ mfield_alloc(const mfield_parameters *params)
         w->green_array_p[i] = green_alloc(w->nmax, w->nmax, w->R);
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
         w->omp_dB[i] = gsl_matrix_alloc(3, w->nnm_tot);
-        w->omp_T[i] = gsl_matrix_alloc(w->nnm_tot, ncomp * w->data_block_tot);
+        w->omp_S[i] = gsl_matrix_alloc(w->nnm_tot, ncomp * w->data_block_tot);
+        w->omp_T[i] = gsl_matrix_alloc(ncomp * w->data_block_tot, w->nnm_tot);
       }
 
     fprintf(stderr, "mfield_alloc: data_block     = %zu\n", w->data_block);
@@ -558,9 +559,6 @@ mfield_free(mfield_workspace *w)
 
   if (w->dZ)
     free(w->dZ);
-
-  if (w->diag)
-    gsl_vector_free(w->diag);
 
   if (w->bias_idx)
     free(w->bias_idx);
@@ -661,12 +659,14 @@ mfield_free(mfield_workspace *w)
       gsl_matrix_free(w->omp_J[i]);
       gsl_matrix_free(w->omp_dB[i]);
       gsl_matrix_free(w->omp_T[i]);
+      gsl_matrix_free(w->omp_S[i]);
     }
 
   free(w->green_array_p);
   free(w->omp_J);
   free(w->omp_dB);
   free(w->omp_T);
+  free(w->omp_S);
   free(w->omp_rowidx);
   free(w->omp_colidx);
 
@@ -733,7 +733,6 @@ mfield_init_params(mfield_parameters * params)
   params->scale_time = 0;
   params->regularize = 0;
   params->use_weights = 0;
-  params->lambda_sa = 0.0;
   params->weight_X = 0.0;
   params->weight_Y = 0.0;
   params->weight_Z = 0.0;
@@ -750,6 +749,10 @@ mfield_init_params(mfield_parameters * params)
   params->gauss_spline_order = 3;   /* quadratic spline */
   params->euler_spline_order = 2;   /* linear spline */
   params->fluxcal_spline_order = 3; /* quadratic spline */
+  params->lambda_3 = 0.0;
+  params->lambda_s = 0.0;
+  params->lambda_o = 0.0;
+  params->lambda_u = 0.0;
 
   return 0;
 }
@@ -844,11 +847,6 @@ mfield_init(mfield_workspace *w)
 
   /* find time of first available data in CDF_EPOCH */
   w->t0_data = w->data_workspace_p->t0_data;
-
-  /* convert to dimensionless units with time scale */
-  w->lambda_mf = params->lambda_mf;
-  w->lambda_sv = params->lambda_sv / w->t_sigma;
-  w->lambda_sa = params->lambda_sa / (w->t_sigma * w->t_sigma);
 
   /* initialize spatial weighting histogram and time scaling */
   for (i = 0; i < w->nsat; ++i)
@@ -1394,9 +1392,7 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% nmax:  %zu\n", w->nmax);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
-  fprintf(fp, "%% lambda_mf: %.2f\n", params->lambda_mf);
-  fprintf(fp, "%% lambda_sv: %.2f\n", params->lambda_sv);
-  fprintf(fp, "%% lambda_sa: %.2f\n", params->lambda_sa);
+  fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
 
   fprintf(fp, "%% %3s %5s %20s %20s %20s\n",
           "n",
@@ -1437,6 +1433,85 @@ mfield_write_ascii(const char *filename, const double epoch,
     }
 
   fclose(fp);
+
+  return s;
+}
+
+/*
+mfield_write_shc()
+  Write SHC coefficient file
+
+Inputs: filename - output file
+        c        - coefficient vector, length at least p_int
+        w        - workspace
+*/
+
+int
+mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w)
+{
+  int s = 0;
+  FILE *fp;
+  const mfield_parameters *params = &(w->params);
+  gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+  msynth_parameters msynth_params = msynth_default_parameters();
+  msynth_workspace *msynth_p;
+  gsl_matrix_const_view m = gsl_matrix_const_view_vector(c, ncontrol, w->nnm_core);
+  size_t i;
+
+  msynth_params.nmin_int = 1;
+  msynth_params.nmax_int = w->nmax_core;
+  msynth_params.num_epochs = 0;
+  msynth_params.epochs = NULL;
+  msynth_params.spline_order = params->gauss_spline_order;
+  msynth_params.spline_nbreak = gsl_bspline2_nbreak(gauss_spline_p);
+
+  msynth_p = msynth_alloc2(&msynth_params);
+
+  assert(w->nnm_core == msynth_p->nnm);
+
+  /* fill knot vector */
+  for (i = 0; i < gauss_spline_p->knots->size; ++i)
+    {
+      double ti = gsl_vector_get(gauss_spline_p->knots, i);
+      gsl_vector_set(msynth_p->spline_workspace_p->knots, i, ti);
+    }
+
+  /* copy spline coefficients */
+  gsl_matrix_memcpy(msynth_p->spline_coef, &m.matrix);
+
+  msynth_shc_write(filename, msynth_p);
+
+  msynth_free(msynth_p);
+
+  /* now add header to file */
+  {
+    FILE *fp = fopen(filename, "r");
+    long fsize;
+    char *buf;
+
+    fseek(fp, 0, SEEK_END);
+    fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    buf = malloc(fsize + 1);
+    fread(buf, fsize, 1, fp);
+    buf[fsize] = '\0';
+
+    fclose(fp);
+
+    fp = fopen(filename, "w");
+
+    fprintf(fp, "%% Magnetic field model coefficients\n");
+    fprintf(fp, "%% nmax:  %zu\n", w->nmax);
+    fprintf(fp, "%% radius: %.1f\n", w->R);
+    fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
+
+    fwrite(buf, fsize, 1, fp);
+
+    fclose(fp);
+    free(buf);
+  }
 
   return s;
 }

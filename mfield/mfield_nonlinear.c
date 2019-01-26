@@ -40,8 +40,6 @@ static int mfield_vector_green_grad(const double t, const double t_grad, const d
 static int mfield_nonlinear_model_ext(const double r, const double theta,
                                       const double phi, const gsl_vector *g,
                                       double dB[3], const mfield_workspace *w);
-static int mfield_nonlinear_regularize(gsl_vector *diag,
-                                       mfield_workspace *w);
 static int mfield_nonlinear_regularize_init(mfield_workspace *w);
 static void mfield_nonlinear_callback(const size_t iter, void *params,
                                       const gsl_multifit_nlinear_workspace *multifit_p);
@@ -385,6 +383,21 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
   return s;
 }
 
+int
+mfield_calc_JTJ_multilarge(const gsl_vector *c, gsl_matrix * JTJ, mfield_workspace *w)
+{
+  int s;
+  gsl_vector * u = gsl_vector_alloc(w->nres_tot);
+  gsl_vector * v = gsl_vector_alloc(w->p);
+
+  s = mfield_calc_df3(CblasTrans, c, u, w, v, JTJ);
+
+  gsl_vector_free(u);
+  gsl_vector_free(v);
+
+  return s;
+}
+
 gsl_vector *
 mfield_residual(const gsl_vector *c, mfield_workspace *w)
 {
@@ -675,21 +688,9 @@ mfield_init_nonlinear(mfield_workspace *w)
       fprintf(stderr, "mfield_init_nonlinear: calculating regularization matrix...");
       mfield_nonlinear_regularize_init(w);
       fprintf(stderr, "done\n");
-
-#if 0 /*XXX*/
-      /* compute diag(L) */
-      mfield_nonlinear_regularize(w->lambda_diag, w);
-
-      /* compute L^T L */
-      gsl_vector_memcpy(w->LTL, w->lambda_diag);
-      gsl_vector_mul(w->LTL, w->lambda_diag);
-#endif
     }
   else
     {
-#if 0 /*XXX*/
-      gsl_vector_set_zero(w->lambda_diag);
-#endif
       gsl_spmatrix_set_zero(w->L);
       gsl_spmatrix_set_zero(w->Lambda);
     }
@@ -1871,52 +1872,6 @@ mfield_nonlinear_model_ext(const double r, const double theta,
 } /* mfield_nonlinear_model_ext() */
 
 /*
-mfield_nonlinear_regularize()
-  Construct diag = diag(L) for regularized fit by minimizing
-[d/dt B_r]^2 and/or [d^2/dt^2 B_r]^2 at the CMB
-
-< | d^2/dt^2 B_r |^2 > = \int | d^2/dt^2 B_r |^2 dOmega = || L g ||^2
-
-with
-
-L_{nm} = (n+1)/sqrt(2n + 1) (a/c)^{n+2}
-
-Inputs: diag - diagonal of regularization matrix
-        w    - workspace
-*/
-
-static int
-mfield_nonlinear_regularize(gsl_vector *diag, mfield_workspace *w)
-{
-  int s = 0;
-  const size_t nmax = GSL_MAX(w->nmax_sv, w->nmax_sa);
-  const double c = 3485.0;       /* Earth core radius */
-  const double a = w->params.R;  /* Earth surface radius */
-  const double ratio = a / c;
-  size_t n;
-
-  gsl_vector_set_zero(diag);
-
-  for (n = 1; n <= nmax; ++n)
-    {
-      int ni = (int) n;
-      int m;
-      double term = (n + 1.0) / sqrt(2.0*n + 1.0) * pow(ratio, n + 2.0);
-
-      for (m = -ni; m <= ni; ++m)
-        {
-          size_t cidx = mfield_coeff_nmidx(n, m);
-
-          mfield_set_mf(diag, cidx, w->lambda_mf * term, w);
-          mfield_set_sv(diag, cidx, w->lambda_sv * term, w);
-          mfield_set_sa(diag, cidx, w->lambda_sa * term, w);
-        }
-    }
-
-  return s;
-} /* mfield_nonlinear_regularize() */
-
-/*
 mfield_nonlinear_regularize_init()
   Construct the p-by-p regularization matrix Lambda.
 
@@ -1947,6 +1902,7 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
   int s = 0;
 
   gsl_spmatrix_set_zero(w->L);
+  gsl_spmatrix_set_zero(w->Lambda);
 
   if (w->p_core > 0)
     {
@@ -1963,7 +1919,6 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
       gsl_vector * c_core = gsl_vector_calloc(w->nnm_core);
       gsl_matrix * G_core = gsl_matrix_alloc(ncontrol, order);
       gsl_matrix * G_core_orig = gsl_matrix_alloc(ncontrol, order);
-      gsl_vector * work = gsl_vector_alloc(ncontrol);
 
       /*
        * construct vector c_core = diag(C) for minimizing
@@ -1989,39 +1944,19 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
           rterm *= ratio;
         }
 
-      printv_octave(c_core, "lambda");
-      printv_octave(gauss_spline_p->knots, "knots");
-
-      /* construct N_{ij} = 1/dt * \int N^{(3)}_i(t) N^{(3)}_j(t) dt for Gauss coefficient splines */
+      /* construct G_{ij} = 1/dt * \int N^{(3)}_i(t) N^{(3)}_j(t) dt for Gauss coefficient splines */
       gsl_bspline2_gram(3, G_core, gauss_spline_p);
       gsl_matrix_scale(G_core, 1.0 / (t1 - t0));
 
-      /*XXX*/
-      printsb_octave(G_core, "G_core");
       gsl_matrix_memcpy(G_core_orig, G_core);
 
-#if 0
-      /*XXX*/
       {
-        gsl_matrix *T1 = gsl_matrix_alloc(ncontrol, ncontrol);
-        gsl_linalg_symband_unpack(G_core, T1);
-        gsl_linalg_ldlt_decomp(T1);
-        printsym_octave(T1, "G_core_LDL");
-        gsl_matrix_free(T1);
-      }
-#endif
-
-#if 1
-      {
-        /* XXX: need to add epsilon to diagonal of G^{(3)} so LDLT decomposition
+        /* XXX: need to add epsilon to diagonal of G^{(3)} so LLT decomposition
          * will work */
         gsl_vector_view diag = gsl_matrix_column(G_core, 0);
         gsl_vector_add_constant(&diag.vector, 1.0e-10);
-        /*gsl_linalg_ldlt_band_decomp(G_core, work);*/
         gsl_linalg_cholesky_band_decomp(G_core);
-        printsb_octave(G_core, "G_core_LDL_band");
       }
-#endif
 
       /*
        * construct L(1:p_core,1:p_core) = G_L^{(3)} x C_L,
@@ -2045,11 +1980,90 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
             }
         }
 
-      gsl_spmatrix_scale(w->L, w->lambda_mf);
-      gsl_spmatrix_scale(w->Lambda, w->lambda_mf * w->lambda_mf);
+      gsl_spmatrix_scale(w->L, w->lambda_3);
+      gsl_spmatrix_scale(w->Lambda, w->lambda_3 * w->lambda_3);
 
       gsl_vector_free(c_core);
       gsl_matrix_free(G_core);
+    }
+
+  if (w->p_fluxcal > 0)
+    {
+      size_t n;
+
+      for (n = 0; n < w->nsat; ++n)
+        {
+          const size_t offset = w->fluxcal_offset + w->offset_fluxcal[n];
+          magdata *mptr = mfield_data_ptr(n, w->data_workspace_p);
+          gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(n, w->nsat, 0, w->max_threads)];
+          size_t ncontrol, order;
+          double t0, t1;
+          gsl_matrix * G_fluxcal, *G_fluxcal_orig;
+          size_t i, j;
+
+          if (!(mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL))
+            continue;
+
+          ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
+          order = gsl_bspline2_order(fluxcal_spline_p);
+          t0 = gsl_vector_get(fluxcal_spline_p->knots, 0);
+          t1 = gsl_vector_get(fluxcal_spline_p->knots, fluxcal_spline_p->knots->size - 1);
+
+          G_fluxcal = gsl_matrix_alloc(ncontrol, order);
+          G_fluxcal_orig = gsl_matrix_alloc(ncontrol, order);
+
+          /* construct G_{ij} = 1/dt * \int N^{(2)}_i(t) N^{(2)}_j(t) dt for fluxcal splines */
+          gsl_bspline2_gram(2, G_fluxcal, fluxcal_spline_p);
+          printsb_octave(G_fluxcal, "G_fluxcal1");
+          gsl_matrix_scale(G_fluxcal, 1.0 / (t1 - t0));
+
+          printsb_octave(G_fluxcal, "G_fluxcal");
+
+          gsl_matrix_memcpy(G_fluxcal_orig, G_fluxcal);
+
+          {
+            /* XXX: need to add epsilon to diagonal of G^{(2)} so LLT decomposition will work */
+            gsl_vector_view diag = gsl_matrix_column(G_fluxcal, 0);
+            gsl_vector_add_constant(&diag.vector, 1.0e-10);
+            gsl_linalg_cholesky_band_decomp(G_fluxcal);
+          }
+
+          /*
+           * construct L(1:p_fluxcal,1:p_fluxcal) = G_L^{(2)} x I_9,
+           * the Kronecker product of the Cholesky factors of G^{(2)} and I_9
+           */
+          for (j = 0; j < ncontrol; ++j)
+            {
+              for (i = 0; i < order && i + j < ncontrol; ++i)
+                {
+                  size_t row = i + j;
+                  double Lij = gsl_matrix_get(G_fluxcal, j, i); /* Cholesky factor of G^{(3)} */
+                  double Gij = gsl_matrix_get(G_fluxcal_orig, j, i);
+                  size_t k;
+
+                  for (k = FLUXCAL_IDX_SX; k <= FLUXCAL_IDX_SZ; ++k)
+                    {
+                      gsl_spmatrix_set(w->L, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_s * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_s * w->lambda_s * Gij);
+                    }
+
+                  for (k = FLUXCAL_IDX_OX; k <= FLUXCAL_IDX_OZ; ++k)
+                    {
+                      gsl_spmatrix_set(w->L, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_o * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_o * w->lambda_o * Gij);
+                    }
+
+                  for (k = FLUXCAL_IDX_U1; k <= FLUXCAL_IDX_U3; ++k)
+                    {
+                      gsl_spmatrix_set(w->L, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_u * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_u * w->lambda_u * Gij);
+                    }
+                }
+            }
+
+          gsl_matrix_free(G_fluxcal);
+          gsl_matrix_free(G_fluxcal_orig);
+        }
     }
 
 #if 0 /*XXX*/
@@ -2060,8 +2074,8 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
     gsl_spmatrix_sp2d(L, w->L);
     print_octave(L, "L");
     printsym_octave(Lambda, "Lambda");
+    exit(1);
   }
-  exit(1);
 #endif
 
   return s;
@@ -2708,7 +2722,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
-              double t0 = w->data_workspace_p->t0[i];
+              double t0 = epoch2year(w->data_workspace_p->t0[i]);
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
@@ -2867,7 +2881,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
-              double t0 = w->data_workspace_p->t0[i];
+              double t0 = epoch2year(w->data_workspace_p->t0[i]);
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);

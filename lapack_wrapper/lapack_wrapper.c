@@ -574,6 +574,37 @@ lapack_cholesky_solve(const gsl_matrix * A, const gsl_vector * b, gsl_vector * x
 }
 
 /*
+lapack_cholesky_decomp()
+  Decompose A using Cholesky factorization
+
+Inputs: A - on input, the SPD matrix in lower triangle
+            on output, the Cholesky factor in lower triangle
+*/
+
+int
+lapack_cholesky_decomp(gsl_matrix * A)
+{
+  int s;
+  lapack_int N = A->size1;
+  lapack_int lda = A->size1;
+  gsl_matrix *work_A = gsl_matrix_alloc(N, N);
+
+  gsl_matrix_transpose_tricpy('L', 1, work_A, A);
+
+  s = LAPACKE_dpotrf(LAPACK_COL_MAJOR,
+                     'L',
+                     N,
+                     work_A->data,
+                     lda);
+
+  gsl_matrix_transpose_tricpy('U', 1, A, work_A);
+
+  gsl_matrix_free(work_A);
+
+  return s;
+}
+
+/*
 lapack_cholesky_invert()
   Invert A using Cholesky factorization, which was previously
 computed with lapack_cholesky_solve() (the L factor output)
@@ -590,7 +621,7 @@ lapack_cholesky_invert(gsl_matrix * A)
   lapack_int lda = A->size1;
   gsl_matrix *work_A = gsl_matrix_alloc(N, N);
 
-  gsl_matrix_transpose_memcpy(work_A, A);
+  gsl_matrix_transpose_tricpy('L', 1, work_A, A);
 
   s = LAPACKE_dpotri(LAPACK_COL_MAJOR,
                      'L',
@@ -598,7 +629,7 @@ lapack_cholesky_invert(gsl_matrix * A)
                      work_A->data,
                      lda);
 
-  gsl_matrix_transpose_memcpy(A, work_A);
+  gsl_matrix_transpose_tricpy('U', 1, A, work_A);
 
   gsl_matrix_free(work_A);
 

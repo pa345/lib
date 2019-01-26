@@ -616,6 +616,32 @@ of length :code:`nnm_core`.
 The parameters :math:`\mathbf{x}_{crust}` are the static Gauss coefficients
 representing the crustal field, of length :code:`nnm_crust`.
 
+The parameters :math:`\mathbf{x}_{Euler}` are the control points for the
+Euler angle splines. For a given satellite, let the three Euler angle
+splines be :math:`\alpha(t), \beta(t), \gamma(t)`, then
+
+.. math::
+   
+     \alpha(t) &= \alpha^T N(t) \\
+     \beta(t) &= \beta^T N(t) \\
+     \gamma(t) &= \gamma^T N(t)
+
+where :math:`\alpha, \beta, \gamma` are vectors of length :code:`ncontrol_euler`.
+The coefficient vector is then organized as
+
+.. math:: \mathbf{x}_{Euler} =
+            \begin{pmatrix}
+              \alpha_1 \\
+              \beta_1 \\
+              \gamma_1 \\
+              \vdots \\
+              \alpha_{nsat} \\
+              \beta_{nsat} \\
+              \gamma_{nsat}
+            \end{pmatrix}
+
+Each "satellite block" is of length :code:`3 * ncontrol_euler`.
+
 Regularization
 ==============
 
@@ -643,6 +669,23 @@ It has entries
 and :math:`C` is a diagonal :code:`nnm`-by-:code:`nnm` matrix with entries
 
 .. math:: C_{nm,n'm'} = 4 \pi \left( \frac{a}{c} \right)^{2n+4} \frac{(n+1)^2}{2n + 1} \delta_{mm'} \delta_{nn'}
+
+Euler Angle Regularization
+--------------------------
+
+The Euler angle splines are regularized by minimizing the second derivative (curvature) integrated
+over the time interval. For each satellite, we minimize
+
+.. math:: \textrm{curvature} = \frac{1}{\Delta t} \int dt \left( |\alpha''(t)|^2 + |\beta''(t)|^2 + |\gamma''(t)|^2 \right)
+
+Since :math:`\alpha(t) = \alpha^T N(t), \beta(t) = \beta^T N(t), \gamma(t) = \gamma^T N(t)`, this is equivalent
+to minimizing
+
+.. math:: \mathbf{x}_{Euler}^T \Lambda_{Euler} \mathbf{x}_{Euler}
+
+where :math:`\Lambda_{Euler}` is a block matrix with blocks for each satellite of the form :math:`G^{(2)} \otimes I_3`,
+and :math:`G^{(2)}` is the Gram matrix of B-spline second derivatives using the knot vector and time period of
+that particular satellite, size :code:`ncontrol_euler-by-ncontrol_euler`.
 
 Implementation
 --------------

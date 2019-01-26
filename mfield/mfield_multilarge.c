@@ -77,7 +77,7 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
                                                            w->nnm_core, w->nnm_core);
 
           for (i = 0; i < w->max_threads; ++i)
-            w->omp_colidx[i] = 0;
+            w->omp_rowidx[i] = 0;
 
           for (i = 0; i < w->nsat; ++i)
             {
@@ -119,19 +119,19 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
 
                   if (mptr->flags[j] & MAGDATA_FLG_X)
                     {
-                      vx = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_core);
+                      vx = gsl_matrix_subrow(w->omp_T[thread_id], w->omp_rowidx[thread_id]++, 0, w->nnm_core);
                       VX = &vx.vector;
                     }
 
                   if (mptr->flags[j] & MAGDATA_FLG_Y)
                     {
-                      vy = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_core);
+                      vy = gsl_matrix_subrow(w->omp_T[thread_id], w->omp_rowidx[thread_id]++, 0, w->nnm_core);
                       VY = &vy.vector;
                     }
 
                   if (mptr->flags[j] & MAGDATA_FLG_Z)
                     {
-                      vz = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_core);
+                      vz = gsl_matrix_subrow(w->omp_T[thread_id], w->omp_rowidx[thread_id]++, 0, w->nnm_core);
                       VZ = &vz.vector;
                     }
 
@@ -168,28 +168,28 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
                    * 15 is just some slop to prevent trying to fill columns past the matrix buffer
                    * in the loop above
                    */
-                  if (w->omp_colidx[thread_id] >= w->omp_T[thread_id]->size2 - 15)
+                  if (w->omp_rowidx[thread_id] >= w->omp_T[thread_id]->size1 - 15)
                     {
                       /* fold current matrix block into JTJ_vec, one thread at a time */
-                      gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->nnm_core, w->omp_colidx[thread_id]);
+                      gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->omp_rowidx[thread_id], w->nnm_core);
 
 #pragma omp critical
                       {
-                        gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, &JTJ_block.matrix);
+                        gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, &JTJ_block.matrix);
                       }
 
-                      w->omp_colidx[thread_id] = 0;
+                      w->omp_rowidx[thread_id] = 0;
                     }
                 } /* for (j = 0; j < mptr->n; ++j) */
             } /* for (i = 0; i < w->nsat; ++i) */
 
           for (i = 0; i < w->max_threads; ++i)
             {
-              if (w->omp_colidx[i] > 0)
+              if (w->omp_rowidx[i] > 0)
                 {
                   /* accumulate final Green's functions into this (ii,jj) block */
-                  gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->nnm_core, w->omp_colidx[i]);
-                  gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, &JTJ_block.matrix);
+                  gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->omp_rowidx[i], w->nnm_core);
+                  gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, &JTJ_block.matrix);
                 }
             }
 
@@ -238,6 +238,9 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
   size_t i, j;
   struct timeval tv0, tv1;
 
+  if (nmin > nmax)
+    return s; /* nothing to do */
+
   /* compute J_crust^T W J_crust
    *
    * Threaded loop over the residuals, accumulate the internal Greens
@@ -250,7 +253,7 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
   gettimeofday(&tv0, NULL);
 
   for (i = 0; i < w->max_threads; ++i)
-    w->omp_colidx[i] = 0;
+    w->omp_rowidx[i] = 0;
 
   for (i = 0; i < w->nsat; ++i)
     {
@@ -259,12 +262,9 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
 #pragma omp parallel for private(j)
       for (j = 0; j < mptr->n; ++j)
         {
-          int thread_id = omp_get_thread_num();
+          int thread_id;
           size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-
-          gsl_vector *VX = NULL;
-          gsl_vector *VY = NULL;
-          gsl_vector *VZ = NULL;
+          gsl_vector *VX, *VY, *VZ;
           gsl_vector_view vx, vy, vz;
 
           if (MAGDATA_Discarded(mptr->flags[j]))
@@ -276,21 +276,24 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
           if (!(mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
             continue;
 
+          thread_id = omp_get_thread_num();
+          VX = VY = VZ = NULL;
+
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
-              vx = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              vx = gsl_matrix_subrow(w->omp_T[thread_id], w->omp_rowidx[thread_id]++, 0, w->nnm_crust);
               VX = &vx.vector;
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Y)
             {
-              vy = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              vy = gsl_matrix_subrow(w->omp_T[thread_id], w->omp_rowidx[thread_id]++, 0, w->nnm_crust);
               VY = &vy.vector;
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Z)
             {
-              vz = gsl_matrix_subcolumn(w->omp_T[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              vz = gsl_matrix_subrow(w->omp_T[thread_id], w->omp_rowidx[thread_id]++, 0, w->nnm_crust);
               VZ = &vz.vector;
             }
 
@@ -320,10 +323,142 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
            * 15 is just some slop to prevent trying to fill columns past the matrix buffer
            * in the loop above
            */
-          if (w->omp_colidx[thread_id] >= w->omp_T[thread_id]->size2 - 15)
+          if (w->omp_rowidx[thread_id] >= w->omp_T[thread_id]->size1 - 15)
             {
               /* fold current matrix block into JTJ_vec, one thread at a time */
-              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->nnm_crust, w->omp_colidx[thread_id]);
+              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->omp_rowidx[thread_id], w->nnm_crust);
+
+#pragma omp critical
+              {
+                gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, JTJ_crust);
+              }
+
+              w->omp_rowidx[thread_id] = 0;
+            }
+        } /* for (j = 0; j < mptr->n; ++j) */
+
+      progress_bar(stderr, (i + 1.0) / (double) w->nsat, 70);
+    } /* for (i = 0; i < w->nsat; ++i) */
+
+  for (i = 0; i < w->max_threads; ++i)
+    {
+      if (w->omp_rowidx[i] > 0)
+        {
+          /* accumulate final Green's functions */
+          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->omp_rowidx[i], w->nnm_crust);
+          gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, &m.matrix, 1.0, JTJ_crust);
+        }
+    }
+
+  progress_bar(stderr, 1.0, 70);
+  fprintf(stderr, "\n");
+
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  return s;
+}
+
+static int
+mfield_nonlinear_precompute_crust2(const gsl_vector *sqrt_weights, gsl_matrix * JTJ_crust,
+                                  mfield_workspace *w)
+{
+  int s = 0;
+  const size_t nmin = w->nmax_core + 1;
+  const size_t nmax = w->nmax;
+  const size_t mmax = nmax;
+  size_t i, j;
+  struct timeval tv0, tv1;
+
+  if (nmin > nmax)
+    return s; /* nothing to do */
+
+  /* compute J_crust^T W J_crust
+   *
+   * Threaded loop over the residuals, accumulate the internal Greens
+   * functions into a large block matrix T, which is then folded into
+   * JTJ_crust with DSYRK when it is full.
+   */
+
+  fprintf(stderr, "mfield_nonlinear_precompute_crust2: computing J_crust^T W J_crust...");
+  fprintf(stderr, "\n");
+  gettimeofday(&tv0, NULL);
+
+  for (i = 0; i < w->max_threads; ++i)
+    w->omp_colidx[i] = 0;
+
+  for (i = 0; i < w->nsat; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+
+#pragma omp parallel for private(j)
+      for (j = 0; j < mptr->n; ++j)
+        {
+          int thread_id;
+          size_t ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
+          gsl_vector *VX, *VY, *VZ;
+          gsl_vector_view vx, vy, vz;
+
+          if (MAGDATA_Discarded(mptr->flags[j]))
+            continue;
+
+          if (!MAGDATA_FitMF(mptr->flags[j]))
+            continue;
+
+          if (!(mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
+            continue;
+
+          thread_id = omp_get_thread_num();
+          VX = VY = VZ = NULL;
+
+          if (mptr->flags[j] & MAGDATA_FLG_X)
+            {
+              vx = gsl_matrix_subcolumn(w->omp_S[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              VX = &vx.vector;
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Y)
+            {
+              vy = gsl_matrix_subcolumn(w->omp_S[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              VY = &vy.vector;
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Z)
+            {
+              vz = gsl_matrix_subcolumn(w->omp_S[thread_id], w->omp_colidx[thread_id]++, 0, w->nnm_crust);
+              VZ = &vz.vector;
+            }
+
+          /* calculate internal Green's functions for crustal field only */
+          green_calc_intopt(nmin, nmax, mmax, mptr->r[j], mptr->theta[j], mptr->phi[j], VX, VY, VZ, w->green_array_p[thread_id]);
+
+          if (mptr->flags[j] & MAGDATA_FLG_X)
+            {
+              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+              gsl_blas_dscal(sqrt_wj, VX);
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Y)
+            {
+              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+              gsl_blas_dscal(sqrt_wj, VY);
+            }
+
+          if (mptr->flags[j] & MAGDATA_FLG_Z)
+            {
+              double sqrt_wj = gsl_vector_get(sqrt_weights, ridx++);
+              gsl_blas_dscal(sqrt_wj, VZ);
+            }
+
+          /*
+           * check if omp_S[thread_id] is full and should be folded into JTJ; the
+           * 15 is just some slop to prevent trying to fill columns past the matrix buffer
+           * in the loop above
+           */
+          if (w->omp_colidx[thread_id] >= w->omp_S[thread_id]->size2 - 15)
+            {
+              /* fold current matrix block into JTJ_vec, one thread at a time */
+              gsl_matrix_view m = gsl_matrix_submatrix(w->omp_S[thread_id], 0, 0, w->nnm_crust, w->omp_colidx[thread_id]);
 
 #pragma omp critical
               {
@@ -333,6 +468,8 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
               w->omp_colidx[thread_id] = 0;
             }
         } /* for (j = 0; j < mptr->n; ++j) */
+
+      progress_bar(stderr, (i + 1.0) / (double) w->nsat, 70);
     } /* for (i = 0; i < w->nsat; ++i) */
 
   for (i = 0; i < w->max_threads; ++i)
@@ -340,7 +477,7 @@ mfield_nonlinear_precompute_crust(const gsl_vector *sqrt_weights, gsl_matrix * J
       if (w->omp_colidx[i] > 0)
         {
           /* accumulate final Green's functions */
-          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->nnm_crust, w->omp_colidx[i]);
+          gsl_matrix_view m = gsl_matrix_submatrix(w->omp_S[i], 0, 0, w->nnm_crust, w->omp_colidx[i]);
           gsl_blas_dsyrk(CblasLower, CblasNoTrans, 1.0, &m.matrix, 1.0, JTJ_crust);
         }
     }
@@ -398,7 +535,7 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
                                                        w->nnm_crust, w->nnm_core);
 
       for (i = 0; i < w->max_threads; ++i)
-        w->omp_colidx[i] = 0;
+        w->omp_rowidx[i] = 0;
 
       for (i = 0; i < w->nsat; ++i)
         {
@@ -438,19 +575,19 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
 
               if (mptr->flags[j] & MAGDATA_FLG_X)
                 {
-                  vx = gsl_matrix_column(w->omp_T[thread_id], w->omp_colidx[thread_id]++);
+                  vx = gsl_matrix_row(w->omp_T[thread_id], w->omp_rowidx[thread_id]++);
                   VX = &vx.vector;
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_Y)
                 {
-                  vy = gsl_matrix_column(w->omp_T[thread_id], w->omp_colidx[thread_id]++);
+                  vy = gsl_matrix_row(w->omp_T[thread_id], w->omp_rowidx[thread_id]++);
                   VY = &vy.vector;
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_Z)
                 {
-                  vz = gsl_matrix_column(w->omp_T[thread_id], w->omp_colidx[thread_id]++);
+                  vz = gsl_matrix_row(w->omp_T[thread_id], w->omp_rowidx[thread_id]++);
                   VZ = &vz.vector;
                 }
 
@@ -486,30 +623,30 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
                * 15 is just some slop to prevent trying to fill columns past the matrix buffer
                * in the loop above
                */
-              if (w->omp_colidx[thread_id] >= w->omp_T[thread_id]->size2 - 15)
+              if (w->omp_rowidx[thread_id] >= w->omp_T[thread_id]->size1 - 15)
                 {
                   /* fold current matrix blocks into JTJ_block, one thread at a time */
-                  gsl_matrix_view m_core = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->nnm_core, w->omp_colidx[thread_id]);
-                  gsl_matrix_view m_crust = gsl_matrix_submatrix(w->omp_T[thread_id], w->nnm_core, 0, w->nnm_crust, w->omp_colidx[thread_id]);
+                  gsl_matrix_view m_core = gsl_matrix_submatrix(w->omp_T[thread_id], 0, 0, w->omp_rowidx[thread_id], w->nnm_core);
+                  gsl_matrix_view m_crust = gsl_matrix_submatrix(w->omp_T[thread_id], 0, w->nnm_core, w->omp_rowidx[thread_id], w->nnm_crust);
 
 #pragma omp critical
                   {
-                    gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, &m_crust.matrix, &m_core.matrix, 1.0, &JTJ_block.matrix);
+                    gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0, &m_crust.matrix, &m_core.matrix, 1.0, &JTJ_block.matrix);
                   }
 
-                  w->omp_colidx[thread_id] = 0;
+                  w->omp_rowidx[thread_id] = 0;
                 }
             } /* for (j = 0; j < mptr->n; ++j) */
         } /* for (i = 0; i < w->nsat; ++i) */
 
       for (i = 0; i < w->max_threads; ++i)
         {
-          if (w->omp_colidx[i] > 0)
+          if (w->omp_rowidx[i] > 0)
             {
               /* accumulate final Green's functions into this ii block */
-              gsl_matrix_view m_core = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->nnm_core, w->omp_colidx[i]);
-              gsl_matrix_view m_crust = gsl_matrix_submatrix(w->omp_T[i], w->nnm_core, 0, w->nnm_crust, w->omp_colidx[i]);
-              gsl_blas_dgemm(CblasNoTrans, CblasTrans, 1.0, &m_crust.matrix, &m_core.matrix, 1.0, &JTJ_block.matrix);
+              gsl_matrix_view m_core = gsl_matrix_submatrix(w->omp_T[i], 0, 0, w->omp_rowidx[i], w->nnm_core);
+              gsl_matrix_view m_crust = gsl_matrix_submatrix(w->omp_T[i], 0, w->nnm_core, w->omp_rowidx[i], w->nnm_crust);
+              gsl_blas_dgemm(CblasTrans, CblasNoTrans, 1.0, &m_crust.matrix, &m_core.matrix, 1.0, &JTJ_block.matrix);
             }
         }
 
@@ -581,16 +718,22 @@ mfield_nonlinear_precompute(const gsl_vector *sqrt_weights, mfield_workspace *w)
   if (nres_vec == 0)
     return GSL_SUCCESS;
 
+#if 1/*XXX*/
   if (w->p_core > 0)
     {
       gsl_matrix_view JTJ_core = gsl_matrix_submatrix(w->JTJ_vec, 0, 0, w->p_core, w->p_core);
       mfield_nonlinear_precompute_core(sqrt_weights, &JTJ_core.matrix, w);
     }
+#endif
 
   if (w->p_crust > 0)
     {
       gsl_matrix_view JTJ_crust = gsl_matrix_submatrix(w->JTJ_vec, w->p_core, w->p_core, w->p_crust, w->p_crust);
+#if 0
       mfield_nonlinear_precompute_crust(sqrt_weights, &JTJ_crust.matrix, w);
+#else
+      mfield_nonlinear_precompute_crust2(sqrt_weights, &JTJ_crust.matrix, w);
+#endif
     }
 
   if (w->p_core > 0 && w->p_crust > 0)
@@ -681,7 +824,10 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
 
       mfield_debug("mfield_calc_df3: computing sqrt(W) J_2...");
       gettimeofday(&tv2, NULL);
-      gsl_spmatrix_scale_rows(w->J2_csr, w->sqrt_wts_final);
+      {
+        gsl_vector_view tmp = gsl_vector_subvector(w->sqrt_wts_final, 0, w->nres);
+        gsl_spmatrix_scale_rows(w->J2_csr, &tmp.vector);
+      }
       gettimeofday(&tv3, NULL);
       mfield_debug("done (%g seconds)\n", time_diff(tv2, tv3));
 
@@ -704,8 +850,9 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       if (TransJ == CblasTrans)
         {
           /* store J_2(x)^T sqrt(W) u in lower part of v */
-          gsl_vector_view tmp = gsl_vector_subvector(v, w->p_int, w->p_sparse);
-          gsl_spblas_dusmv(CblasTrans, 1.0, w->J2_csr, u, 0.0, &tmp.vector);
+          gsl_vector_view vtmp = gsl_vector_subvector(v, w->p_int, w->p_sparse);
+          gsl_vector_const_view utmp = gsl_vector_const_subvector(u, 0, w->nres);
+          gsl_spblas_dusmv(CblasTrans, 1.0, w->J2_csr, &utmp.vector, 0.0, &vtmp.vector);
         }
       else
         {

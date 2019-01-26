@@ -109,17 +109,59 @@ mfield_covariance(gsl_matrix * covar, mfield_workspace *w)
        */
 
       gsl_matrix_tricpy('L', 1, covar, w->choleskyL);
-
-      /* invert (J^T J) matrix using Cholesky factor */
-      lapack_cholesky_invert(covar);
-
-      /* copy lower to upper triangle */
-      gsl_matrix_transpose_tricpy('L', 0, covar, covar);
+      s += lapack_cholesky_invert(covar);
     }
   else
     {
       s = gsl_multilarge_nlinear_covar(covar, w->nlinear_workspace_p);
     }
+
+  /* copy lower to upper triangle */
+  gsl_matrix_transpose_tricpy('L', 0, covar, covar);
+
+  return s;
+}
+
+/*
+mfield_correlation()
+  The correlation matrix is computed from the covariance matrix:
+
+Corr = D^{-1/2} Covar D^{-1/2}
+
+where D = diag(diag(Covar))
+
+Inputs: C - on input, covariance matrix
+            on output, correlation matrix
+*/
+
+int
+mfield_correlation(gsl_matrix * C, mfield_workspace *w)
+{
+  int s = 0;
+  const size_t N = C->size1;
+  gsl_vector_const_view diag = gsl_matrix_const_diagonal(C);
+  gsl_vector * d = gsl_vector_alloc(N);
+  size_t i;
+
+  gsl_vector_memcpy(d, &diag.vector);
+
+  /* compute D^{-1/2} C */
+  for (i = 0; i < N; ++i)
+    {
+      double di = gsl_vector_get(d, i);
+      gsl_vector_view v = gsl_matrix_row(C, i);
+      gsl_blas_dscal(1.0 / sqrt(di), &v.vector);
+    }
+
+  /* compute C D^{-1/2} */
+  for (i = 0; i < N; ++i)
+    {
+      double di = gsl_vector_get(d, i);
+      gsl_vector_view v = gsl_matrix_column(C, i);
+      gsl_blas_dscal(1.0 / sqrt(di), &v.vector);
+    }
+
+  gsl_vector_free(d);
 
   return s;
 }

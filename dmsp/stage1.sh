@@ -22,7 +22,7 @@ fi
 indir="$DATAHOME/DMSP/MAG/Stage0"
 outdir="$DATAHOME/DMSP/MAG/Stage1"
 
-prog="$MYLIBHOME/track/stage1"
+prog="$HOME/usr/bin/stage1"
 
 # Extra flags (such as use CHAOS)
 # Aug 6 2018: CHAOS-6 has a bug in the external field coefficients for years 2011-2013 due

@@ -16,6 +16,7 @@ typedef struct
   gsl_vector *input[3];          /* input to first filter (residuals in VFM frame) */
   gsl_vector *output_impulse[3]; /* impulse-filtered first differences */
   gsl_vector_int *ioutlier[3];   /* outliers detected in Hampel filter */
+  gsl_vector_int *ijump[3];      /* jump detected */
   size_t n;                      /* maximum length of time series */
   peak_workspace *peak_workspace_p;
   gsl_filter_impulse_workspace *impulse_workspace_p;

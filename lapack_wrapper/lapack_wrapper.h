@@ -28,6 +28,7 @@ int lapack_complex_svd_thin(const gsl_matrix_complex * A, gsl_vector * S,
                             gsl_matrix_complex * U, gsl_matrix_complex * V);
 int lapack_cholesky_solve(const gsl_matrix * A, const gsl_vector * b, gsl_vector * x,
                           double * rcond, gsl_matrix * L);
+int lapack_cholesky_decomp(gsl_matrix * A);
 int lapack_cholesky_invert(gsl_matrix * A);
 int lapack_zposv(const gsl_matrix_complex * A, const gsl_vector_complex * b, gsl_vector_complex *x,
                  double * rcond);

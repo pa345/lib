@@ -11,5 +11,6 @@
 
 int mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfield_workspace * w);
 int mfield_covariance(gsl_matrix * covar, mfield_workspace *w);
+int mfield_correlation(gsl_matrix * C, mfield_workspace *w);
 
 #endif /* INCLUDED_mfield_error_h */

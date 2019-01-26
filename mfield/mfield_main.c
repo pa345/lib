@@ -170,6 +170,7 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
   mfield_fill_g(c, msynth_p, NULL, w);
 
   mfield_write_ascii("initial.txt", 2015.5, c, w);
+  mfield_write_shc("initial.shc", c, w);
 
 #if 0
   {
@@ -261,6 +262,126 @@ print_spectrum(const char *filename, mfield_workspace *w)
   fprintf(stderr, "done\n");
 
   fclose(fp);
+
+  return 0;
+}
+
+int
+print_gnm(const char *prefix, const size_t iter, mfield_workspace *w)
+{
+  int s = 0;
+  const size_t nmax = w->nmax_core;
+  const double t0 = epoch2year(w->data_workspace_p->t0_data);
+  const double t1 = epoch2year(w->data_workspace_p->t1_data);
+  const double dt = 0.05; /* step size in years */
+  gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+  const size_t order = gsl_bspline2_order(gauss_spline_p);
+  const size_t nderiv = GSL_MIN(3, order - 1);
+  char filename[2048];
+  size_t n;
+
+  for (n = 1; n <= nmax; ++n)
+    {
+      int ni = (int) n;
+      int m;
+
+      for (m = -ni; m <= ni; ++m)
+        {
+          size_t cidx = mfield_coeff_nmidx(n, m);
+          gsl_vector_const_view v = gsl_vector_const_subvector_with_stride(w->c, cidx, w->nnm_core, ncontrol);
+          char gh = (m < 0) ? 'h' : 'g';
+          double t;
+          FILE *fp;
+          size_t i;
+
+          sprintf(filename, "%s/%c%zu_%d_iter%zu.txt", prefix, gh, n, abs(m), iter);
+          fp = fopen(filename, "w");
+          if (!fp)
+            {
+              fprintf(stderr, "print_gnm: unable to open %s: %s\n",
+                      filename, strerror(errno));
+              ++s;
+              continue;
+            }
+
+          i = 1;
+          fprintf(fp, "# %c(%zu,%d) time series\n", gh, n, abs(m));
+          fprintf(fp, "# Field %zu: %c(%zu,%d)(t) (nT)\n", i++, gh, n, abs(m));
+
+          if (nderiv > 0)
+            fprintf(fp, "# Field %zu: d/dt %c(%zu,%d)(t) (nT/year)\n", i++, gh, n, abs(m));
+          if (nderiv > 1)
+            fprintf(fp, "# Field %zu: d^2/dt^2 %c(%zu,%d)(t) (nT/year^2)\n", i++, gh, n, abs(m));
+          if (nderiv > 2)
+            fprintf(fp, "# Field %zu: d^3/dt^3 %c(%zu,%d)(t) (nT/year^3)\n", i++, gh, n, abs(m));
+
+          for (t = t0; t <= t1; t += dt)
+            {
+              double gnm;
+
+              fprintf(fp, "%10.4f ", t);
+
+              for (i = 0; i <= nderiv; ++i)
+                {
+                  gsl_bspline2_eval_deriv(t, &v.vector, i, &gnm, gauss_spline_p);
+                  fprintf(fp, "%20.12e ", gnm);
+                }
+
+              fprintf(fp, "\n");
+            }
+
+          fclose(fp);
+        }
+    }
+
+  return s;
+}
+
+int
+print_euler(const char *prefix, const size_t iter, mfield_workspace *w)
+{
+  int s = 0;
+  char filename[2048];
+  size_t n;
+
+  if (!w->params.fit_euler)
+    return 0;
+
+  for (n = 0; n < w->nsat; ++n)
+    {
+      magdata *mptr = mfield_data_ptr(n, w->data_workspace_p);
+
+      if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
+        {
+          sprintf(filename, "%s/euler.%zu.iter%zu.txt", prefix, n, iter);
+          mfield_euler_print(filename, n, w);
+        }
+    }
+
+  return 0;
+}
+
+int
+print_fluxcal(const char *prefix, const size_t iter, mfield_workspace *w)
+{
+  int s = 0;
+  char filename[2048];
+  size_t n;
+
+  if (!w->params.fit_fluxcal)
+    return 0;
+
+  for (n = 0; n < w->nsat; ++n)
+    {
+      magdata *mptr = mfield_data_ptr(n, w->data_workspace_p);
+
+      if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
+        {
+          sprintf(filename, "%s/fluxcal.%zu.iter%zu.txt", prefix, n, iter);
+          mfield_fluxcal_print(filename, n, w);
+        }
+    }
 
   return 0;
 }
@@ -399,12 +520,14 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
   if (config_lookup_int(&cfg, "regularize", &ival))
     mfield_params->regularize = ival;
 
-  if (config_lookup_float(&cfg, "lambda_mf", &fval))
-    mfield_params->lambda_mf = fval;
-  if (config_lookup_float(&cfg, "lambda_sv", &fval))
-    mfield_params->lambda_sv = fval;
-  if (config_lookup_float(&cfg, "lambda_sa", &fval))
-    mfield_params->lambda_sa = fval;
+  if (config_lookup_float(&cfg, "lambda_3", &fval))
+    mfield_params->lambda_3 = fval;
+  if (config_lookup_float(&cfg, "lambda_s", &fval))
+    mfield_params->lambda_s = fval;
+  if (config_lookup_float(&cfg, "lambda_o", &fval))
+    mfield_params->lambda_o = fval;
+  if (config_lookup_float(&cfg, "lambda_u", &fval))
+    mfield_params->lambda_u = fval;
 
   if (config_lookup_float(&cfg, "weight_X", &fval))
     mfield_params->weight_X = fval;
@@ -505,9 +628,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
   fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
-  fprintf(stderr, "\t --lambda_mf | -M lambda_mf      - main field damping parameter\n");
-  fprintf(stderr, "\t --lambda_sv | -v lambda_sv      - secular variation damping parameter\n");
-  fprintf(stderr, "\t --lambda_sa | -a lambda_sa      - secular acceleration damping parameter\n");
+  fprintf(stderr, "\t --lambda_3 | -M lambda_3        - 3rd time derivative of main field damping parameter\n");
 } /* print_help() */
 
 int
@@ -536,9 +657,7 @@ main(int argc, char *argv[])
   int print_data = 0;         /* print data for MF modeling */
   int print_map = 0;          /* print data maps */
   int print_residuals = 0;    /* print residuals at each iteration */
-  double lambda_mf = -1.0;    /* MF damping parameter */
-  double lambda_sv = -1.0;    /* SV damping parameter */
-  double lambda_sa = -1.0;    /* SA damping parameter */
+  double lambda_3 = -1.0;     /* 3rd time derivative of MF damping parameter */
   double sigma = -1.0;        /* sigma for artificial noise */
   double bias = 0.0;          /* bias for artificial noise */
   struct timeval tv0, tv1;
@@ -565,30 +684,20 @@ main(int argc, char *argv[])
           { "print_data", required_argument, NULL, 'd' },
           { "print_map", required_argument, NULL, 'm' },
           { "config_file", required_argument, NULL, 'C' },
-          { "lambda_sa", required_argument, NULL, 'a' },
-          { "lambda_sv", required_argument, NULL, 'v' },
-          { "lambda_mf", required_argument, NULL, 'M' },
+          { "lambda_3", required_argument, NULL, 'M' },
           { "sigma", required_argument, NULL, 'S' },
           { "bias", required_argument, NULL, 'B' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:b:B:c:C:de:l:mM:n:o:p:rv:S:", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:B:c:C:de:l:mM:n:o:p:rS:", long_options, &option_index);
       if (c == -1)
         break;
 
       switch (c)
         {
-          case 'a':
-            lambda_sa = atof(optarg);
-            break;
-
-          case 'v':
-            lambda_sv = atof(optarg);
-            break;
-
           case 'M':
-            lambda_mf = atof(optarg);
+            lambda_3 = atof(optarg);
             break;
 
           case 'b':
@@ -671,12 +780,8 @@ main(int argc, char *argv[])
     mfield_params.euler_period = euler_period;
   if (maxit > 0)
     mfield_params.max_iter = maxit;
-  if (lambda_mf >= 0.0)
-    mfield_params.lambda_mf = lambda_mf;
-  if (lambda_sv >= 0.0)
-    mfield_params.lambda_sv = lambda_sv;
-  if (lambda_sa >= 0.0)
-    mfield_params.lambda_sa = lambda_sa;
+  if (lambda_3 >= 0.0)
+    mfield_params.lambda_3 = lambda_3;
 
   status = check_parameters(&mfield_params, &data_params);
   if (status)
@@ -706,19 +811,20 @@ main(int argc, char *argv[])
   if (mfield_params.fit_mf)
     {
       fprintf(stderr, "main: MF nmax = %zu\n", mfield_params.nmax_mf);
-      fprintf(stderr, "main: MF damping = %g\n", mfield_params.lambda_mf);
+      fprintf(stderr, "main: MF damping (3rd time derivative) = %g\n", mfield_params.lambda_3);
     }
 
   if (mfield_params.fit_sv)
-    {
-      fprintf(stderr, "main: SV nmax = %zu\n", mfield_params.nmax_sv);
-      fprintf(stderr, "main: SV damping = %g\n", mfield_params.lambda_sv);
-    }
+    fprintf(stderr, "main: SV nmax = %zu\n", mfield_params.nmax_sv);
 
   if (mfield_params.fit_sv && mfield_params.fit_sa)
+    fprintf(stderr, "main: SA nmax = %zu\n", mfield_params.nmax_sa);
+
+  if (mfield_params.fit_fluxcal)
     {
-      fprintf(stderr, "main: SA nmax = %zu\n", mfield_params.nmax_sa);
-      fprintf(stderr, "main: SA damping = %g\n", mfield_params.lambda_sa);
+      fprintf(stderr, "main: scale factor damping      = %g\n", mfield_params.lambda_s);
+      fprintf(stderr, "main: offset damping            = %g\n", mfield_params.lambda_o);
+      fprintf(stderr, "main: non-orthogonality damping = %g\n", mfield_params.lambda_u);
     }
 
   fprintf(stderr, "main: Gauss period   = %g [days]\n", mfield_params.gauss_period);
@@ -868,9 +974,24 @@ main(int argc, char *argv[])
       mfield_write_ascii(buf, mfield_workspace_p->epoch, coeffs, mfield_workspace_p);
       fprintf(stderr, "done\n");
 
+      /* output coefficients for this iteration */
+      sprintf(buf, "coef.shc.iter%zu", iter);
+      fprintf(stderr, "main: writing coefficient file %s...", buf);
+      mfield_write_shc(buf, coeffs, mfield_workspace_p);
+      fprintf(stderr, "done\n");
+
       /* output spectrum for this iteration */
       sprintf(buf, "mfield.s.iter%zu", iter);
       print_spectrum(buf, mfield_workspace_p);
+
+      /* output Gauss coefficient time series for this iteration */
+      print_gnm("output/gnm", iter, mfield_workspace_p);
+
+      /* output Euler angle time series for this iteration */
+      print_euler("output", iter, mfield_workspace_p);
+
+      /* output fluxgate calibration time series for this iteration */
+      print_fluxcal("output", iter, mfield_workspace_p);
 
       if (print_residuals)
         {
@@ -887,7 +1008,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
 
-#if 0
+#if 1
   /* calculate covariance matrix */
   if (mfield_workspace_p->old_fdf == 0)
     {
@@ -897,18 +1018,34 @@ main(int argc, char *argv[])
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (status = %d, %g seconds)\n", status, time_diff(tv0, tv1));
 
+      printsym_octave(mfield_workspace_p->covar, "covar");
+
       /* calculate errors in coefficients */
       fprintf(stderr, "main: printing coefficient uncertainties to %s...", error_file);
       gettimeofday(&tv0, NULL);
       mfield_print_uncertainties(error_file, mfield_workspace_p->covar, mfield_workspace_p);
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      /* calculate correlation matrix */
+      fprintf(stderr, "main: calculating correlation matrix...");
+      gettimeofday(&tv0, NULL);
+      status = mfield_correlation(mfield_workspace_p->covar, mfield_workspace_p);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      printsym_octave(mfield_workspace_p->covar, "corr");
     }
 #endif
 
   sprintf(buf, "mfield_coeffs.txt");
   fprintf(stderr, "main: writing coefficients to %s...", buf);
   mfield_write_ascii(buf, mfield_workspace_p->epoch, coeffs, mfield_workspace_p);
+  fprintf(stderr, "done\n");
+
+  sprintf(buf, "mfield_coeffs.shc");
+  fprintf(stderr, "main: writing SHC coefficients to %s...", buf);
+  mfield_write_shc(buf, coeffs, mfield_workspace_p);
   fprintf(stderr, "done\n");
 
   {
@@ -946,11 +1083,9 @@ main(int argc, char *argv[])
         }
       else
         {
-          fprintf(fp, "%.12e %.12e %f %f\n",
+          fprintf(fp, "%.12e %.12e\n",
                   log(fnorm),
-                  log(xnorm),
-                  mfield_params.lambda_sv,
-                  mfield_params.lambda_sa);
+                  log(xnorm));
 
           fclose(fp);
         }
@@ -1037,8 +1172,8 @@ main(int argc, char *argv[])
 
             if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
               {
-                double t0 = mfield_workspace_p->data_workspace_p->t0[n];
-                double t1 = mfield_workspace_p->data_workspace_p->t1[n];
+                double t0 = epoch2year(mfield_workspace_p->data_workspace_p->t0[n]);
+                double t1 = epoch2year(mfield_workspace_p->data_workspace_p->t1[n]);
                 gsl_bspline2_workspace *fluxcal_spline_p = mfield_workspace_p->fluxcal_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
                 size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
                 size_t fluxcal_idx = mfield_workspace_p->fluxcal_offset + mfield_workspace_p->offset_fluxcal[n];

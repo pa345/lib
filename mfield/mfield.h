@@ -35,7 +35,6 @@
  * approximate matrix size in bytes for precomputing J^T J; each
  * thread gets its own matrix (1 GB)
  */
-/*#define MFIELD_MATRIX_SIZE    (1e9)*/
 #define MFIELD_MATRIX_SIZE    (1e9)
 
 /* define if fitting to the EMAG2 grid */
@@ -86,9 +85,10 @@ typedef struct
   int use_weights;                      /* use weights in the fitting */
 
   int regularize;                       /* regularize the solution vector */
-  double lambda_mf;                     /* main field damping factor */
-  double lambda_sv;                     /* secular variation damping factor */
-  double lambda_sa;                     /* secular acceleration damping factor */
+  double lambda_3;                      /* 3rd time derivative of main field damping factor */
+  double lambda_s;                      /* fluxgate scale factor regularization parameter */
+  double lambda_o;                      /* fluxgate offset regularization parameter */
+  double lambda_u;                      /* fluxgate non-orthogonality angle regularization parameter */
 
   double weight_X;                      /* relative weighting for X component */
   double weight_Y;                      /* relative weighting for Y component */
@@ -193,8 +193,6 @@ typedef struct
   size_t fluxcal_offset; /* offset of fluxcal coefficients in 'c' */
   size_t bias_offset;  /* offset of crustal bias coefficients in 'c' */
 
-  gsl_vector *diag; /* diag(D) where D is regularization matrix */
-
   /* nonlinear least squares parameters */
   gsl_vector *wts_spatial; /* spatial weights, nres-by-1 */
   gsl_vector *wts_robust;  /* robust weights, nres-by-1 */
@@ -214,9 +212,10 @@ typedef struct
   /* regularization parameters */
   gsl_spmatrix *L;         /* regularization matrix Cholesky factor, p-by-p */
   gsl_spmatrix *Lambda;    /* regularization matrix (L * L'), p-by-p */
-  double lambda_mf;        /* main field damping */
-  double lambda_sv;        /* SV damping */
-  double lambda_sa;        /* SA damping */
+  double lambda_3;         /* 3rd time derivative of main field damping */
+  double lambda_s;         /* fluxgate scale factor regularization parameter */
+  double lambda_o;         /* fluxgate offset regularization parameter */
+  double lambda_u;         /* fluxgate non-orthogonality angle regularization parameter */
   int old_fdf;             /* use multifit instead of multilarge */
 
   /*
@@ -257,8 +256,9 @@ typedef struct
   gsl_matrix *omp_dY_grad; /* gradient dY/dg max_threads-by-nnm_max */
   gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */
   gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p_int */
-  size_t *omp_rowidx;      /* row indices for omp_J */
   gsl_matrix **omp_T;      /* max_threads matrices, each nnm_tot-by-4*data_block */
+  gsl_matrix **omp_S;      /* max_threads matrices, each 4*data_block-by-nnm_tot */
+  size_t *omp_rowidx;      /* row indices for omp_J */
   size_t *omp_colidx;      /* column indices for omp_T */
   green_workspace **green_array_p; /* array of green workspaces, size max_threads */
 
@@ -296,6 +296,7 @@ mfield_workspace *mfield_copy(const mfield_workspace *w);
 int mfield_init(mfield_workspace *w);
 int mfield_calc_linear(gsl_vector *c, mfield_workspace *w);
 int mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w);
+int mfield_calc_JTJ_multilarge(const gsl_vector *c, gsl_matrix * JTJ, mfield_workspace *w);
 gsl_vector *mfield_residual(const gsl_vector *c, mfield_workspace *w);
 int mfield_reset(mfield_workspace *w);
 int mfield_eval(const double t, const double r, const double theta, const double phi,
@@ -319,6 +320,7 @@ int mfield_write(const char *filename, mfield_workspace *w);
 mfield_workspace *mfield_read(const char *filename);
 int mfield_write_ascii(const char *filename, const double epoch,
                        const gsl_vector * c, mfield_workspace *w);
+int mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w);
 size_t mfield_coeff_nmidx(const size_t n, const int m);
 size_t mfield_extidx(const double t, const mfield_workspace *w);
 extern inline double mfield_get_gnm(const double t, const size_t n, const int m,

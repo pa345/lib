@@ -363,7 +363,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
                   /* compute fluxgate calibration parameters for this timestamp */
-                  gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &fluxcal_params.vector, fluxcal_spline_p);
+                  gsl_bspline2_vector_eval(t, &fluxcal_control_pts.matrix, &fluxcal_params.vector, fluxcal_spline_p);
 
                   /* apply calibration to B_vfm */
                   mfield_fluxcal_apply_datum(&fluxcal_params.vector, B_vfm, B_vfm);

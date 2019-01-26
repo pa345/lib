@@ -43,7 +43,7 @@ typedef jump_data deque_type;
 #include "deque.c"
 
 static size_t jump_correct(const size_t comp, const size_t start_idx, const size_t end_idx, const gsl_vector *signal,
-                           const medtest_stats_type * stats, const gsl_vector_int *ioutlier, satdata_mag *data);
+                           const medtest_stats_type * stats, const gsl_vector_int *ioutlier, gsl_vector_int *ijump, satdata_mag *data);
 static int jump_apply_offset(const size_t comp, const double offset, const size_t start_idx, const size_t end_idx, satdata_mag * data);
 
 /*
@@ -77,6 +77,7 @@ jump_alloc(const size_t n, const size_t K)
       w->input[i] = gsl_vector_alloc(n);
       w->output_impulse[i] = gsl_vector_alloc(n);
       w->ioutlier[i] = gsl_vector_int_alloc(n);
+      w->ijump[i] = gsl_vector_int_alloc(n);
 
       w->cumjump[i] = 0.0;
     }
@@ -110,6 +111,9 @@ jump_free(jump_workspace * w)
 
       if (w->ioutlier[i])
         gsl_vector_int_free(w->ioutlier[i]);
+
+      if (w->ijump[i])
+        gsl_vector_int_free(w->ijump[i]);
     }
 
   free(w);
@@ -136,7 +140,7 @@ jump_detect(const double min_jump_threshold, const gsl_vector * x,
   const int n = x->size;
   const int H = 10;
   const double alpha = 1.0e-6;
-  const double nsigma = 15.0;
+  const double nsigma = 10.0;
   size_t njump = 0;
   double window1[100], window2[100];
   int i;
@@ -162,7 +166,8 @@ jump_detect(const double min_jump_threshold, const gsl_vector * x,
     {
       double height = fabs(stats[i].median1 - stats[i].median2);
 
-      if (height > min_jump_threshold && height > nsigma * stats[i].se)
+      /* ensure sigma is above a certain threshold */
+      if (stats[i].se > 0.1 && height > min_jump_threshold && height > nsigma * stats[i].se)
         {
           /* jump detected */
           int j;
@@ -217,6 +222,7 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
   const size_t n = end_idx - start_idx + 1;
   gsl_vector_view input[3];
   gsl_vector_int_view ioutlier[3];
+  gsl_vector_int_view ijump[3];
   medtest_stats_type *stats[3];
   size_t i;
 
@@ -235,6 +241,9 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
       fprintf(fp, "# Field %zu: X outlier detected (0 or 1)\n", i++);
       fprintf(fp, "# Field %zu: Y outlier detected (0 or 1)\n", i++);
       fprintf(fp, "# Field %zu: Z outlier detected (0 or 1)\n", i++);
+      fprintf(fp, "# Field %zu: X jump detected (0 or 1)\n", i++);
+      fprintf(fp, "# Field %zu: Y jump detected (0 or 1)\n", i++);
+      fprintf(fp, "# Field %zu: Z jump detected (0 or 1)\n", i++);
       fprintf(fp, "# Field %zu: corrected X VFM residual (nT)\n", i++);
       fprintf(fp, "# Field %zu: corrected Y VFM residual (nT)\n", i++);
       fprintf(fp, "# Field %zu: corrected Z VFM residual (nT)\n", i++);
@@ -253,6 +262,7 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
       stats[i] = malloc(n * sizeof(medtest_stats_type));
       input[i] = gsl_vector_subvector(w->input[i], 0, n);
       ioutlier[i] = gsl_vector_int_subvector(w->ioutlier[i], 0, n);
+      ijump[i] = gsl_vector_int_subvector(w->ijump[i], 0, n);
     }
 
   /* compute vector residuals in VFM frame with a-priori model */
@@ -277,10 +287,10 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
   for (i = 0; i < 3; ++i)
     {
       /* search for sudden jumps in this component */
-      jump_detect(2.0, &input[i].vector, stats[i], &ioutlier[i].vector, w);
+      jump_detect(5.0, &input[i].vector, stats[i], &ioutlier[i].vector, w);
 
       /* correct jumps in this component */
-      njump[i] += jump_correct(i, start_idx, end_idx, &input[i].vector, stats[i], &ioutlier[i].vector, data);
+      njump[i] += jump_correct(i, start_idx, end_idx, &input[i].vector, stats[i], &ioutlier[i].vector, &ijump[i].vector, data);
     }
 
   /* print output file */
@@ -302,7 +312,7 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
           /* rotate B_model into VFM frame */
           quat_apply_inverse(q, B_model, B_model_VFM);
 
-          fprintf(fp, "%ld %8.4f %8.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %d %d %d %10.4f %10.4f %10.4f\n",
+          fprintf(fp, "%ld %8.4f %8.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %d %d %d %d %d %d %10.4f %10.4f %10.4f\n",
                   satdata_epoch2timet(data->t[didx]),
                   data->latitude[didx],
                   data->qdlat[didx],
@@ -315,6 +325,9 @@ jump_proc(const int header, FILE *fp, const size_t start_idx, const size_t end_i
                   gsl_vector_int_get(&ioutlier[0].vector, i),
                   gsl_vector_int_get(&ioutlier[1].vector, i),
                   gsl_vector_int_get(&ioutlier[2].vector, i),
+                  gsl_vector_int_get(&ijump[0].vector, i),
+                  gsl_vector_int_get(&ijump[1].vector, i),
+                  gsl_vector_int_get(&ijump[2].vector, i),
                   B_VFM[0] - B_model_VFM[0],
                   B_VFM[1] - B_model_VFM[1],
                   B_VFM[2] - B_model_VFM[2]);
@@ -457,6 +470,7 @@ Inputs: comp      - component (0 = X, 1 = Y, 2 = Z)
         signal    - signal with jumps
         stats     - statistics for each data point
         ioutlier  - previously detected jump positions
+        ijump     - locations of corrected jumps
         data      - data
 
 Return: number of jumps corrected
@@ -464,7 +478,7 @@ Return: number of jumps corrected
 
 static size_t
 jump_correct(const size_t comp, const size_t start_idx, const size_t end_idx, const gsl_vector *signal,
-             const medtest_stats_type * stats, const gsl_vector_int *ioutlier, satdata_mag *data)
+             const medtest_stats_type * stats, const gsl_vector_int *ioutlier, gsl_vector_int *ijump, satdata_mag *data)
 {
   const double max_dt = 10.0 * 60.0;     /* maximum dt between jumps in seconds */
   const double eta_threshold = 0.16;     /* threshold for comparing similar jump sizes */
@@ -474,18 +488,18 @@ jump_correct(const size_t comp, const size_t start_idx, const size_t end_idx, co
   deque *deque_p = deque_alloc(1000);
   jump_data cur_jump;
   gsl_vector *x = gsl_vector_alloc(n);
-  gsl_vector_int *iout = gsl_vector_int_alloc(n);
 
   assert(n == (int) signal->size);
   putenv("TZ=GMT");
 
-  /* make a copy of signal and ioutlier */
+  gsl_vector_int_set_zero(ijump);
+
+  /* make a copy of signal */
   gsl_vector_memcpy(x, signal);
-  gsl_vector_int_memcpy(iout, ioutlier);
 
   for (i = 0; i < n - 1; ++i)
     {
-      int outlier = gsl_vector_int_get(iout, i);
+      int outlier = gsl_vector_int_get(ioutlier, i);
       int didx = start_idx + i;
 
       /* correction isn't reliable at high latitudes for X/Y */
@@ -571,6 +585,9 @@ jump_correct(const size_t comp, const size_t start_idx, const size_t end_idx, co
 
                   jump_apply_offset(comp, sum, prev_jump.idx + 1, idx, data);
 
+                  gsl_vector_int_set(ijump, prev_jump.idx + 1 - start_idx, 1);
+                  gsl_vector_int_set(ijump, idx - start_idx, 1);
+
                   sum += prev_jump.delta;
                   idx = prev_jump.idx;
 
@@ -589,7 +606,6 @@ jump_correct(const size_t comp, const size_t start_idx, const size_t end_idx, co
 
   deque_free(deque_p);
   gsl_vector_free(x);
-  gsl_vector_int_free(iout);
 
   return njump;
 }

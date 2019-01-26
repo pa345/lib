@@ -2,11 +2,10 @@
  * stage2a.c
  *
  * 1. Read DMSP file(s)
- * 2. Correct VFM X/Y attitude quaternions using main field model
- * 3. Correct jumps
- * 4. Correct spikes
- * 5. Select quiet tracks
- * 6. Calculate scalar calibration parameters (scale factors, offsets, non-orthogonality angles)
+ * 2. Correct jumps
+ * 3. Correct spikes
+ * 4. Select quiet tracks
+ * 5. Calculate scalar calibration parameters (scale factors, offsets, non-orthogonality angles)
  *
  * Usage: ./stage2a <-i dmsp_index_file> <-o dmsp_output_file> [-p parameter_file]
  */
@@ -38,7 +37,6 @@
 #include <msynth/msynth.h>
 #include <track/track.h>
 
-#include "attitude.h"
 #include "eph.h"
 #include "jump.h"
 #include "magcal.h"
@@ -46,7 +44,6 @@
 #include "stage2_calibrate.c"
 #include "stage2_euler.c"
 #include "stage2_filter.c"
-#include "stage2_quaternions.c"
 #include "stage2_spikes.c"
 
 #define WRITE_JUMP_DATA                   0
@@ -445,56 +442,6 @@ stage2_vfm2nec(satdata_mag *data)
 }
 
 /*
-precalibrate()
-  Perform initial scalar calibration and determination of
-Euler angles
-
-Inputs: scal_file  - output file for scalar calibration residuals
-        euler_file - output file for Euler angle residuals
-        data       - satellite data
-        track_p    - track data
-        coef       - (output) scalar calibration parameters
-        rms        - (output) scalar calibration rms
-
-Return: pointer to new satdata_mag structure which has been scalar calibrated;
-original 'data' not modified
-*/
-
-static satdata_mag *
-precalibrate(const char * scal_file, const char * euler_file, const satdata_mag * data, const track_workspace * track_p,
-             gsl_vector * coef, double * rms)
-{
-  satdata_mag * data_cal;
-  struct timeval tv0, tv1;
-
-  fprintf(stderr, "\n");
-
-  data_cal = satdata_copy(data);
-
-  fprintf(stderr, "\t precalibrate: computing initial scalar calibration for dataset...");
-  gettimeofday(&tv0, NULL);
-  stage2_calibrate(scal_file, data_cal, track_p, coef, rms);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  fprintf(stderr, "\t precalibrate: applying initial scalar calibration to dataset...");
-  gettimeofday(&tv0, NULL);
-  fluxcal_apply(coef, data_cal);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  fprintf(stderr, "\t precalibrate: computing initial Euler angles for dataset...");
-  gettimeofday(&tv0, NULL);
-  stage2_euler(euler_file, data_cal, track_p);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  exit(1);
-
-  return data_cal;
-}
-
-/*
 preclean_jumps()
   Detect and remove jumps due to spacecraft fields in all 3 components in VFM frame
 */
@@ -590,7 +537,7 @@ preclean_spikes(const char *spike_file, satdata_mag * data, track_workspace *tra
   FILE *fp_spike = NULL;
   const time_t gap_threshold = 5;  /* maximum allowed gap in seconds */
   const size_t spike_K = 15;  /* window size for impulse detection filter */
-  const double nsigma[3] = { 8.0, 5.0, 5.0 }; /* tuning parameters for impulse rejection filter in each component */
+  const double nsigma[3] = { 5.0, 5.0, 5.0 }; /* tuning parameters for impulse rejection filter in each component */
   size_t nspikes[3] = { 0, 0, 0 };
   double min_spike[3] = { 1.0e6, 1.0e6, 1.0e6 };
   double max_spike[3] = { -1.0e6, -1.0e6, -1.0e6 };
@@ -683,15 +630,12 @@ int
 main(int argc, char *argv[])
 {
   const char *track_file = "track_data.dat";
-  const char *quat_file = "stage2_quat.dat";
 #if WRITE_JUMP_DATA
-  const char *attitude_file = "stage2_attitude.dat";
   const char *scal_file = "stage2_scal.dat";
   const char *euler_file = "stage2_euler.dat";
   const char *spike_file = "stage2_spikes.dat";
   const char *jump_file = "stage2_jumps.dat";
 #else
-  const char *attitude_file = NULL;
   const char *scal_file = NULL;
   const char *euler_file = NULL;
   const char *spike_file = NULL;
@@ -838,12 +782,6 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  fprintf(stderr, "main: computing initial attitude correction to dataset...");
-  gettimeofday(&tv0, NULL);
-  attitude_correct(attitude_file, data, track_p);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds, output file = %s)\n", time_diff(tv0, tv1), attitude_file);
-
   fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
   preclean_jumps(jump_file, data, track_p);
@@ -858,6 +796,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%g seconds, output spike file = %s)\n",
           time_diff(tv0, tv1), spike_file);
 
+#if 0
   /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
@@ -913,10 +852,11 @@ main(int argc, char *argv[])
         }
     }
 
-#if 0
-  fprintf(stderr, "main: correcting quaternions for satellite drift...");
-  stage2_correct_quaternions(quat_file, data, track_p);
-  fprintf(stderr, "done (data written to %s)\n", quat_file);
+  /* calculate scalar rms of final dataset */
+  rms1 = stage2_scalar_rms(data);
+
+  fprintf(stderr, "main: INITIAL SCALAR RMS = %.2f [nT]\n", rms0);
+  fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
 #endif
 
   fprintf(stderr, "main: computing B_NEC...");
@@ -943,12 +883,6 @@ main(int argc, char *argv[])
       satdata_dmsp_write(1, outfile, data);
       fprintf(stderr, "done\n");
     }
-
-  /* calculate scalar rms of final dataset */
-  rms1 = stage2_scalar_rms(data);
-
-  fprintf(stderr, "main: INITIAL SCALAR RMS = %.2f [nT]\n", rms0);
-  fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
 
   gsl_vector_free(coef);
   track_free(track_p);

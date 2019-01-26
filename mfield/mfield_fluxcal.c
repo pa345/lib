@@ -75,11 +75,13 @@ mfield_fluxcal_print(const char *filename, const size_t sat_idx,
 
   for (t = t0; t < t1; t += dt)
     {
-      gsl_bspline2_vector_eval(t, &control_pts.matrix, &cal_params.vector, spline_p);
+      double tyr = satdata_epoch2year(t);
+
+      gsl_bspline2_vector_eval(tyr, &control_pts.matrix, &cal_params.vector, spline_p);
 
       fprintf(fp, "%f %f %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
               t,
-              satdata_epoch2year(t),
+              tyr,
               cal_data[FLUXCAL_IDX_SX],
               cal_data[FLUXCAL_IDX_SY],
               cal_data[FLUXCAL_IDX_SZ],
