@@ -1254,7 +1254,7 @@ main(int argc, char *argv[])
             data = read_swarm(optarg, 0);
             magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL;
             magdata_euler_flags = EULER_FLG_ZYX;
-            magdata_global_weight = 0.1;
+            /*magdata_global_weight = 0.1;*/
             break;
 
           /* For E/W gradients */
