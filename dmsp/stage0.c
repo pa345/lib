@@ -189,14 +189,14 @@ calc_spacecraft_basis_ECI(const time_t t, const double r_ECI[3], const double v_
     double r_ECEF[3], tmp[3];
 
     /* convert ECI position to ECEF */
-    eci2ecef_pos(t, r_ECI, r_ECEF);
+    eci2ecef(t, r_ECI, r_ECEF);
 
     /* compute tmp = e_mu in ECEF */
     ellipsoid_basis(r_ECEF, tmp, s1, s2);
     /*ellipsoid_basis_mu(r_ECEF, WGS84_MU, tmp, s1, s2);*/
 
     /* compute s3 = e_mu in ECI */
-    ecef2eci_pos(t, tmp, s3);
+    ecef2eci(t, tmp, s3);
 
     /* compute s3 = -e_mu in ECI */
     for (i = 0; i < 3; ++i)
@@ -312,6 +312,54 @@ calc_quaternions_ECI(const time_t t, const double theta, const double phi,
 }
 
 int
+calc_quaternions_ECI2(const time_t t, const double theta, const double phi,
+                     const double r_ECI[3], const double v_ECI[3], double q[4])
+{
+  const double jd = (t / 86400.0) + 2440587.5;
+  const double GAST = julian2GAST(jd);
+  const double T = GAST + phi;
+  double r_ECEF[3];                                /* position vector in ECEF frame */
+  double xhat_ECEF[3], yhat_ECEF[3], zhat_ECEF[3]; /* NEC basis vectors in ECEF frame */
+  double xhat_ECI[3], yhat_ECI[3], zhat_ECI[3];    /* NEC basis vectors in ECI frame */
+  double s1[3], s2[3], s3[3];                      /* spacecraft-fixed basis vectors in ECI frame */
+  double DCM_data[9];
+  gsl_matrix_view DCM = gsl_matrix_view_array(DCM_data, 3, 3);
+  size_t i;
+
+  /* compute position vector in ECEF frame */
+  eci2ecef(t, r_ECI, r_ECEF);
+
+  /* compute NEC basis vectors in ECEF frame */
+  ecef2nec_basis(r_ECEF, xhat_ECEF, yhat_ECEF, zhat_ECEF);
+
+  /* transform NEC basis vectors to ECI components */
+  ecef2eci(t, xhat_ECEF, xhat_ECI);
+  ecef2eci(t, yhat_ECEF, yhat_ECI);
+  ecef2eci(t, zhat_ECEF, zhat_ECI);
+
+  calc_spacecraft_basis_ECI(t, r_ECI, v_ECI, s1, s2, s3);
+
+  /* build direction cosine matrix */
+
+  gsl_matrix_set(&DCM.matrix, 0, 0, vec_dot(xhat_ECI, s1));
+  gsl_matrix_set(&DCM.matrix, 0, 1, vec_dot(xhat_ECI, s2));
+  gsl_matrix_set(&DCM.matrix, 0, 2, vec_dot(xhat_ECI, s3));
+
+  gsl_matrix_set(&DCM.matrix, 1, 0, vec_dot(yhat_ECI, s1));
+  gsl_matrix_set(&DCM.matrix, 1, 1, vec_dot(yhat_ECI, s2));
+  gsl_matrix_set(&DCM.matrix, 1, 2, vec_dot(yhat_ECI, s3));
+
+  gsl_matrix_set(&DCM.matrix, 2, 0, vec_dot(zhat_ECI, s1));
+  gsl_matrix_set(&DCM.matrix, 2, 1, vec_dot(zhat_ECI, s2));
+  gsl_matrix_set(&DCM.matrix, 2, 2, vec_dot(zhat_ECI, s3));
+
+  /* convert to quaternions */
+  quat_R2q(&DCM.matrix, q);
+
+  return 0;
+}
+
+int
 interp_eph(satdata_mag *data, eph_data *eph)
 {
   int s = 0;
@@ -353,7 +401,11 @@ interp_eph(satdata_mag *data, eph_data *eph)
           theta = r_sph[1];
           phi = r_sph[2];
 
+#if 0
           calc_quaternions_ECI(unix_time, theta, phi, pos, vel, q);
+#else
+          calc_quaternions_ECI2(unix_time, theta, phi, pos, vel, q);
+#endif
         }
       else
         {

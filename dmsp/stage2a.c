@@ -273,9 +273,7 @@ print_data(const char *filename, const satdata_mag *data, const track_workspace 
           double theta = M_PI / 2.0 - data->latitude[j] * M_PI / 180.0;
           double phi = data->longitude[j] * M_PI / 180.0;
           double *q = &(data->q[4*j]);
-          double B_model[4], B_model_VFM[3], r_ECEF[3];
-
-          sph2ecef(data->r[j], theta, phi, r_ECEF);
+          double B_model[4], B_model_VFM[3];
 
           /* compute model vector */
           satdata_mag_model(j, B_model, data);
@@ -782,6 +780,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
+#if 0
   fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
   preclean_jumps(jump_file, data, track_p);
@@ -795,8 +794,9 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, output spike file = %s)\n",
           time_diff(tv0, tv1), spike_file);
+#endif
 
-#if 0
+#if 1
   /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
