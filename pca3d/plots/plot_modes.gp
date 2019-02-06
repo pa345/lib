@@ -3,7 +3,7 @@
 # Plot PCA modes from SH analysis
 
 nrow = 3
-ncol = 2
+ncol = 1
 
 load 'multi_default.cfg'
 
@@ -17,7 +17,11 @@ hbuffer = 0.8
 load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
-set out "modes.png"
+mode = ARG1
+
+outfile = 'mode_'.mode.'.png'
+set out outfile
+file = "J_".mode.".txt"
 
 unset key
 set pm3d map interp 0,0
@@ -30,38 +34,22 @@ load 'ylaton.cfg'
 
 set multiplot layout nrow,ncol
 
-set title "J_{/Symbol \161}, Mode 1"
-splot 'J_01.txt' us 1:2:4
+set title "J_r, Mode ".mode
+splot file us 1:2:3
 
 load 'incrow.cfg'
 
-set title "J_{/Symbol \161}, Mode 2"
-splot 'J_02.txt' us 1:2:4
-
-load 'incrow.cfg'
-
-set xlabel "longitude (degrees)"
-
-set title "J_{/Symbol \161}, Mode 3"
-splot 'J_03.txt' us 1:2:4
-
-unset xlabel
-
-load 'inccolumn.cfg'
-
-set title "J_{/Symbol \152}, Mode 1"
-splot 'J_01.txt' us 1:2:5
-
-load 'incrow.cfg'
-
-set title "J_{/Symbol \152}, Mode 2"
-splot 'J_02.txt' us 1:2:5
+set title "J_{/Symbol \161}, Mode ".mode
+splot file us 1:2:4
 
 load 'incrow.cfg'
 
 set xlabel "longitude (degrees)"
 
-set title "J_{/Symbol \152}, Mode 3"
-splot 'J_03.txt' us 1:2:5
+set title "J_{/Symbol \152}, Mode ".mode
+splot file us 1:2:5
 
 unset multiplot
+
+str = sprintf('output is %s', outfile)
+print str
