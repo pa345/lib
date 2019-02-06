@@ -46,7 +46,7 @@ print_eph(const eph_data *data)
       r_ECI[1] = data->Y[i];
       r_ECI[2] = data->Z[i];
 
-      eci2ecef_pos(satdata_epoch2timet(data->t[i]), r_ECI, r_ECEF);
+      eci2ecef(satdata_epoch2timet(data->t[i]), r_ECI, r_ECEF);
 
       printf("%.12f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f\n",
              satdata_epoch2year(data->t[i]),
