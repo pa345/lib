@@ -325,7 +325,7 @@ pca3d_read_fft_data2(const char *filename)
 }
 
 int
-pca_write_vector(const char *filename, const gsl_vector * v)
+pca3d_write_vector(const char *filename, const gsl_vector * v)
 {
   int s;
   FILE *fp;
@@ -333,7 +333,7 @@ pca_write_vector(const char *filename, const gsl_vector * v)
   fp = fopen(filename, "w");
   if (!fp)
     {
-      fprintf(stderr, "pca_write_vector: unable to open %s: %s\n",
+      fprintf(stderr, "pca3d_write_vector: unable to open %s: %s\n",
               filename, strerror(errno));
       return -1;
     }
@@ -347,7 +347,7 @@ pca_write_vector(const char *filename, const gsl_vector * v)
 }
 
 gsl_vector *
-pca_read_vector(const char *filename)
+pca3d_read_vector(const char *filename)
 {
   FILE *fp;
   gsl_vector *v;
@@ -356,7 +356,7 @@ pca_read_vector(const char *filename)
   fp = fopen(filename, "r");
   if (!fp)
     {
-      fprintf(stderr, "pca_read_vector: unable to open %s: %s\n",
+      fprintf(stderr, "pca3d_read_vector: unable to open %s: %s\n",
               filename, strerror(errno));
       return NULL;
     }

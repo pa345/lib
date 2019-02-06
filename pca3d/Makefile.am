@@ -6,7 +6,7 @@ AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/magdata -I$(top_builddir
 
 common_libs = -L/usr/lib64 -lsatdata -lindices ~/usr/lib/libgsl.a /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf
 
-bin_PROGRAMS = print_modes print_modes3b print print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH print_magfield print_fillion print_fillion2 print_gary
+bin_PROGRAMS = print_modes print_modes3b print print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH print_magfield print_fillion print_fillion2 print_gary print_var3b
 
 print_SOURCES = print.c
 print_LDADD = libpca3d.la -lcommon -lm -lgsl -lnetcdf ${common_libs}
@@ -50,6 +50,9 @@ print_modes3b_SOURCES = print_modes3b.c
 print_modes3b_CFLAGS = -fopenmp
 print_modes3b_LDFLAGS = -fopenmp
 print_modes3b_LDADD = libpca3d.la -lcommon -lm -lmagfield -lgsl -lshtns_omp -lfftw3 -lfftw3_omp -lnetcdf ${common_libs}
+
+print_var3b_SOURCES = print_var3b.c
+print_var3b_LDADD = libpca3d.la -lcommon -lm -lmagfield -lgsl -lshtns_omp -lfftw3 -lfftw3_omp -lnetcdf ${common_libs}
 
 spectrogram_SOURCES = spectrogram.c
 spectrogram_LDADD = libpca3d.la -lcommon -lm -lgsl -lnetcdf ${common_libs}

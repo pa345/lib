@@ -23,9 +23,9 @@ int pca3d_write_data(const char *filename, const pca3d_data * data);
 pca3d_data pca3d_read_data(const char *filename);
 int pca3d_write_fft_data2(const char *filename, const pca3d_fft_data *data, const int light);
 pca3d_fft_data pca3d_read_fft_data2(const char *filename);
+int pca3d_write_vector(const char *filename, const gsl_vector *v);
+gsl_vector *pca3d_read_vector(const char *filename);
 
-int pca_write_vector(const char *filename, const gsl_vector *v);
-gsl_vector *pca_read_vector(const char *filename);
 int pca_write_matrix(const char *filename, const gsl_matrix *m);
 gsl_matrix *pca_read_matrix(const char *filename);
 int pca3d_write_matrix_complex(const char *filename, const gsl_matrix_complex *m);

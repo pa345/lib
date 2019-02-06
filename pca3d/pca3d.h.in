@@ -29,6 +29,7 @@
 
 /* stage3b data files */
 #define PCA3D_STAGE3B_SVAL_TXT         "@abs_top_builddir@/pca3d/data/stage3b/stage3b_sval_txt"
+#define PCA3D_STAGE3B_SVAL_DAT         "@abs_top_builddir@/pca3d/data/stage3b/stage3b_sval"
 #define PCA3D_STAGE3B_U                "@abs_top_builddir@/pca3d/data/stage3b/stage3b_U"
 
 typedef struct

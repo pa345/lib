@@ -176,6 +176,11 @@ main(int argc, char *argv[])
     pca3d_write_S(buf, data.lmax, data.mmax, freq, window_size, window_shift, S);
     fprintf(stderr, "done\n");
 
+    sprintf(buf, "%s_%zu", PCA3D_STAGE3B_SVAL_DAT, ifreq);
+    fprintf(stderr, "main: writing singular values for frequency %g [cpd] in binary format to %s...", freq, buf);
+    pca3d_write_vector(buf, S);
+    fprintf(stderr, "done\n");
+
     sprintf(buf, "%s_%zu", PCA3D_STAGE3B_U, ifreq);
     fprintf(stderr, "main: writing U matrix for frequency %g [cpd] in binary format to %s...", freq, buf);
     pca3d_write_matrix_complex(buf, U);
