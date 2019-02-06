@@ -184,7 +184,7 @@ calc_spacecraft_basis_ECI(const time_t t, const double r_ECI[3], const double v_
   double v[3]; /* unit velocity vector */
   size_t i;
 
-#if 1
+#if 0
   {
     double r_ECEF[3], tmp[3];
 
@@ -194,6 +194,24 @@ calc_spacecraft_basis_ECI(const time_t t, const double r_ECI[3], const double v_
     /* compute tmp = e_mu in ECEF */
     ellipsoid_basis(r_ECEF, tmp, s1, s2);
     /*ellipsoid_basis_mu(r_ECEF, WGS84_MU, tmp, s1, s2);*/
+
+    /* compute s3 = e_mu in ECI */
+    ecef2eci(t, tmp, s3);
+
+    /* compute s3 = -e_mu in ECI */
+    for (i = 0; i < 3; ++i)
+      s3[i] *= -1.0;
+  }
+
+#elif 1
+  {
+    double r_ECEF[3], tmp[3];
+
+    /* convert ECI position to ECEF */
+    eci2ecef(t, r_ECI, r_ECEF);
+
+    /* compute tmp = e_mu in ECEF */
+    ellipsoid_basis_mu(r_ECEF, WGS84_MU, tmp, s1, s2);
 
     /* compute s3 = e_mu in ECI */
     ecef2eci(t, tmp, s3);

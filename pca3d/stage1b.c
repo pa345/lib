@@ -32,6 +32,8 @@
 #include "pca3d.h"
 #include "tiegcm3d.h"
 
+#define MAX_T        100000
+
 int
 main_fill_grid(const size_t it, const tiegcm3d_data * data, magfield_workspace * w)
 {
@@ -62,46 +64,22 @@ main_proc()
 values; store SH coefficients to disk
 
 Inputs: prefix - output file prefix
+        tidx   - on input, starting time index
+                 on output, ending time index
+        tsteps - (output) array of timestamps
         data   - TIEGCM data
+        w      - magfield workspace
 
 Return: success/error
 */
 
 int
-main_proc(const char * prefix, const tiegcm3d_data * data)
+main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_data * data, magfield_workspace * w)
 {
   int s = 0;
-  const size_t lmin = 1;
-  const size_t lmax = 60;
-  const size_t mmax = GSL_MIN(30, data->nlon / 2 - 1);
-  const size_t nr = data->nr;
-  const size_t ntheta = data->nlat;
-  const size_t nphi = data->nlon;
-  const double rmin = data->r[0];
-  const double rmax = data->r[nr - 1];
-  const double R = R_EARTH_KM;
+  const size_t ttot = *tidx + data->nt;
   char buf[2048];
-  magfield_workspace *w;
-  magfield_params params;
   size_t i;
-
-  params.lmin = lmin;
-  params.lmax = lmax;
-  params.mmax = mmax;
-  params.nr = nr;
-  params.ntheta = ntheta;
-  params.nphi = nphi;
-  params.rmin = rmin;
-  params.rmax = rmax;
-  params.R = R;
-  params.grid_type = MAGFIELD_GAUSS;
-
-  fprintf(stderr, "main_proc: allocating magfield workspace...");
-  w = magfield_alloc(&params);
-  fprintf(stderr, "done\n");
-
-  /* set radial points which use non-fixed spacing */
-  magfield_set_r(data->r, w);
 
   /* ensure theta/phi grids from magfield match those from TIEGCM */
 
@@ -111,19 +89,9 @@ main_proc(const char * prefix, const tiegcm3d_data * data)
   for (i = 0; i < w->nphi; ++i)
     gsl_test_rel(w->phi[i] * 180.0 / M_PI, data->glon[i], 1.0e-10, "phi grid i=%zu", i);
 
-  /* write magfield parameter data and TIEGCM data to disk */
-  {
-    pca3d_data d;
-
-    d.nt = data->nt;
-    d.t = data->t;
-    d.w = w;
-    pca3d_write_data(PCA3D_STAGE1B_DATA, &d);
-  }
-
   for (i = 0; i < data->nt; ++i)
     {
-      fprintf(stderr, "main_proc: filling current grid for timestep %zu/%zu\n", i + 1, data->nt);
+      fprintf(stderr, "main_proc: filling current grid for timestep %zu/%zu\n", *tidx + 1, ttot);
 
       /* fill current grid for this timestep */
       main_fill_grid(i, data, w);
@@ -132,11 +100,12 @@ main_proc(const char * prefix, const tiegcm3d_data * data)
       magfield_decomp(w);
 
       /* write output file */
-      sprintf(buf, "%s_%03zu.dat", prefix, i + 1);
+      sprintf(buf, "%s_%03zu.dat", prefix, *tidx + 1);
       magfield_write_SH(buf, w);
-    }
 
-  magfield_free(w);
+      tsteps[*tidx] = data->t[i];
+      ++(*tidx);
+    }
 
   return s;
 }
@@ -144,10 +113,14 @@ main_proc(const char * prefix, const tiegcm3d_data * data)
 int
 main(int argc, char *argv[])
 {
-  char *infile = NULL;
+  const size_t lmin = 1;
+  const size_t lmax = 60;
+  const double R = R_EARTH_KM;
   char *file_prefix = PCA3D_STAGE1B_SH_PREFIX;
   struct timeval tv0, tv1;
-  tiegcm3d_data *data;
+  magfield_workspace *w = NULL;
+  size_t tidx = 0;
+  time_t * tsteps = malloc(MAX_T * sizeof(time_t));
 
   while (1)
     {
@@ -158,49 +131,102 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "i:", long_options, &option_index);
+      c = getopt_long(argc, argv, "", long_options, &option_index);
       if (c == -1)
         break;
 
       switch (c)
         {
-          case 'i':
-            infile = optarg;
-            break;
-
           default:
-            fprintf(stderr, "Usage: %s <-i tiegcm3d_nc_file>\n", argv[0]);
+            fprintf(stderr, "Usage: %s file1.nc file2.nc ...\n", argv[0]);
             break;
         }
     }
 
-  if (!infile)
+  if (optind >= argc)
     {
-      fprintf(stderr, "Usage: %s <-i tiegcm3d_nc_file>\n", argv[0]);
+      fprintf(stderr, "Usage: %s file1.nc file2.nc ...\n",
+              argv[0]);
       exit(1);
     }
 
-  fprintf(stderr, "main: input file = %s\n", infile);
-
-  fprintf(stderr, "main: reading %s...", infile);
-  gettimeofday(&tv0, NULL);
-
-  data = tiegcm3d_read(infile, NULL);
-  if (!data)
+  while (optind < argc)
     {
-      fprintf(stderr, "main: error reading %s\n", infile);
-      exit(1);
+      tiegcm3d_data *data;
+
+      fprintf(stderr, "main: reading %s...", argv[optind]);
+      gettimeofday(&tv0, NULL);
+
+      data = tiegcm3d_read(argv[optind], NULL);
+      if (!data)
+        {
+          fprintf(stderr, "main: error reading %s\n", argv[optind]);
+          exit(1);
+        }
+
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%zu records read, %g seconds)\n", data->nt,
+              time_diff(tv0, tv1));
+
+      if (w == NULL)
+        {
+          const size_t mmax = GSL_MIN(30, data->nlon / 2 - 1);
+          const size_t nr = data->nr;
+          const size_t ntheta = data->nlat;
+          const size_t nphi = data->nlon;
+          const double rmin = data->r[0];
+          const double rmax = data->r[nr - 1];
+          magfield_params params;
+
+          params.lmin = lmin;
+          params.lmax = lmax;
+          params.mmax = mmax;
+          params.nr = nr;
+          params.ntheta = ntheta;
+          params.nphi = nphi;
+          params.rmin = rmin;
+          params.rmax = rmax;
+          params.R = R;
+          params.grid_type = MAGFIELD_GAUSS;
+
+          fprintf(stderr, "main: allocating magfield workspace...");
+          w = magfield_alloc(&params);
+          fprintf(stderr, "done\n");
+
+          /* set radial points which use non-fixed spacing */
+          magfield_set_r(data->r, w);
+        }
+
+      fprintf(stderr, "main: nr         = %zu\n", data->nr);
+      fprintf(stderr, "main: nlat       = %zu\n", data->nlat);
+      fprintf(stderr, "main: nlon       = %zu\n", data->nlon);
+
+      main_proc(file_prefix, &tidx, tsteps, data, w);
+
+      tiegcm3d_free(data);
+
+      ++optind;
     }
 
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%zu records read, %g seconds)\n", data->nt,
-          time_diff(tv0, tv1));
+  /* write magfield parameter data and TIEGCM data to disk */
+  {
+    pca3d_data d;
 
-  fprintf(stderr, "main: nr         = %zu\n", data->nr);
-  fprintf(stderr, "main: nlat       = %zu\n", data->nlat);
-  fprintf(stderr, "main: nlon       = %zu\n", data->nlon);
+    d.nt = tidx;
+    d.t = tsteps;
+    d.w = w;
 
-  main_proc(file_prefix, data);
+    fprintf(stderr, "main: writing meta-data file %s...", PCA3D_STAGE1B_DATA);
+    pca3d_write_data(PCA3D_STAGE1B_DATA, &d);
+    fprintf(stderr, "done\n");
+  }
+
+  fprintf(stderr, "main: SH coefficients stored in %s\n", file_prefix);
+  
+  if (w)
+    magfield_free(w);
+
+  free(tsteps);
 
   return 0;
 }

@@ -397,7 +397,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: allocating magfield workspace from %s...", PCA3D_STAGE1B_DATA);
   data = pca3d_read_data(PCA3D_STAGE1B_DATA);
-  fprintf(stderr, "done\n");
+  fprintf(stderr, "done (%zu timestamps)\n", data.nt);
 
   main_proc(&data, input_prefix, fs, window_size, window_shift);
 

@@ -6,4 +6,10 @@ stage3a - use FFT results to build spectral density matrix for each frequency ba
 
 =====
 
-stage1b - read TIEGCM 3D current grids, perform Mie decomposition to represent them in spherical harmonic form
+stage1b       - read TIEGCM 3D current grids, perform Mie decomposition to represent them in spherical harmonic form
+stage2b       - read SH coefficients from previous stage1b, perform windowed FFTs and store FFT data to disk
+stage3b       - use FFT data to build spectral density matrix and compute SVD
+
+print_fft2b   - print result of stage2b windowed FFT data to files suitable for plotting
+spectrogram2b - print spectrogram of stage2b windowed FFT data
+print_modes3b - print 3D spatial modes to files suitable for plotting
