@@ -171,13 +171,15 @@ do_transforms(const pca3d_data * data, const double fs, const double window_size
   /* compute window function */
   apply_ps1(NULL, window);
 
-  fprintf(stderr, "do_transforms: computing FFTs of windowed data...");
+  fprintf(stderr, "do_transforms: computing FFTs of windowed data...\n");
   gettimeofday(&tv0, NULL);
 
   for (i = 0; i < w->nr; ++i)
     {
       int thread_id = omp_get_thread_num();
       size_t l;
+
+      progress_bar(stdout, (double) i / (double) w->nr, 80);
 
       for (l = w->lmin; l <= w->lmax; ++l)
         {
