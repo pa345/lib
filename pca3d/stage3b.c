@@ -168,7 +168,8 @@ main(int argc, char *argv[])
     gettimeofday(&tv0, NULL);
     status = lapack_complex_svd_thin(X, S, U, V);
     gettimeofday(&tv1, NULL);
-    fprintf(stderr, "done (%g seconds, status = %d)\n", time_diff(tv0, tv1), status);
+    fprintf(stderr, "done (%g seconds, condition number = %g, status = %d)\n",
+            time_diff(tv0, tv1), gsl_vector_get(S, 0) / gsl_vector_get(S, T - 1), status);
 
     sprintf(buf, "%s_%zu", PCA3D_STAGE3B_SVAL_TXT, ifreq);
     fprintf(stderr, "main: writing singular values for frequency %g [cpd] in text format to %s...", freq, buf);
