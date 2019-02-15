@@ -581,9 +581,9 @@ main(int argc, char *argv[])
             {
               size_t idx = TIEGCM3D_IDX(0, i, j, k, data);
 
-              magfield_current_set(MAG_IDX_R, i, j, k, data->Jr[idx], magfield_p);
-              magfield_current_set(MAG_IDX_THETA, i, j, k, data->Jt[idx], magfield_p);
-              magfield_current_set(MAG_IDX_PHI, i, j, k, data->Jp[idx], magfield_p);
+              magfield_grid_set(MAG_IDX_R, i, j, k, data->Jr[idx], magfield_p);
+              magfield_grid_set(MAG_IDX_THETA, i, j, k, data->Jt[idx], magfield_p);
+              magfield_grid_set(MAG_IDX_PHI, i, j, k, data->Jp[idx], magfield_p);
             }
         }
     }

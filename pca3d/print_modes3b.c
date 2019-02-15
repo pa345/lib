@@ -38,7 +38,7 @@ fill_magfield()
 in magfield and compute radial splines to prepare for magfield_eval_J()
 and magfield_eval_B() routines
 
-Inputs: u - singular vector (3*N-by-T, where N = nr*nlm)
+Inputs: u - singular vector (3*N-by-1, where N = nr*nlm)
         w - magfield workspace
 */
 

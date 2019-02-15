@@ -48,9 +48,9 @@ main_fill_grid(const size_t it, const tiegcm3d_data * data, magfield_workspace *
             {
               size_t idx = TIEGCM3D_IDX(it, i, j, k, data);
 
-              magfield_current_set(MAG_IDX_R, i, j, k, data->Jr[idx], w);
-              magfield_current_set(MAG_IDX_THETA, i, j, k, data->Jt[idx], w);
-              magfield_current_set(MAG_IDX_PHI, i, j, k, data->Jp[idx], w);
+              magfield_grid_set(MAG_IDX_R, i, j, k, data->Jr[idx], w);
+              magfield_grid_set(MAG_IDX_THETA, i, j, k, data->Jt[idx], w);
+              magfield_grid_set(MAG_IDX_PHI, i, j, k, data->Jp[idx], w);
             }
         }
     }

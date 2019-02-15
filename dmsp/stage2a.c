@@ -859,6 +859,14 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
 #endif
 
+#if 0 /*XXX*/
+  for (i = 0; i < data->n; ++i)
+    {
+      data->r[i] = 0.0;
+      data->longitude[i] = 0.0;
+    }
+#endif
+
   fprintf(stderr, "main: computing B_NEC...");
   stage2_vfm2nec(data);
   fprintf(stderr, "done\n");
