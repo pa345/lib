@@ -4,7 +4,7 @@
  * Read eigenvector file (left singular vector file) containing modes U
  * (output by stage3b) * and print them in format suitable for plotting
  *
- * ./print_modes [-i U_data_file]
+ * ./print_modes [-a altitude(km)]
  */
 
 #include <stdio.h>
@@ -177,7 +177,7 @@ main(int argc, char *argv[])
             break;
 
           default:
-            fprintf(stderr, "Usage: %s <-i U_data_file> [-a altitude (km)]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-a altitude (km)]\n", argv[0]);
             exit(1);
             break;
         }
