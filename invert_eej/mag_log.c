@@ -89,7 +89,7 @@ int
 mag_log_F2(const int header, const mag_workspace *w)
 {
   int s = 0;
-  const size_t downsample = 5; /* downsample to keep file size reasonable */
+  const size_t downsample = 1; /* downsample to keep file size reasonable */
   size_t i;
   mag_track *track = (mag_track *) &(w->track);
 
@@ -120,7 +120,7 @@ mag_log_F2(const int header, const mag_workspace *w)
       time_t unix_time = satdata_epoch2timet(track->t[i]);
       double lt = get_localtime(unix_time, track->phi[i]);
 
-      log_proc(w->log_F2, "%ld %6.3f %6.2f %9.4f %9.4f %8.4f %8.4f %8.2f %8.2f %6.2f %5.2f %5.2f %5.2f %5.2f %5.2f\n",
+      log_proc(w->log_F2, "%ld %6.3f %6.2f %9.4f %9.4f %8.4f %8.4f %8.2f %8.2f %6.2f %7.4f %5.2f %5.2f %7.4f %5.2f\n",
                unix_time,
                lt,
                get_season(unix_time),
