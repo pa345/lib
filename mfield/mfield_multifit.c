@@ -14,11 +14,12 @@ static double mfield_nonlinear_model_int(const gsl_vector * N, const size_t ista
                                          const gsl_vector *g, const mfield_workspace *w);
 static int mfield_nonlinear_model_SV(const gsl_vector * x, const magdata * mptr, const size_t idx,
                                      const size_t thread_id, double dBdt_model[3], mfield_workspace *w);
-static double mfield_nonlinear_model_int_SV(const double t, const gsl_vector *v,
+static double mfield_nonlinear_model_int_SV(const gsl_vector * dN, const size_t istart, const gsl_vector *dB,
                                             const gsl_vector *g, const mfield_workspace *w);
 static inline int jacobian_row_int(const gsl_vector * N, const size_t istart, const gsl_vector * dB,
                                    gsl_vector * J, mfield_workspace * w);
-static inline int jacobian_row_int_SV(const double t, const gsl_vector * dB, gsl_vector * J, mfield_workspace * w);
+static inline int jacobian_row_int_SV(const gsl_vector * dN, const size_t istart, const gsl_vector * dB,
+                                      gsl_vector * J, mfield_workspace * w);
 static inline int jacobian_row_int_grad(const double t, const double t2, const gsl_vector * dB, const gsl_vector * dB2,
                                         gsl_vector * J, mfield_workspace * w);
 
@@ -326,7 +327,12 @@ static int
 mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vector *fvv)
 {
   int s = GSL_SUCCESS;
-#if 0
+#if 1
+  (void) x;
+  (void) v;
+  (void) params;
+  (void) fvv;
+#else
   mfield_workspace *w = (mfield_workspace *) params;
   const mfield_parameters *mparams = &(w->params);
   size_t i, j;
@@ -910,7 +916,8 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
           double theta = mptr->theta[j];
           double phi = mptr->phi[j];
           size_t ridx = mptr->index[j]; /* residual index for this data point */
-          gsl_vector *N_gauss = w->gauss_spline_workspace_p[thread_id]->B;
+          gsl_vector_view N_gauss = gsl_matrix_column(w->gauss_spline_workspace_p[thread_id]->dB, 0);
+          gsl_vector_view dN_gauss = gsl_matrix_column(w->gauss_spline_workspace_p[thread_id]->dB, 1);
           size_t istart_gauss;
           size_t k;
 
@@ -938,8 +945,17 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               /* calculate internal Green's functions */
               green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
 
-              /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
+              /* calculate non-zero B-splines (and possibly first derivatives) for the Gauss coefficients for this timestamp */
+              if (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT))
+                {
+                  gsl_bspline2_eval_deriv_basis_nonzero(epoch2year(mptr->t[j]), 1, w->gauss_spline_workspace_p[thread_id]->dB,
+                                                        &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
+                }
+              else
+                {
+                  gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), &N_gauss.vector,
+                                                  &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
+                }
             }
 
           /* calculate internal Green's functions for gradient point (N/S or E/W) */
@@ -973,7 +989,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                 {
                   gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
 
-                  jacobian_row_int(N_gauss, istart_gauss, &vx.vector, &Jv.vector, w);
+                  jacobian_row_int(&N_gauss.vector, istart_gauss, &vx.vector, &Jv.vector, w);
 
 #if MFIELD_FIT_EXTFIELD
                   gsl_matrix_set(J, ridx, extidx, dB_ext[0]);
@@ -993,7 +1009,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                 {
                   gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
 
-                  jacobian_row_int(N_gauss, istart_gauss, &vy.vector, &Jv.vector, w);
+                  jacobian_row_int(&N_gauss.vector, istart_gauss, &vy.vector, &Jv.vector, w);
 
 #if MFIELD_FIT_EXTFIELD
                   gsl_matrix_set(J, ridx, extidx, dB_ext[1]);
@@ -1013,7 +1029,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                 {
                   gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
 
-                  jacobian_row_int(N_gauss, istart_gauss, &vz.vector, &Jv.vector, w);
+                  jacobian_row_int(&N_gauss.vector, istart_gauss, &vz.vector, &Jv.vector, w);
 
 #if MFIELD_FIT_EXTFIELD
                   gsl_matrix_set(J, ridx, extidx, dB_ext[2]);
@@ -1034,9 +1050,9 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               double X, Y, Z, F;
 
               /* compute internal X, Y, Z */
-              X = mfield_nonlinear_model_int(N_gauss, istart_gauss, &vx.vector, x, w);
-              Y = mfield_nonlinear_model_int(N_gauss, istart_gauss, &vy.vector, x, w);
-              Z = mfield_nonlinear_model_int(N_gauss, istart_gauss, &vz.vector, x, w);
+              X = mfield_nonlinear_model_int(&N_gauss.vector, istart_gauss, &vx.vector, x, w);
+              Y = mfield_nonlinear_model_int(&N_gauss.vector, istart_gauss, &vy.vector, x, w);
+              Z = mfield_nonlinear_model_int(&N_gauss.vector, istart_gauss, &vz.vector, x, w);
 
               /* add apriori (external and crustal) field */
               X += mptr->Bx_model[j];
@@ -1070,7 +1086,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               /* compute -N_k(t_i) / F * (X dX + Y dY + Z dZ) */
               for (k = 0; k < gauss_spline_order; ++k)
                 {
-                  double Nk = gsl_vector_get(N_gauss, k);
+                  double Nk = gsl_vector_get(&N_gauss.vector, k);
                   gsl_vector_view tmp = gsl_matrix_subrow(J, ridx, (k + istart_gauss) * w->nnm_core, w->nnm_core);
                   gsl_vector_memcpy_scale(&tmp.vector, &vf_core.vector, -Nk);
                 }
@@ -1095,19 +1111,19 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               if (mptr->flags[j] & MAGDATA_FLG_DXDT)
                 {
                   gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
-                  jacobian_row_int_SV(t, &vx.vector, &Jv.vector, w);
+                  jacobian_row_int_SV(&dN_gauss.vector, istart_gauss, &vx.vector, &Jv.vector, w);
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_DYDT)
                 {
                   gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
-                  jacobian_row_int_SV(t, &vy.vector, &Jv.vector, w);
+                  jacobian_row_int_SV(&dN_gauss.vector, istart_gauss, &vy.vector, &Jv.vector, w);
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_DZDT)
                 {
                   gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
-                  jacobian_row_int_SV(t, &vz.vector, &Jv.vector, w);
+                  jacobian_row_int_SV(&dN_gauss.vector, istart_gauss, &vz.vector, &Jv.vector, w);
                 }
             }
 
@@ -1225,7 +1241,7 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
                        const size_t data_idx, const size_t thread_id, double B_model[3], mfield_workspace *w)
 {
   int s = 0;
-  double t, ts, r, theta, phi;
+  double t, r, theta, phi;
   gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
   gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
   gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
@@ -1237,7 +1253,6 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
     {
       /* residual is for this data point specified by 'data_idx' */
       t = mptr->t[data_idx];
-      ts = mptr->ts[data_idx];
       r = mptr->r[data_idx];
       theta = mptr->theta[data_idx];
       phi = mptr->phi[data_idx];
@@ -1251,7 +1266,6 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
     {
       /* residual is for gradient (N/S or E/W) */
       t = mptr->t_ns[data_idx];
-      ts = mptr->ts_ns[data_idx];
       r = mptr->r_ns[data_idx];
       theta = mptr->theta_ns[data_idx];
       phi = mptr->phi_ns[data_idx];
@@ -1379,69 +1393,61 @@ mfield_nonlinear_model_SV(const gsl_vector * x, const magdata * mptr, const size
                           const size_t thread_id, double dBdt_model[3], mfield_workspace *w)
 {
   int s = 0;
-  double ts, r, theta, phi;
+  double r = mptr->r[idx];
+  double theta = mptr->theta[idx];
+  double phi = mptr->phi[idx];
   gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
   gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
   gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
-  double dBdt_int[3];
-  size_t k;
+  gsl_vector_view dN_gauss = gsl_matrix_column(w->gauss_spline_workspace_p[thread_id]->dB, 1);
+  size_t istart;
 
   /* residual is for this data point specified by 'idx' */
-  ts = mptr->ts[idx];
-  r = mptr->r[idx];
-  theta = mptr->theta[idx];
-  phi = mptr->phi[idx];
-
   green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector,
                   w->green_array_p[thread_id]);
 
-  /* compute internal field model */
-  dBdt_int[0] = mfield_nonlinear_model_int_SV(ts, &vx.vector, x, w);
-  dBdt_int[1] = mfield_nonlinear_model_int_SV(ts, &vy.vector, x, w);
-  dBdt_int[2] = mfield_nonlinear_model_int_SV(ts, &vz.vector, x, w);
+  gsl_bspline2_eval_deriv_basis_nonzero(epoch2year(mptr->t[idx]), 1, w->gauss_spline_workspace_p[thread_id]->dB,
+                                        &istart, w->gauss_spline_workspace_p[thread_id]);
 
-  /* compute total time derivative of internal modeled field */
-  for (k = 0; k < 3; ++k)
-    dBdt_model[k] = dBdt_int[k];
+  /* compute internal field model */
+  dBdt_model[0] = mfield_nonlinear_model_int_SV(&dN_gauss.vector, istart, &vx.vector, x, w);
+  dBdt_model[1] = mfield_nonlinear_model_int_SV(&dN_gauss.vector, istart, &vy.vector, x, w);
+  dBdt_model[2] = mfield_nonlinear_model_int_SV(&dN_gauss.vector, istart, &vz.vector, x, w);
 
   return s;
 }
 
 /*
 mfield_nonlinear_model_int_SV()
-  Evaluate time derivative of internal field model d/dt B(r,t; g) for a given coefficient vector
+  Evaluate time derivative of internal field model d/dt B_{int}(r,t; g) for a given
+coefficient vector and a given component
 
-Inputs: t - scaled time
-        v - vector of basis functions (dX/dg,dY/dg,dZ/dg)
-        g - model coefficients
-        w - workspace
+Inputs: dN     - vector of non-zero B-spline derivatives d/dt N_j(t), length gauss_spline_order
+        istart - index of first non-zero B-spline in [0, ncontrol-1]
+        dB     - vector of basis functions (dX/dg,dY/dg,dZ/dg), length nnm_tot
+        g      - model coefficients, length at least p_int
+        w      - workspace
 
-Return: model = v . g_sv + t*(v . g_sa)
+Return: model = sum_{nmk} g_{n,k}^m d/dt N_k(t) B_n^m(r)
 */
 
 static double
-mfield_nonlinear_model_int_SV(const double t, const gsl_vector *v,
+mfield_nonlinear_model_int_SV(const gsl_vector * dN, const size_t istart, const gsl_vector *dB,
                               const gsl_vector *g, const mfield_workspace *w)
 {
-  double sv = 0.0, sa = 0.0, val;
+  gsl_vector_const_view dB_core = gsl_vector_const_subvector(dB, 0, w->nnm_core);
+  double val = 0.0;
+  size_t j;
 
-  if (w->nnm_sv > 0)
+  for (j = 0; j < w->params.gauss_spline_order; ++j)
     {
-      /* compute v . x_sv */
-      gsl_vector_const_view gsv = gsl_vector_const_subvector(g, w->sv_offset, w->nnm_sv);
-      gsl_vector_const_view vsv = gsl_vector_const_subvector(v, 0, w->nnm_sv);
-      gsl_blas_ddot(&vsv.vector, &gsv.vector, &sv);
-    }
+      double dNj = gsl_vector_get(dN, j);
+      gsl_vector_const_view v = gsl_vector_const_subvector(g, (j + istart) * w->nnm_core, w->nnm_core);
+      double dot;
 
-  if (w->nnm_sa > 0)
-    {
-      /* compute v . x_sa */
-      gsl_vector_const_view gsa = gsl_vector_const_subvector(g, w->sa_offset, w->nnm_sa);
-      gsl_vector_const_view vsa = gsl_vector_const_subvector(v, 0, w->nnm_sa);
-      gsl_blas_ddot(&vsa.vector, &gsa.vector, &sa);
+      gsl_blas_ddot(&v.vector, &dB_core.vector, &dot);
+      val += dNj * dot;
     }
-
-  val = sv + t * sa;
 
   return val;
 }
@@ -1450,9 +1456,7 @@ mfield_nonlinear_model_int_SV(const double t, const gsl_vector *v,
 jacobian_row_int()
   Fill in row of Jacobian corresponding to internal Green's functions
 
-J(row,:) = - [ dB, t * dB, 1/2 t^2 dB ]
-
-accounting for differences in spherical harmonic degrees for MF, SV, and SA
+J(row,:) = - [ dB_core, dB_crust ]
 
 Inputs: N      - vector of non-zero B-splines N_j(t), length gauss_spline_order
         istart - index of first non-zero B-spline in [0, ncontrol-1]
@@ -1493,35 +1497,27 @@ jacobian_row_int_SV()
 
 J(row,:) = [ 0, dB, t dB ]
 
-accounting for differences in spherical harmonic degrees for MF, SV, and SA
-
-Inputs: t  - scaled time of measurement
-        dB - Green's functions for desired component (X,Y,Z), size nnm_max
-        J  - (output) Jacobian row; columns 1 - w->p_int will be filled in, size p_int
-        w  - workspace
+Inputs: dN     - first derivative of B-spline basis functions, length gauss_spline_order
+        istart - index of first non-zero B-spline in [0, ncontrol-1]
+        dB     - Green's functions for desired component (X,Y,Z), size nnm_max
+        J      - (output) Jacobian row; columns 1 - w->p_int will be filled in, size p_int
+        w      - workspace
 */
 
 static inline int
-jacobian_row_int_SV(const double t, const gsl_vector * dB, gsl_vector * J, mfield_workspace * w)
+jacobian_row_int_SV(const gsl_vector * dN, const size_t istart, const gsl_vector * dB,
+                    gsl_vector * J, mfield_workspace * w)
 {
   int s = 0;
-  size_t i;
+  const size_t order = gsl_bspline2_order(w->gauss_spline_workspace_p[0]);
+  gsl_vector_const_view dB_core = gsl_vector_const_subvector(dB, 0, w->nnm_core);
+  size_t j;
 
-  for (i = 0; i < w->nnm_max; ++i)
+  for (j = 0; j < order; ++j)
     {
-      double dBi = gsl_vector_get(dB, i);
-
-      /* main field portion */
-      if (i < w->nnm_mf)
-        gsl_vector_set(J, i, 0.0);
-
-      /* secular variation portion */
-      if (i < w->nnm_sv)
-        gsl_vector_set(J, w->sv_offset + i, -dBi);
-
-      /* secular acceleration portion */
-      if (i < w->nnm_sa)
-        gsl_vector_set(J, w->sa_offset + i, -t * dBi);
+      double dNj = gsl_vector_get(dN, j);
+      gsl_vector_view v = gsl_vector_subvector(J, (j + istart) * w->nnm_core, w->nnm_core);
+      gsl_vector_memcpy_scale(&v.vector, &dB_core.vector, -dNj);
     }
 
   return s;

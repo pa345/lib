@@ -25,9 +25,15 @@ static int mfield_residual_print_stat(const char *component_str, const gsl_rstat
 static int mfield_residual_print_satellite(const char *prefix, const size_t iter, const size_t nsource,
                                            size_t * index, magdata * mptr, mfield_workspace * w);
 static int mfield_residual_print_observatory(const char *prefix, const size_t iter, const size_t mptr_index,
-                                             size_t * index, mfield_workspace * w);
+                                             size_t * index, gsl_rstat_workspace ** rstat_X,
+                                             gsl_rstat_workspace ** rstat_Y, gsl_rstat_workspace ** rstat_Z,
+                                             mfield_workspace * w);
 static int mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
-                                                size_t * index, magdata * mptr, mfield_workspace * w);
+                                                size_t * index, magdata * mptr,
+                                                gsl_rstat_workspace ** rstat_DXDT,
+                                                gsl_rstat_workspace ** rstat_DYDT,
+                                                gsl_rstat_workspace ** rstat_DZDT,
+                                                mfield_workspace * w);
 
 int
 mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w)
@@ -35,7 +41,24 @@ mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w
   int s = 0;
   size_t i;
   mfield_data_workspace *data_p = w->data_workspace_p;
+  gsl_rstat_workspace **rstat_X = malloc(3 * sizeof(gsl_rstat_workspace));
+  gsl_rstat_workspace **rstat_Y = malloc(3 * sizeof(gsl_rstat_workspace));
+  gsl_rstat_workspace **rstat_Z = malloc(3 * sizeof(gsl_rstat_workspace));
+  gsl_rstat_workspace **rstat_DXDT = malloc(3 * sizeof(gsl_rstat_workspace));
+  gsl_rstat_workspace **rstat_DYDT = malloc(3 * sizeof(gsl_rstat_workspace));
+  gsl_rstat_workspace **rstat_DZDT = malloc(3 * sizeof(gsl_rstat_workspace));
   size_t idx = 0;
+  int print_obs_stat = 0;
+
+  for (i = 0; i < 3; ++i)
+    {
+      rstat_X[i] = gsl_rstat_alloc();
+      rstat_Y[i] = gsl_rstat_alloc();
+      rstat_Z[i] = gsl_rstat_alloc();
+      rstat_DXDT[i] = gsl_rstat_alloc();
+      rstat_DYDT[i] = gsl_rstat_alloc();
+      rstat_DZDT[i] = gsl_rstat_alloc();
+    }
 
   fprintf(stderr, "\n");
 
@@ -46,12 +69,71 @@ mfield_residual_print(const char *prefix, const size_t iter, mfield_workspace *w
       if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
         mfield_residual_print_satellite(prefix, iter, i, &idx, mptr, w);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
-        mfield_residual_print_observatory(prefix, iter, i, &idx, w);
+        mfield_residual_print_observatory(prefix, iter, i, &idx, rstat_X, rstat_Y, rstat_Z, w);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
-        mfield_residual_print_observatory_SV(prefix, iter, &idx, mptr, w);
+        mfield_residual_print_observatory_SV(prefix, iter, &idx, mptr, rstat_DXDT, rstat_DYDT, rstat_DZDT, w);
+
+      if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
+        print_obs_stat = 1;
     }
 
   assert(idx == w->nres);
+
+  if (print_obs_stat)
+    {
+      fprintf(stderr, "=== FIT STATISTICS OBSERVATORY (NORTH POLE) ===\n");
+
+      /* print header */
+      mfield_residual_print_stat(NULL, NULL);
+
+      mfield_residual_print_stat("X", rstat_X[0]);
+      mfield_residual_print_stat("Y", rstat_Y[0]);
+      mfield_residual_print_stat("Z", rstat_Z[0]);
+      mfield_residual_print_stat("dX/dt", rstat_DXDT[0]);
+      mfield_residual_print_stat("dY/dt", rstat_DYDT[0]);
+      mfield_residual_print_stat("dZ/dt", rstat_DZDT[0]);
+
+      fprintf(stderr, "=== FIT STATISTICS OBSERVATORY (SOUTH POLE) ===\n");
+
+      /* print header */
+      mfield_residual_print_stat(NULL, NULL);
+
+      mfield_residual_print_stat("X", rstat_X[1]);
+      mfield_residual_print_stat("Y", rstat_Y[1]);
+      mfield_residual_print_stat("Z", rstat_Z[1]);
+      mfield_residual_print_stat("dX/dt", rstat_DXDT[1]);
+      mfield_residual_print_stat("dY/dt", rstat_DYDT[1]);
+      mfield_residual_print_stat("dZ/dt", rstat_DZDT[1]);
+
+      fprintf(stderr, "=== FIT STATISTICS OBSERVATORY (MIDDLE LATITUDES) ===\n");
+
+      /* print header */
+      mfield_residual_print_stat(NULL, NULL);
+
+      mfield_residual_print_stat("X", rstat_X[2]);
+      mfield_residual_print_stat("Y", rstat_Y[2]);
+      mfield_residual_print_stat("Z", rstat_Z[2]);
+      mfield_residual_print_stat("dX/dt", rstat_DXDT[2]);
+      mfield_residual_print_stat("dY/dt", rstat_DYDT[2]);
+      mfield_residual_print_stat("dZ/dt", rstat_DZDT[2]);
+    }
+
+  for (i = 0; i < 3; ++i)
+    {
+      gsl_rstat_free(rstat_X[i]);
+      gsl_rstat_free(rstat_Y[i]);
+      gsl_rstat_free(rstat_Z[i]);
+      gsl_rstat_free(rstat_DXDT[i]);
+      gsl_rstat_free(rstat_DYDT[i]);
+      gsl_rstat_free(rstat_DZDT[i]);
+    }
+
+  free(rstat_X);
+  free(rstat_Y);
+  free(rstat_Z);
+  free(rstat_DXDT);
+  free(rstat_DYDT);
+  free(rstat_DZDT);
 
   return s;
 }
@@ -639,16 +721,31 @@ Inputs: prefix     - directory prefix for output files
         iter       - robust iteration number
         mptr_index - magdata index
         index      - (input/output)
+        rstat_X    - array of 3 rstat workspaces for X component
+                     index 0: north pole stats
+                     index 1: south pole stats
+                     index 2: mid latitude stats
+        rstat_Y    - array of 3 rstat workspaces for Y component
+                     index 0: north pole stats
+                     index 1: south pole stats
+                     index 2: mid latitude stats
+        rstat_Z    - array of 3 rstat workspaces for Z component
+                     index 0: north pole stats
+                     index 1: south pole stats
+                     index 2: mid latitude stats
         w          - mfield workspace
 */
 
 static int
 mfield_residual_print_observatory(const char *prefix, const size_t iter, const size_t mptr_index,
-                                  size_t * index, mfield_workspace * w)
+                                  size_t * index, gsl_rstat_workspace ** rstat_X,
+                                  gsl_rstat_workspace ** rstat_Y, gsl_rstat_workspace ** rstat_Z,
+                                  mfield_workspace * w)
 {
   int s = 0;
+  const double qdlat_cutoff = w->params.qdlat_fit_cutoff; /* cutoff latitude for high/low statistics */
   const magdata *mptr = mfield_data_ptr(mptr_index, w->data_workspace_p);
-  const char *fmtstr = "%ld %8.4f %6.3f %6.3f %6.3f %10.4f %10.4f %10.4f\n";
+  const char *fmtstr = "%ld %8.4f %6.3f %6.3f %6.3f %10.4f %10.4f %10.4f %10.4f\n";
   const size_t n = 3; /* number of components to write to disk */
   const double r = mptr->r[0];
   const double theta = mptr->theta[0];
@@ -705,6 +802,11 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter, const s
   fprintf(fp[2], "# Field %zu: Z fitted model (nT)\n", k);
   ++k;
 
+  fprintf(fp[0], "# Field %zu: X a priori model (nT)\n", k);
+  fprintf(fp[1], "# Field %zu: Y a priori model (nT)\n", k);
+  fprintf(fp[2], "# Field %zu: Z a priori model (nT)\n", k);
+  ++k;
+
   fprintf(fp[0], "# Field %zu: X residual (nT)\n", k);
   fprintf(fp[1], "# Field %zu: Y residual (nT)\n", k);
   fprintf(fp[2], "# Field %zu: Z residual (nT)\n", k);
@@ -715,13 +817,20 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter, const s
       time_t unix_time = satdata_epoch2timet(mptr->t[j]);
       double B_nec[3];
       double B_model[3], B_fit[4], res_B[3];
-      size_t l;
+      size_t l, rstat_idx;
 
       if (MAGDATA_Discarded(mptr->flags[j]))
         continue;
 
       if (!MAGDATA_FitMF(mptr->flags[j]))
         continue;
+
+      if (mptr->qdlat[j] > qdlat_cutoff)
+        rstat_idx = 0; /* north pole latitudes */
+      else if (mptr->qdlat[j] < -qdlat_cutoff)
+        rstat_idx = 1; /* south pole latitudes */
+      else
+        rstat_idx = 2; /* mid latitudes */
 
       B_nec[0] = mptr->Bx_nec[j];
       B_nec[1] = mptr->By_nec[j];
@@ -751,7 +860,8 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter, const s
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[0], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->Bx_nec[j], B_fit[0], res_B[0]);
+          fprintf(fp[0], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->Bx_nec[j], B_fit[0], B_model[0], res_B[0]);
+          gsl_rstat_add(res_B[0], rstat_X[rstat_idx]);
 
           ++idx;
         }
@@ -762,7 +872,8 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter, const s
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[1], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->By_nec[j], B_fit[1], res_B[1]);
+          fprintf(fp[1], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->By_nec[j], B_fit[1], B_model[1], res_B[1]);
+          gsl_rstat_add(res_B[1], rstat_Y[rstat_idx]);
 
           ++idx;
         }
@@ -773,7 +884,8 @@ mfield_residual_print_observatory(const char *prefix, const size_t iter, const s
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[2], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->Bz_nec[j], B_fit[2], res_B[2]);
+          fprintf(fp[2], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->Bz_nec[j], B_fit[2], B_model[2], res_B[2]);
+          gsl_rstat_add(res_B[2], rstat_Z[rstat_idx]);
 
           ++idx;
         }
@@ -795,14 +907,31 @@ Inputs: prefix  - directory prefix for output files
         iter    - robust iteration number
         index   - (input/output)
         mptr    - magdata
+        rstat_DXDT - array of 3 rstat workspaces for dX/dt component
+                     index 0: north pole stats
+                     index 1: south pole stats
+                     index 2: mid latitude stats
+        rstat_DYDT - array of 3 rstat workspaces for dY/dt component
+                     index 0: north pole stats
+                     index 1: south pole stats
+                     index 2: mid latitude stats
+        rstat_DZDT - array of 3 rstat workspaces for dZ/dt component
+                     index 0: north pole stats
+                     index 1: south pole stats
+                     index 2: mid latitude stats
         w       - mfield workspace
 */
 
 static int
 mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
-                                     size_t * index, magdata * mptr, mfield_workspace * w)
+                                     size_t * index, magdata * mptr,
+                                     gsl_rstat_workspace ** rstat_DXDT,
+                                     gsl_rstat_workspace ** rstat_DYDT,
+                                     gsl_rstat_workspace ** rstat_DZDT,
+                                     mfield_workspace * w)
 {
   int s = 0;
+  const double qdlat_cutoff = w->params.qdlat_fit_cutoff; /* cutoff latitude for high/low statistics */
   const char *fmtstr = "%ld %8.4f %6.3f %6.3f %6.3f %10.4f %10.4f %10.4f\n";
   const size_t n = 3; /* number of components to write to disk */
   const double r = mptr->r[0];
@@ -869,12 +998,20 @@ mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
     {
       time_t unix_time = satdata_epoch2timet(mptr->t[j]);
       double dBdt_fit[4], res_dBdt[3];
+      size_t rstat_idx;
 
       if (MAGDATA_Discarded(mptr->flags[j]))
         continue;
 
       if (!MAGDATA_FitMF(mptr->flags[j]))
         continue;
+
+      if (mptr->qdlat[j] > qdlat_cutoff)
+        rstat_idx = 0; /* north pole latitudes */
+      else if (mptr->qdlat[j] < -qdlat_cutoff)
+        rstat_idx = 1; /* south pole latitudes */
+      else
+        rstat_idx = 2; /* mid latitudes */
 
       /* evaluate internal field models */
       mfield_eval_dBdt(mptr->t[j], r, theta, phi, dBdt_fit, w);
@@ -890,6 +1027,7 @@ mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
           double wf = gsl_vector_get(w->wts_final, idx);
 
           fprintf(fp[0], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->dXdt_nec[j], dBdt_fit[0], res_dBdt[0]);
+          gsl_rstat_add(res_dBdt[0], rstat_DXDT[rstat_idx]);
 
           ++idx;
         }
@@ -901,6 +1039,7 @@ mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
           double wf = gsl_vector_get(w->wts_final, idx);
 
           fprintf(fp[1], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->dYdt_nec[j], dBdt_fit[1], res_dBdt[1]);
+          gsl_rstat_add(res_dBdt[1], rstat_DYDT[rstat_idx]);
 
           ++idx;
         }
@@ -912,6 +1051,7 @@ mfield_residual_print_observatory_SV(const char *prefix, const size_t iter,
           double wf = gsl_vector_get(w->wts_final, idx);
 
           fprintf(fp[2], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->dZdt_nec[j], dBdt_fit[2], res_dBdt[2]);
+          gsl_rstat_add(res_dBdt[2], rstat_DZDT[rstat_idx]);
 
           ++idx;
         }

@@ -1,4 +1,4 @@
-#define OLD_FDF     0
+#define OLD_FDF     1
 
 #include <gsl/gsl_integration.h>
 
@@ -41,6 +41,7 @@ static int mfield_nonlinear_model_ext(const double r, const double theta,
                                       const double phi, const gsl_vector *g,
                                       double dB[3], const mfield_workspace *w);
 static int mfield_nonlinear_regularize_init(mfield_workspace *w);
+static int mfield_nonlinear_regularize_core(const double lambda, const size_t nderiv, mfield_workspace *w);
 static void mfield_nonlinear_callback(const size_t iter, void *params,
                                       const gsl_multifit_nlinear_workspace *multifit_p);
 static void mfield_nonlinear_callback2(const size_t iter, void *params,
@@ -257,7 +258,6 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
       gsl_matrix *JTJ = w->JTJ_vec;
       gsl_vector *JTf = w->nlinear_workspace_p->g;
       size_t N = JTJ->size1;
-      gsl_vector_view diag = gsl_matrix_diagonal(JTJ);
       gsl_vector *work = gsl_vector_alloc(3 * N);
       double rcond;
 
@@ -1876,7 +1876,7 @@ mfield_nonlinear_regularize_init()
   Construct the p-by-p regularization matrix Lambda.
 
                     p_core           p_crust         p_euler          p_fluxcal
-Lambda = p_core    [ G^{(3)} x C  |              |               |                ]
+Lambda = p_core    [ G^{(n)} x C  |              |               |                ]
          p_crust   [              |      0       |               |                ]
          p_euler   [              |              | G^{(2)} x I_3 |                ]
          p_fluxcal [              |              |               | G^{(2)} x I_9  ]
@@ -1906,85 +1906,10 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
 
   if (w->p_core > 0)
     {
-      gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[0];
-      const double t0 = gsl_vector_get(gauss_spline_p->knots, 0);
-      const double t1 = gsl_vector_get(gauss_spline_p->knots, gauss_spline_p->knots->size - 1);
-      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
-      const size_t order = gsl_bspline2_order(gauss_spline_p);
-      const double c = 3485.0;       /* Earth core radius */
-      const double a = w->params.R;  /* Earth surface radius */
-      const double ratio = a / c;
-      double rterm = ratio * ratio * ratio; /* (a/c)^{n+2} */
-      size_t n, i, j;
-      gsl_vector * c_core = gsl_vector_calloc(w->nnm_core);
-      gsl_matrix * G_core = gsl_matrix_alloc(ncontrol, order);
-      gsl_matrix * G_core_orig = gsl_matrix_alloc(ncontrol, order);
-
-      /*
-       * construct vector c_core = diag(C) for minimizing
-       *
-       * < d^3/dt^3 B_r > averaged over CMB. c_core contains the spatial
-       * part:
-       *
-       * (a/c)^{n+2} (n+1) / sqrt(2n + 1)
-       */
-
-      for (n = 1; n <= w->nmax_core; ++n)
-        {
-          int ni = (int) n;
-          int m;
-          double term = (n + 1.0) / sqrt(2.0*n + 1.0) * rterm;
-
-          for (m = -ni; m <= ni; ++m)
-            {
-              size_t cidx = mfield_coeff_nmidx(n, m);
-              gsl_vector_set(c_core, cidx, term);
-            }
-
-          rterm *= ratio;
-        }
-
-      /* construct G_{ij} = 1/dt * \int N^{(3)}_i(t) N^{(3)}_j(t) dt for Gauss coefficient splines */
-      gsl_bspline2_gram(3, G_core, gauss_spline_p);
-      gsl_matrix_scale(G_core, 1.0 / (t1 - t0));
-
-      gsl_matrix_memcpy(G_core_orig, G_core);
-
-      {
-        /* XXX: need to add epsilon to diagonal of G^{(3)} so LLT decomposition
-         * will work */
-        gsl_vector_view diag = gsl_matrix_column(G_core, 0);
-        gsl_vector_add_constant(&diag.vector, 1.0e-10);
-        gsl_linalg_cholesky_band_decomp(G_core);
-      }
-
-      /*
-       * construct L(1:p_core,1:p_core) = G_L^{(3)} x C_L,
-       * the Kronecker product of the Cholesky factors of G^{(3)} and C
-       */
-      for (j = 0; j < ncontrol; ++j)
-        {
-          for (i = 0; i < order && i + j < ncontrol; ++i)
-            {
-              size_t row = i + j;
-              double Lij = gsl_matrix_get(G_core, j, i); /* Cholesky factor of G^{(3)} */
-              double Gij = gsl_matrix_get(G_core_orig, j, i);
-              size_t k;
-
-              for (k = 0; k < w->nnm_core; ++k)
-                {
-                  double ck = gsl_vector_get(c_core, k);
-                  gsl_spmatrix_set(w->L, row * w->nnm_core + k, j * w->nnm_core + k, Lij * ck);
-                  gsl_spmatrix_set(w->Lambda, row * w->nnm_core + k, j * w->nnm_core + k, Gij * ck * ck);
-                }
-            }
-        }
-
-      gsl_spmatrix_scale(w->L, w->lambda_3);
-      gsl_spmatrix_scale(w->Lambda, w->lambda_3 * w->lambda_3);
-
-      gsl_vector_free(c_core);
-      gsl_matrix_free(G_core);
+      s += mfield_nonlinear_regularize_core(w->lambda_0, 0, w);
+      s += mfield_nonlinear_regularize_core(w->lambda_1, 1, w);
+      s += mfield_nonlinear_regularize_core(w->lambda_2, 2, w);
+      s += mfield_nonlinear_regularize_core(w->lambda_3, 3, w);
     }
 
   if (w->p_fluxcal > 0)
@@ -2079,6 +2004,147 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
 #endif
 
   return s;
+}
+
+/*
+mfield_nonlinear_regularize_core()
+  Regularize core field by minimizing:
+
+< | d^n / dt^n B_r |^2 >
+
+averaged over full time interval and over the surface
+of the core-mantle boundary
+
+Inputs: lambda - regularization parameter
+        nderiv - derivative to minimize
+        w      - workspace
+
+Notes:
+1) On output,
+*/
+
+static int
+mfield_nonlinear_regularize_core(const double lambda, const size_t nderiv, mfield_workspace *w)
+{
+  gsl_bspline2_workspace * gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const size_t order = gsl_bspline2_order(gauss_spline_p);
+
+  if (nderiv >= order || lambda == 0.0)
+    {
+      /* nothing to do */
+      return GSL_SUCCESS;
+    }
+  else
+    {
+      int s = 0;
+      const double lambda_sq = lambda * lambda;
+      const size_t nmax = (nderiv == 0) ? w->nmax : w->nmax_core;
+      const size_t nnm = (nderiv == 0) ? w->nnm_tot : w->nnm_core;
+      const double t0 = gsl_vector_get(gauss_spline_p->knots, 0);
+      const double t1 = gsl_vector_get(gauss_spline_p->knots, gauss_spline_p->knots->size - 1);
+      const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+      const double c = 3485.0;       /* Earth core radius */
+      const double a = w->params.R;  /* Earth surface radius */
+      const double ratio = a / c;
+      double rterm = ratio * ratio * ratio; /* (a/c)^{n+2} */
+      size_t n, i, j;
+      gsl_vector * c_core = gsl_vector_calloc(nnm);
+      gsl_matrix * G_core = gsl_matrix_alloc(ncontrol, order);
+      gsl_matrix * G_core_orig = gsl_matrix_alloc(ncontrol, order);
+
+      /*
+       * construct vector c_core = diag(C) for minimizing
+       *
+       * < d^n/dt^n B_r > averaged over CMB. c_core contains the spatial part:
+       *
+       * (a/c)^{n+2} (n+1) / sqrt(2n + 1)
+       */
+
+      for (n = 1; n <= nmax; ++n)
+        {
+          int ni = (int) n;
+          int m;
+          double term = (n + 1.0) / sqrt(2.0*n + 1.0) * rterm;
+
+          for (m = -ni; m <= ni; ++m)
+            {
+              size_t cidx = mfield_coeff_nmidx(n, m);
+              gsl_vector_set(c_core, cidx, term);
+            }
+
+          rterm *= ratio;
+        }
+
+      /* construct G_{ij} = 1/dt * \int N^{(nderiv)}_i(t) N^{(nderiv)}_j(t) dt for Gauss coefficient splines */
+      gsl_bspline2_gram(nderiv, G_core, gauss_spline_p);
+      gsl_matrix_scale(G_core, 1.0 / (t1 - t0));
+
+      gsl_matrix_memcpy(G_core_orig, G_core);
+
+      if (nderiv > 0)
+        {
+          /* XXX: need to add epsilon to diagonal of G^{(nderiv)} so LLT decomposition
+           * will work */
+          gsl_vector_view diag = gsl_matrix_column(G_core, 0);
+          gsl_vector_add_constant(&diag.vector, 1.0e-10);
+          gsl_linalg_cholesky_band_decomp(G_core);
+        }
+
+      /*
+       * construct L(1:p_core,1:p_core) = G_L^{(nderiv)} x C_L,
+       * the Kronecker product of the Cholesky factors of G^{(nderiv)} and C
+       */
+      for (j = 0; j < ncontrol; ++j)
+        {
+          for (i = 0; i < order && i + j < ncontrol; ++i)
+            {
+              size_t row = i + j;
+              double Lij = gsl_matrix_get(G_core, j, i); /* Cholesky factor of G^{(nderiv)} */
+              double Gij = gsl_matrix_get(G_core_orig, j, i);
+              size_t k;
+
+              for (k = 0; k < w->nnm_core; ++k)
+                {
+                  double ck = gsl_vector_get(c_core, k);
+                  size_t idx1 = row * w->nnm_core + k;
+                  size_t idx2 = j * w->nnm_core + k;
+                  double * Lptr = gsl_spmatrix_ptr(w->L, idx1, idx2);
+                  double * Lamptr = gsl_spmatrix_ptr(w->Lambda, idx1, idx2);
+
+                  if (Lptr)
+                    *Lptr += lambda * Lij * ck;
+                  else
+                    gsl_spmatrix_set(w->L, idx1, idx2, lambda * Lij * ck);
+
+                  if (Lamptr)
+                    *Lamptr += lambda_sq * Gij * ck * ck;
+                  else
+                    gsl_spmatrix_set(w->Lambda, idx1, idx2, lambda_sq * Gij * ck * ck);
+                }
+            }
+        }
+
+      if (nderiv == 0)
+        {
+          size_t k;
+
+          /* regularize crustal part */
+          for (k = w->nnm_core; k < nnm; ++k)
+            {
+              double ck = gsl_vector_get(c_core, k);
+              size_t idx = w->p_core + k - w->nnm_core;
+
+              gsl_spmatrix_set(w->L, idx, idx, lambda * ck);
+              gsl_spmatrix_set(w->Lambda, idx, idx, lambda_sq * ck * ck);
+            }
+        }
+
+      gsl_vector_free(c_core);
+      gsl_matrix_free(G_core);
+      gsl_matrix_free(G_core_orig);
+
+      return s;
+    }
 }
 
 static int

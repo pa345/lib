@@ -65,12 +65,8 @@
 #include "mfield_euler.h"
 #include "mfield_fluxcal.h"
 
-static int mfield_green(const double r, const double theta, const double phi,
-                        mfield_workspace *w);
 static int mfield_eval_g(const double t, const double r, const double theta, const double phi,
                          const gsl_vector *c, double B[4], mfield_workspace *w);
-static int mfield_update_histogram(const gsl_vector *r, gsl_histogram *h);
-static int mfield_print_histogram(FILE *fp, gsl_histogram *h);
 static int mfield_compare_int(const void *a, const void *b);
 static int mfield_debug(const char *format, ...);
 
@@ -462,6 +458,9 @@ mfield_alloc(const mfield_parameters *params)
   w->t_sigma = 1.0;
   w->t0_data = 0.0;
 
+  w->lambda_0 = params->lambda_0;
+  w->lambda_1 = params->lambda_1;
+  w->lambda_2 = params->lambda_2;
   w->lambda_3 = params->lambda_3;
   w->lambda_s = params->lambda_s;
   w->lambda_o = params->lambda_o;
@@ -749,6 +748,9 @@ mfield_init_params(mfield_parameters * params)
   params->gauss_spline_order = 3;   /* quadratic spline */
   params->euler_spline_order = 2;   /* linear spline */
   params->fluxcal_spline_order = 3; /* quadratic spline */
+  params->lambda_0 = 0.0;
+  params->lambda_1 = 0.0;
+  params->lambda_2 = 0.0;
   params->lambda_3 = 0.0;
   params->lambda_s = 0.0;
   params->lambda_o = 0.0;
@@ -1082,37 +1084,37 @@ mfield_eval_dgdt(const double t, const double r, const double theta,
                  double dBdt[4], mfield_workspace *w)
 {
   int s = 0;
+  const double tyear = epoch2year(t);
   size_t n;
-  int m;
+  green_workspace * green_p = w->green_array_p[0];
+  gsl_vector_view vx = gsl_matrix_row(w->omp_dX, 0);
+  gsl_vector_view vy = gsl_matrix_row(w->omp_dY, 0);
+  gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, 0);
 
-  /* convert to years and subtract epoch */
-  const double t1 = satdata_epoch2year(t) - w->epoch;
-
-  s += mfield_green(r, theta, phi, w);
+  green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, green_p);
 
   dBdt[0] = dBdt[1] = dBdt[2] = 0.0;
 
-  for (n = 1; n <= w->nmax_max; ++n)
+  for (n = 1; n <= w->nmax_core; ++n)
     {
       int ni = (int) n;
+      int m;
 
       for (m = -ni; m <= ni; ++m)
         {
-          size_t cidx = mfield_coeff_nmidx(n, m);
-          double dg0 = mfield_get_sv(c, cidx, w);
-          double ddg0 = mfield_get_sa(c, cidx, w);
-          double gnm = dg0 + ddg0 * t1;
+          size_t gidx = green_nmidx(n, m, green_p);
+          double dgnm = mfield_get_gnm(tyear, n, m, 1, c, w);
 
-          dBdt[0] += gnm * w->dX[cidx];
-          dBdt[1] += gnm * w->dY[cidx];
-          dBdt[2] += gnm * w->dZ[cidx];
+          dBdt[0] += dgnm * gsl_vector_get(&vx.vector, gidx);
+          dBdt[1] += dgnm * gsl_vector_get(&vy.vector, gidx);
+          dBdt[2] += dgnm * gsl_vector_get(&vz.vector, gidx);
         }
     }
 
   dBdt[3] = gsl_hypot3(dBdt[0], dBdt[1], dBdt[2]);
 
   return s;
-} /* mfield_eval_dgdt() */
+}
 
 /*
 mfield_eval_ext()
@@ -1392,6 +1394,9 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% nmax:  %zu\n", w->nmax);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
+  fprintf(fp, "%% lambda_0: %.2f\n", params->lambda_0);
+  fprintf(fp, "%% lambda_1: %.2f\n", params->lambda_1);
+  fprintf(fp, "%% lambda_2: %.2f\n", params->lambda_2);
   fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
 
   fprintf(fp, "%% %3s %5s %20s %20s %20s\n",
@@ -1450,7 +1455,6 @@ int
 mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w)
 {
   int s = 0;
-  FILE *fp;
   const mfield_parameters *params = &(w->params);
   gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
   const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
@@ -1505,6 +1509,9 @@ mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w
     fprintf(fp, "%% Magnetic field model coefficients\n");
     fprintf(fp, "%% nmax:  %zu\n", w->nmax);
     fprintf(fp, "%% radius: %.1f\n", w->R);
+    fprintf(fp, "%% lambda_0: %.2f\n", params->lambda_0);
+    fprintf(fp, "%% lambda_1: %.2f\n", params->lambda_1);
+    fprintf(fp, "%% lambda_2: %.2f\n", params->lambda_2);
     fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
 
     fwrite(buf, fsize, 1, fp);
@@ -1519,81 +1526,6 @@ mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w
 /*******************************************************
  *      INTERNAL ROUTINES                              *
  *******************************************************/
-
-/*
-mfield_green()
-  Compute Green's functions for X,Y,Z spherical harmonic expansion. These
-are simply the basis functions multiplying the g_{nm} and h_{nm} coefficients
-
-Inputs: r     - radius (km)
-        theta - colatitude (radians)
-        phi   - longitude (radians)
-        w     - workspace
-
-Notes:
-1) On output, the following arrays are initialized
-w->Plm
-w->dPlm
-w->sinmphi
-w->cosmphi
-
-2) The output Green's functions are stored in w->dX, w->dY, w->dZ
-*/
-
-static int
-mfield_green(const double r, const double theta, const double phi, mfield_workspace *w)
-{
-  int s = 0;
-  size_t n;
-  int m;
-  const double sint = sin(theta);
-  const double cost = cos(theta);
-  double ratio = w->R / r;
-  double term = ratio * ratio;     /* (a/r)^{n+2} */
-
-  /* precompute cos(m phi) and sin(m phi) */
-  for (n = 0; n <= w->nmax; ++n)
-    {
-      w->cosmphi[n] = cos(n * phi);
-      w->sinmphi[n] = sin(n * phi);
-    }
-
-  /* compute associated legendres */
-  gsl_sf_legendre_deriv_alt_array(GSL_SF_LEGENDRE_SCHMIDT, w->nmax, cost,
-                                  w->Plm, w->dPlm);
-
-  for (n = 1; n <= w->nmax; ++n)
-    {
-      int ni = (int) n;
-
-      /* (a/r)^{n+2} */
-      term *= ratio;
-
-      for (m = -ni; m <= ni; ++m)
-        {
-          int mabs = abs(m);
-          size_t cidx = mfield_coeff_nmidx(n, m);
-          size_t pidx = gsl_sf_legendre_array_index(n, mabs);
-
-          if (m < 0)
-            {
-              /* h_{nm} */
-              w->dX[cidx] = term * w->sinmphi[mabs] * w->dPlm[pidx];
-              w->dY[cidx] = -term / sint * mabs * w->cosmphi[mabs] * w->Plm[pidx];
-              w->dZ[cidx] = -(n + 1.0) * term * w->sinmphi[mabs] * w->Plm[pidx];
-            }
-          else
-            {
-              /* g_{nm} */
-              w->dX[cidx] = term * w->cosmphi[mabs] * w->dPlm[pidx];
-              w->dY[cidx] = term / sint * mabs * w->sinmphi[mabs] * w->Plm[pidx];
-              w->dZ[cidx] = -(n + 1.0) * term * w->cosmphi[mabs] * w->Plm[pidx];
-            }
-        }
-    }
-
-  return s;
-} /* mfield_green() */
 
 /*
 mfield_extidx()
@@ -1711,26 +1643,6 @@ mfield_get_mf(const gsl_vector *c, const size_t idx,
 {
   if (idx < w->nnm_mf)
     return gsl_vector_get(c, idx);
-  else
-    return 0.0;
-}
-
-inline double
-mfield_get_sv(const gsl_vector *c, const size_t idx,
-              const mfield_workspace *w)
-{
-  if (idx < w->nnm_sv)
-    return gsl_vector_get(c, idx + w->sv_offset);
-  else
-    return 0.0;
-}
-
-inline double
-mfield_get_sa(const gsl_vector *c, const size_t idx,
-              const mfield_workspace *w)
-{
-  if (idx < w->nnm_sa)
-    return gsl_vector_get(c, idx + w->sa_offset);
   else
     return 0.0;
 }
@@ -1865,52 +1777,6 @@ mfield_fill_g(gsl_vector * g, msynth_workspace * core_p, msynth_workspace * crus
 
   return 0;
 }
-
-static int
-mfield_update_histogram(const gsl_vector *r, gsl_histogram *h)
-{
-  const size_t n = r->size;
-  size_t i;
-
-  for (i = 0; i < n; ++i)
-    {
-      double ri = gsl_vector_get(r, i);
-      gsl_histogram_increment(h, ri);
-    }
-
-  return GSL_SUCCESS;
-} /* mfield_update_histogram() */
-
-/*
-mfield_print_histogram()
-  Print histogram and normalize to unit area
-*/
-
-static int
-mfield_print_histogram(FILE *fp, gsl_histogram *h)
-{
-  const size_t n = gsl_histogram_bins(h);
-  const double sum = gsl_histogram_sum(h);
-  size_t i;
-
-  fprintf(fp, "# Histogram variable mean: %f\n", gsl_histogram_mean(h));
-  fprintf(fp, "# Histogram variable sigma: %f\n", gsl_histogram_sigma(h));
-
-  for (i = 0; i < n; ++i)
-    {
-      double hi = gsl_histogram_get(h, i);
-      double lower, upper, width;
-
-      gsl_histogram_get_range(h, i, &lower, &upper);
-      width = upper - lower;
-
-      fprintf(fp, "%g %.12e\n",
-              0.5*(lower + upper),
-              hi / (width * sum));
-    }
-
-  return GSL_SUCCESS;
-} /* mfield_print_histogram() */
 
 static int
 mfield_compare_int(const void *a, const void *b)

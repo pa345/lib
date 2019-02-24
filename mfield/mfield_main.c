@@ -359,7 +359,7 @@ print_euler(const char *prefix, const size_t iter, mfield_workspace *w)
         }
     }
 
-  return 0;
+  return s;
 }
 
 int
@@ -383,7 +383,7 @@ print_fluxcal(const char *prefix, const size_t iter, mfield_workspace *w)
         }
     }
 
-  return 0;
+  return s;
 }
 
 static int
@@ -520,6 +520,12 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
   if (config_lookup_int(&cfg, "regularize", &ival))
     mfield_params->regularize = ival;
 
+  if (config_lookup_float(&cfg, "lambda_0", &fval))
+    mfield_params->lambda_0 = fval;
+  if (config_lookup_float(&cfg, "lambda_1", &fval))
+    mfield_params->lambda_1 = fval;
+  if (config_lookup_float(&cfg, "lambda_2", &fval))
+    mfield_params->lambda_2 = fval;
   if (config_lookup_float(&cfg, "lambda_3", &fval))
     mfield_params->lambda_3 = fval;
   if (config_lookup_float(&cfg, "lambda_s", &fval))
@@ -628,6 +634,9 @@ print_help(char *argv[])
   fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
   fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
+  fprintf(stderr, "\t --lambda_0 | -J lambda_0        - main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_1 | -K lambda_1        - 1st time derivative of main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_2 | -L lambda_2        - 2nd time derivative of main field damping parameter\n");
   fprintf(stderr, "\t --lambda_3 | -M lambda_3        - 3rd time derivative of main field damping parameter\n");
 } /* print_help() */
 
@@ -657,6 +666,9 @@ main(int argc, char *argv[])
   int print_data = 0;         /* print data for MF modeling */
   int print_map = 0;          /* print data maps */
   int print_residuals = 0;    /* print residuals at each iteration */
+  double lambda_0 = -1.0;     /* MF damping parameter */
+  double lambda_1 = -1.0;     /* 1st time derivative of MF damping parameter */
+  double lambda_2 = -1.0;     /* 2nd time derivative of MF damping parameter */
   double lambda_3 = -1.0;     /* 3rd time derivative of MF damping parameter */
   double sigma = -1.0;        /* sigma for artificial noise */
   double bias = 0.0;          /* bias for artificial noise */
@@ -684,18 +696,33 @@ main(int argc, char *argv[])
           { "print_data", required_argument, NULL, 'd' },
           { "print_map", required_argument, NULL, 'm' },
           { "config_file", required_argument, NULL, 'C' },
+          { "lambda_0", required_argument, NULL, 'J' },
+          { "lambda_1", required_argument, NULL, 'K' },
+          { "lambda_2", required_argument, NULL, 'L' },
           { "lambda_3", required_argument, NULL, 'M' },
           { "sigma", required_argument, NULL, 'S' },
           { "bias", required_argument, NULL, 'B' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:B:c:C:de:l:mM:n:o:p:rS:", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:B:c:C:de:l:mJ:K:L:M:n:o:p:rS:", long_options, &option_index);
       if (c == -1)
         break;
 
       switch (c)
         {
+          case 'J':
+            lambda_0 = atof(optarg);
+            break;
+
+          case 'K':
+            lambda_1 = atof(optarg);
+            break;
+
+          case 'L':
+            lambda_2 = atof(optarg);
+            break;
+
           case 'M':
             lambda_3 = atof(optarg);
             break;
@@ -780,6 +807,12 @@ main(int argc, char *argv[])
     mfield_params.euler_period = euler_period;
   if (maxit > 0)
     mfield_params.max_iter = maxit;
+  if (lambda_0 >= 0.0)
+    mfield_params.lambda_0 = lambda_0;
+  if (lambda_1 >= 0.0)
+    mfield_params.lambda_1 = lambda_1;
+  if (lambda_2 >= 0.0)
+    mfield_params.lambda_2 = lambda_2;
   if (lambda_3 >= 0.0)
     mfield_params.lambda_3 = lambda_3;
 
@@ -811,6 +844,9 @@ main(int argc, char *argv[])
   if (mfield_params.fit_mf)
     {
       fprintf(stderr, "main: MF nmax = %zu\n", mfield_params.nmax_mf);
+      fprintf(stderr, "main: MF damping                       = %g\n", mfield_params.lambda_0);
+      fprintf(stderr, "main: MF damping (1st time derivative) = %g\n", mfield_params.lambda_1);
+      fprintf(stderr, "main: MF damping (2nd time derivative) = %g\n", mfield_params.lambda_2);
       fprintf(stderr, "main: MF damping (3rd time derivative) = %g\n", mfield_params.lambda_3);
     }
 

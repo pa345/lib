@@ -30,6 +30,7 @@ int
 mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfield_workspace * w)
 {
   int s = GSL_SUCCESS;
+#if 0 /*XXX*/
   gsl_vector_const_view d = gsl_matrix_const_diagonal(covar);
   FILE *fp;
   size_t n;
@@ -81,6 +82,7 @@ mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfie
     }
 
   fclose(fp);
+#endif
 
   return s;
 }

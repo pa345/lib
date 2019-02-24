@@ -85,6 +85,9 @@ typedef struct
   int use_weights;                      /* use weights in the fitting */
 
   int regularize;                       /* regularize the solution vector */
+  double lambda_0;                      /* main field damping factor */
+  double lambda_1;                      /* 1st time derivative of main field damping factor */
+  double lambda_2;                      /* 2nd time derivative of main field damping factor */
   double lambda_3;                      /* 3rd time derivative of main field damping factor */
   double lambda_s;                      /* fluxgate scale factor regularization parameter */
   double lambda_o;                      /* fluxgate offset regularization parameter */
@@ -212,6 +215,9 @@ typedef struct
   /* regularization parameters */
   gsl_spmatrix *L;         /* regularization matrix Cholesky factor, p-by-p */
   gsl_spmatrix *Lambda;    /* regularization matrix (L * L'), p-by-p */
+  double lambda_0;         /* main field damping */
+  double lambda_1;         /* 1st time derivative of main field damping */
+  double lambda_2;         /* 2nd time derivative of main field damping */
   double lambda_3;         /* 3rd time derivative of main field damping */
   double lambda_s;         /* fluxgate scale factor regularization parameter */
   double lambda_o;         /* fluxgate offset regularization parameter */
@@ -326,8 +332,6 @@ size_t mfield_extidx(const double t, const mfield_workspace *w);
 extern inline double mfield_get_gnm(const double t, const size_t n, const int m,
                                     const size_t nderiv, const gsl_vector * c, mfield_workspace * w);
 extern inline double mfield_get_mf(const gsl_vector *c, const size_t idx, const mfield_workspace *w);
-extern inline double mfield_get_sv(const gsl_vector *c, const size_t idx, const mfield_workspace *w);
-extern inline double mfield_get_sa(const gsl_vector *c, const size_t idx, const mfield_workspace *w);
 extern inline int mfield_set_mf(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 extern inline int mfield_set_sv(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 extern inline int mfield_set_sa(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);

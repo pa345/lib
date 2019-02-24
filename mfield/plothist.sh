@@ -1,6 +1,8 @@
 #!/bin/sh
 #
 # Plot temporal histogram of data coverage for model
+#
+# NOTE: need to run mfield with -m option to generate datamap files
 
 prefix="output/datamap"
 
@@ -26,7 +28,7 @@ function proc
   cat ${file} | datasel | awk '{print $1}' | gsl-histogram $tmin $tmax $nbins > ${outfile}
 }
 
-for sat in $(seq 0 2); do
+for sat in $(seq 0 1); do
   fileF="${prefix}${sat}_F.dat"
   if [ -f ${fileF} ]; then
     echo "processing ${fileF}..."

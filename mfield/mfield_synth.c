@@ -88,7 +88,6 @@ mfield_synth_replace(mfield_workspace *w)
         {
           int thread_id = omp_get_thread_num();
           mfield_workspace *mfield_p = mfield_array[thread_id];
-          double t = satdata_epoch2year(mptr->t[j]);
           double r = mptr->r[j];
           double theta = mptr->theta[j];
           double phi = mptr->phi[j];
@@ -166,7 +165,7 @@ mfield_synth_replace(mfield_workspace *w)
               double dBdt[3];
 
               /* synthesize dB/dt vector */
-              mfield_synth_calc_dBdt(t, r, theta, phi, g, dBdt, mfield_p);
+              mfield_synth_calc_dBdt(mptr->t[j], r, theta, phi, g, dBdt, mfield_p);
               mptr->dXdt_nec[j] = dBdt[0];
               mptr->dYdt_nec[j] = dBdt[1];
               mptr->dZdt_nec[j] = dBdt[2];
@@ -295,18 +294,20 @@ mfield_synth_calc(const double t, const double r, const double theta, const doub
   return s;
 }
 
-/* compute dB/dt(r,theta,phi) using Gauss coefficients 'g' */
+/* compute d/dt B(r,theta,phi) using Gauss coefficients 'g' */
 static int
 mfield_synth_calc_dBdt(const double t, const double r, const double theta, const double phi, const gsl_vector * g,
                        double dBdt[3], mfield_workspace *w)
 {
   int s = 0;
-  const double t0 = w->epoch;
-  const double t1 = t - t0;
-  const size_t nmax = w->nmax_max;
+  gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+  const size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
+  const size_t nmax_core = w->nmax_core;
+  const size_t nmax = w->nmax;
   const double ratio = w->R / r;
   const double sint = sin(theta);
   const double cost = cos(theta);
+  const double tyr = epoch2year(t);
   double rterm = ratio * ratio;
   double *Plm = w->Plm;
   double *dPlm = w->dPlm;
@@ -338,21 +339,28 @@ mfield_synth_calc_dBdt(const double t, const double r, const double theta, const
           double s = w->sinmphi[m];
           size_t pidx = gsl_sf_legendre_array_index(n, m);
           size_t cidx = mfield_coeff_nmidx(n, m);
-          double gnm, hnm = 0.0;
+          double dgnm, dhnm = 0.0;
 
-          gnm = mfield_get_sv(g, cidx, w) +
-                mfield_get_sa(g, cidx, w) * t1;
+          if (n <= nmax_core)
+            {
+              gsl_vector_const_view v1 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_core, ncontrol);
+              gsl_bspline2_eval_deriv(tyr, &v1.vector, 1, &dgnm, gauss_spline_p);
+            }
 
           if (m > 0)
             {
               cidx = mfield_coeff_nmidx(n, -m);
-              hnm = mfield_get_sv(g, cidx, w) +
-                    mfield_get_sa(g, cidx, w) * t1;
+
+              if (n <= nmax_core)
+                {
+                  gsl_vector_const_view v2 = gsl_vector_const_subvector_with_stride(g, cidx, w->nnm_core, ncontrol);
+                  gsl_bspline2_eval_deriv(tyr, &v2.vector, 1, &dhnm, gauss_spline_p);
+                }
             }
 
-          dBdt[0] += rterm * (gnm * c + hnm * s) * dPlm[pidx];
-          dBdt[1] += rterm / sint * m * (gnm * s - hnm * c) * Plm[pidx];
-          dBdt[2] -= (n + 1.0) * rterm * (gnm * c + hnm * s) * Plm[pidx];
+          dBdt[0] += rterm * (dgnm * c + dhnm * s) * dPlm[pidx];
+          dBdt[1] += rterm / sint * m * (dgnm * s - dhnm * c) * Plm[pidx];
+          dBdt[2] -= (n + 1.0) * rterm * (dgnm * c + dhnm * s) * Plm[pidx];
         }
     }
 
