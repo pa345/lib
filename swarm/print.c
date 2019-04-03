@@ -194,66 +194,6 @@ print_data(const int down_sample, const print_parameters *params,
 }
 
 int
-print_data2(const print_parameters *params, const satdata_mag *data)
-{
-  int s = 0;
-  size_t i, j;
-
-  i = 1;
-  printf("# Field %zu: time (UT)\n", i++);
-  printf("# Field %zu: geocentric latitude (degrees)\n", i++);
-  printf("# Field %zu: X field (nT)\n", i++);
-  printf("# Field %zu: Y field (nT)\n", i++);
-  printf("# Field %zu: Z field (nT)\n", i++);
-  printf("# Field %zu: X main (nT)\n", i++);
-  printf("# Field %zu: Y main (nT)\n", i++);
-  printf("# Field %zu: Z main (nT)\n", i++);
-
-  for (i = 0; i < data->n; ++i)
-    {
-      time_t unix_time;
-      double B_obs[3], B_main[4];
-
-      if (data->flags[i])
-        continue; /* nan vector components */
-
-      unix_time = satdata_epoch2timet(data->t[i]);
-      if (unix_time < 1442224244 || unix_time > 1442224246)
-        continue;
-
-      B_obs[0] = SATDATA_VEC_X(data->B, i);
-      B_obs[1] = SATDATA_VEC_Y(data->B, i);
-      B_obs[2] = SATDATA_VEC_Z(data->B, i);
-
-      if (params->core_p != NULL)
-        {
-          double tyr = satdata_epoch2year(data->t[i]);
-          double theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
-          double phi = data->longitude[i] * M_PI / 180.0;
-          msynth_eval(tyr, data->r[i], theta, phi, B_main, params->core_p);
-        }
-      else
-        {
-          B_main[0] = SATDATA_VEC_X(data->B_main, i);
-          B_main[1] = SATDATA_VEC_Y(data->B_main, i);
-          B_main[2] = SATDATA_VEC_Z(data->B_main, i);
-        }
-
-      printf("%f %f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\n",
-             data->t[i],
-             data->latitude[i],
-             SATDATA_VEC_X(data->B, i),
-             SATDATA_VEC_Y(data->B, i),
-             SATDATA_VEC_Z(data->B, i),
-             B_main[0],
-             B_main[1],
-             B_main[2]);
-    }
-
-  return s;
-}
-
-int
 main(int argc, char *argv[])
 {
   satdata_mag *data;
@@ -350,7 +290,7 @@ main(int argc, char *argv[])
 
           case 'm':
             fprintf(stderr, "main: reading core field coefficients from %s...", optarg);
-            params.core_p = msynth_swarm_read(optarg);
+            params.core_p = msynth_shc_read(optarg);
             msynth_set(1, 15, params.core_p);
             fprintf(stderr, "done\n");
             break;
@@ -362,7 +302,7 @@ main(int argc, char *argv[])
 
   if (!infile)
     {
-      fprintf(stderr, "Usage: %s <-i swarm_index_file> [-d down_sample] [--lt_min lt_min] [--lt_max lt_max] [--alt_min alt_min] [--alt_max alt_max] [--qd_min qd_min] [--qd_max qd_max] [--kp_min kp_min] [--kp_max kp_max] [--ut_min ut_min] [--ut_max ut_max] [-m core_model_file]\n",
+      fprintf(stderr, "Usage: %s <-i swarm_index_file> [-d down_sample] [--lt_min lt_min] [--lt_max lt_max] [--alt_min alt_min] [--alt_max alt_max] [--qd_min qd_min] [--qd_max qd_max] [--kp_min kp_min] [--kp_max kp_max] [--ut_min ut_min] [--ut_max ut_max] [-m core_shc_file]\n",
               argv[0]);
       exit(1);
     }
@@ -403,10 +343,9 @@ main(int argc, char *argv[])
             nkp, data->n, (double)nkp / (double)data->n * 100.0);
   }
 
-  /*print_data(down_sample, &params, data);*/
-  print_data2(&params, data);
+  print_data(down_sample, &params, data);
 
   satdata_mag_free(data);
 
   return 0;
-} /* main() */
+}

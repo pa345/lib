@@ -1394,10 +1394,10 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% nmax:  %zu\n", w->nmax);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
-  fprintf(fp, "%% lambda_0: %.2f\n", params->lambda_0);
-  fprintf(fp, "%% lambda_1: %.2f\n", params->lambda_1);
-  fprintf(fp, "%% lambda_2: %.2f\n", params->lambda_2);
-  fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
+  fprintf(fp, "%% lambda_0: %.4f\n", params->lambda_0);
+  fprintf(fp, "%% lambda_1: %.4f\n", params->lambda_1);
+  fprintf(fp, "%% lambda_2: %.4f\n", params->lambda_2);
+  fprintf(fp, "%% lambda_3: %.4f\n", params->lambda_3);
 
   fprintf(fp, "%% %3s %5s %20s %20s %20s\n",
           "n",

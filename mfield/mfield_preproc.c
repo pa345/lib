@@ -1158,7 +1158,7 @@ main(int argc, char *argv[])
   char *datamap_file = "datamap.dat";
   char *data_file = "data.dat";
   char *output_file = NULL;
-  char *config_file = "MF.cfg";
+  char *config_file = "MF_preproc.cfg";
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   obsdata *observatory_data = NULL;

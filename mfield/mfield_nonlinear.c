@@ -1,4 +1,4 @@
-#define OLD_FDF     1
+#define OLD_FDF     0
 
 #include <gsl/gsl_integration.h>
 
@@ -630,6 +630,8 @@ mfield_init_nonlinear(mfield_workspace *w)
               spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtMF_workspace_p);
             else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
               spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtSV_workspace_p);
+            else if (mptr->global_flags & MAGDATA_GLOBFLG_EEJ_MAGEQ)
+              wt = 1.0;
             else /* satellite data */
               track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
 

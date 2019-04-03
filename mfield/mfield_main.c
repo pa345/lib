@@ -55,101 +55,6 @@
 
 #define MAX_BUFFER           2048
 
-#if 0
-
-/*
-parse_input()
-  Read in index file for a given satellite, perform data
-selection and downsampling
-*/
-
-satdata_mag *
-parse_input(const size_t sat_idx)
-{
-  satdata_mag *data = NULL;
-  const char *idxfile = index_files[sat_idx];
-  size_t i;
-
-  fprintf(stderr, "parse_input: reading %s...", idxfile);
-
-  if (sat_idx >= IDX_SWA && sat_idx <= IDX_SWC)
-    data = satdata_swarm_read_idx(idxfile, 0);
-  else if (sat_idx == IDX_CHAMP)
-    data = satdata_champ_read_idx(idxfile, 0);
-  else if (sat_idx == IDX_OERSTED)
-    data = satdata_oersted_read_idx(idxfile, 0);
-  else if (sat_idx >= IDX_F15 && sat_idx <= IDX_F18)
-    data = satdata_dmsp_read_idx(idxfile, 0);
-
-  if (!data)
-    return NULL;
-
-  fprintf(stderr, "done (%zu points read)\n", data->n);
-
-  if (sat_idx >= IDX_SWA && sat_idx <= IDX_SWC)
-    {
-      size_t nrms;
-      track_workspace *track_p = track_alloc();
-      double thresh[] = { 20.0, 25.0, 15.0, 15.0 };
-
-      satdata_swarm_filter_instrument(1, data);
-
-      /* filter by track rms */
-
-      track_init(data, NULL, track_p);
-
-      nrms = track_flag_rms("swarm_rms.dat", thresh, data, track_p);
-      fprintf(stderr, "parse_input: flagged (%zu/%zu) (%.1f%%) points due to high rms\n",
-              nrms, data->n, (double) nrms / (double) data->n * 100.0);
-
-      track_free(track_p);
-
-      satdata_filter_wmm(1, data);
-    }
-
-  fprintf(stderr, "parse_input: downsampling data by factor %d...", DOWNSAMPLE);
-
-  for (i = 0; i < data->n; ++i)
-    {
-      if (i % DOWNSAMPLE != 0)
-        data->flags[i] |= SATDATA_FLG_OUTLIER;
-    }
-
-  fprintf(stderr, "done\n");
-
-  /* flag local time */
-  if (!(sat_idx >= IDX_F15 && sat_idx <= IDX_F18))
-    {
-      size_t nlt;
-      const double lt_min = 5.0;
-      double lt_max = 22.0;
-      const double euler_lt_min = 6.0;
-      const double euler_lt_max = 18.0;
-
-      /* in the first half of 2013, Oersted is in a ~10am/10pm orbit */
-      if (sat_idx == IDX_OERSTED)
-        lt_max = 20.0;
-
-      fprintf(stderr, "parse_input: flagging points inside LT window [%g,%g], euler [%g,%g]...",
-              lt_min, lt_max, euler_lt_min, euler_lt_max);
-
-      nlt = flag_local_time(lt_min, lt_max, euler_lt_min, euler_lt_max, data);
-
-      fprintf(stderr, "done (%zu/%zu data flagged)\n", nlt, data->n);
-    }
-
-  {
-    size_t nflagged = satdata_nflagged(data);
-    fprintf(stderr, "parse_input: total flagged points: %zu/%zu (%.1f%%) (%zu remaining)\n",
-            nflagged, data->n, (double)nflagged / (double)data->n * 100.0,
-            data->n - nflagged);
-  }
-
-  return data;
-} /* parse_input() */
-
-#endif /* 0 */
-
 /*
 initial_guess()
   Construct initial guess for main field coefficients. These
@@ -171,36 +76,6 @@ initial_guess(gsl_vector *c, mfield_workspace *w)
 
   mfield_write_ascii("initial.txt", 2015.5, c, w);
   mfield_write_shc("initial.shc", c, w);
-
-#if 0
-  {
-    const size_t nmax = GSL_MIN(w->nmax_max, msynth_p->nmax);
-    const double t = w->epoch;                       /* desired epoch */
-    const size_t ncontrol = gsl_bspline2_ncontrol(w->gauss_spline_workspace_p[0]);
-    size_t n, j;
-    int m;
-
-    for (n = 1; n <= nmax; ++n)
-      {
-        int ni = (int) n;
-
-        for (m = -ni; m <= ni; ++m)
-          {
-            size_t midx = msynth_nmidx(n, m, msynth_p);
-            size_t cidx = mfield_coeff_nmidx(n, m);
-            double gnm = msynth_get_mf(t, midx, msynth_p);
-
-            for (j = 0; j < ncontrol; ++j)
-              {
-                size_t idx = CIDX2(j, ncontrol, cidx, w->nnm_mf);
-                gsl_vector_set(c, idx, gnm);
-              }
-          }
-      }
-
-    msynth_free(msynth_p);
-  }
-#endif
 
   /* initialize fluxgate calibration scale factors to 1.0, leaving offsets and angles at 0 */
   for (i = 0; i < w->nsat; ++i)
@@ -995,6 +870,15 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: constructing initial coefficient vector...");
   initial_guess(coeffs, mfield_workspace_p);
   fprintf(stderr, "done\n");
+
+  if (print_residuals)
+    {
+      /* print residuals with initial guess vector */
+      fprintf(stderr, "main: printing initial residuals to %s...", residual_prefix);
+      gsl_vector_memcpy(mfield_workspace_p->c, coeffs);
+      mfield_residual_print(residual_prefix, 0, mfield_workspace_p);
+      fprintf(stderr, "done\n");
+    }
 
   gettimeofday(&tv0, NULL);
 

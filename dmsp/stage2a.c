@@ -36,11 +36,13 @@
 #include <common/quat.h>
 #include <msynth/msynth.h>
 #include <track/track.h>
+#include <att/att_calc.h>
 
 #include "eph.h"
 #include "jump.h"
 #include "magcal.h"
 
+#include "stage2_align.c"
 #include "stage2_calibrate.c"
 #include "stage2_euler.c"
 #include "stage2_filter.c"
@@ -270,8 +272,6 @@ print_data(const char *filename, const satdata_mag *data, const track_workspace 
 
       for (j = start_idx + offset; j <= end_idx; j += downsample)
         {
-          double theta = M_PI / 2.0 - data->latitude[j] * M_PI / 180.0;
-          double phi = data->longitude[j] * M_PI / 180.0;
           double *q = &(data->q[4*j]);
           double B_model[4], B_model_VFM[3];
 
@@ -420,23 +420,6 @@ print_residuals(const char *filename, satdata_mag *data, track_workspace *w)
   fclose(fp);
 
   return s;
-}
-
-static int
-stage2_vfm2nec(satdata_mag *data)
-{
-  size_t i;
-
-  for (i = 0; i < data->n; ++i)
-    {
-      double *B_VFM = &(data->B_VFM[3*i]);
-      double *B_NEC = &(data->B[3*i]);
-      double *q = &(data->q[4*i]);
-
-      quat_apply(q, B_VFM, B_NEC);
-    }
-
-  return 0;
 }
 
 /*
@@ -627,15 +610,12 @@ print_help(char *argv[])
 int
 main(int argc, char *argv[])
 {
-  const char *track_file = "track_data.dat";
 #if WRITE_JUMP_DATA
   const char *scal_file = "stage2_scal.dat";
-  const char *euler_file = "stage2_euler.dat";
   const char *spike_file = "stage2_spikes.dat";
   const char *jump_file = "stage2_jumps.dat";
 #else
   const char *scal_file = NULL;
-  const char *euler_file = NULL;
   const char *spike_file = NULL;
   const char *jump_file = NULL;
 #endif
@@ -654,6 +634,8 @@ main(int argc, char *argv[])
   track_workspace *track_p;
   msynth_workspace *msynth_p = NULL;
   gsl_vector *coef = gsl_vector_alloc(FLUXCAL_P);
+  att_calc_workspace * att_calc_p;
+  gsl_vector *coef_align;
   FILE *fp_param = NULL;
   struct timeval tv0, tv1;
   double rms;
@@ -724,6 +706,9 @@ main(int argc, char *argv[])
       print_help(argv);
       exit(1);
     }
+
+  att_calc_p = att_calc_alloc(data->n, att_mrp);
+  coef_align = gsl_vector_alloc(att_calc_p->p);
 
   if (outfile)
     fprintf(stderr, "output file = %s\n", outfile);
@@ -824,6 +809,12 @@ main(int argc, char *argv[])
           time_t unix_time = satdata_epoch2timet(t[0]);
           print_parameters(fp_param, 0, coef, unix_time, rms);
         }
+
+      /* calculate alignment */
+      stage2_align(data, track_p, coef_align, att_calc_p);
+
+      /* apply alignment */
+      stage2_align_vfm2nec(coef_align, data, att_calc_p);
     }
   else
     {
@@ -840,6 +831,12 @@ main(int argc, char *argv[])
 
           /* apply calibration to data inside time window */
           fluxcal_apply(coef, data);
+
+          /* calculate alignment */
+          stage2_align(data, track_p, coef_align, att_calc_p);
+
+          /* apply alignment */
+          stage2_align_vfm2nec(coef_align, data, att_calc_p);
 
           /* remove time flag */
           stage2_unflag_time(data);
@@ -867,10 +864,6 @@ main(int argc, char *argv[])
     }
 #endif
 
-  fprintf(stderr, "main: computing B_NEC...");
-  stage2_vfm2nec(data);
-  fprintf(stderr, "done\n");
-
   if (data_file)
     {
       fprintf(stderr, "main: printing data to %s...", data_file);
@@ -893,9 +886,11 @@ main(int argc, char *argv[])
     }
 
   gsl_vector_free(coef);
+  gsl_vector_free(coef_align);
   track_free(track_p);
   satdata_mag_free(data);
   eph_data_free(eph);
+  att_calc_free(att_calc_p);
   free(t);
 
   if (msynth_p)

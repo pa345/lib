@@ -1,4 +1,4 @@
-bin_PROGRAMS = mfield mfield_preproc mfield_preproc_obs
+bin_PROGRAMS = mfield mfield_preproc mfield_preproc_EEJ mfield_preproc_obs
 
 check_PROGRAMS = mfield_emag mfield_eval_main mfield_compare mfield_plot
 
@@ -16,6 +16,11 @@ mfield_preproc_SOURCES = mfield_preproc.c
 mfield_preproc_CFLAGS = -fopenmp
 mfield_preproc_LDFLAGS = -fopenmp
 mfield_preproc_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
+
+mfield_preproc_EEJ_SOURCES = mfield_preproc_EEJ.c
+mfield_preproc_EEJ_CFLAGS = -fopenmp
+mfield_preproc_EEJ_LDFLAGS = -fopenmp
+mfield_preproc_EEJ_LDADD = $(top_builddir)/magdata/libmagdata.la $(top_builddir)/green/libgreen.la $(top_builddir)/lls/liblls.la $(top_builddir)/euler/libeuler.la -lfftw3 -lconfig ${common_libs}
 
 mfield_preproc_obs_SOURCES = mfield_preproc_obs.c
 mfield_preproc_obs_CFLAGS = -fopenmp

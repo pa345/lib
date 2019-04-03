@@ -150,7 +150,7 @@ mfield_data_filter_time(const double tmin, const double tmax,
     }
 
   return cnt;
-} /* mfield_data_filter_time() */
+}
 
 /*
 mfield_data_filter_euler()
@@ -206,6 +206,10 @@ mfield_data_filter_comp(mfield_data_workspace *w)
   for (i = 0; i < w->nsources; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w);
+
+      /* if this dataset is EEJ measurements of the magnetic equator, don't filter components */
+      if (mptr->global_flags & MAGDATA_GLOBFLG_EEJ_MAGEQ)
+        continue;
 
       for (j = 0; j < mptr->n; ++j)
         {

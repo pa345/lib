@@ -2,7 +2,7 @@
 #
 # Run stage1 for a satellite and all years
 
-dmsp_sat="F18"
+dmsp_sat="F17"
 if test -n "$1"; then
   dmsp_sat="$1"
 fi

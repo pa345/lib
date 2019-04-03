@@ -381,7 +381,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
       time_t unix_time = satdata_epoch2timet(mptr->t[j]);
       double r = mptr->r[j];
       double theta = mptr->theta[j];
-      double phi = mptr->phi[j];
+      double phi = mptr->phi[j] * 180.0 / M_PI;
       double lat = 90.0 - theta * 180.0 / M_PI;
       double qdlat = mptr->qdlat[j];
       double B_nec[4], B_nec_grad[4];     /* observations in NEC */
@@ -395,7 +395,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
       if (MAGDATA_FitMF(mptr->flags[j]))
         {
           /* evaluate internal field models */
-          mfield_eval(mptr->t[j], r, theta, phi, B_fit, w);
+          mfield_eval(mptr->t[j], r, theta, mptr->phi[j], B_fit, w);
 
           if (MAGDATA_ExistDX_NS(mptr->flags[j]) || MAGDATA_ExistDY_NS(mptr->flags[j]) ||
               MAGDATA_ExistDZ_NS(mptr->flags[j]) || MAGDATA_ExistDF_NS(mptr->flags[j]) ||

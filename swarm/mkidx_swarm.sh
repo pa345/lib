@@ -5,6 +5,8 @@
 
 datadir="$DATAHOME/SWARM/MAG/Stage1"
 
+current_year=$(date +"%Y")
+
 function dosat
 {
   sat_name="$1"
@@ -15,7 +17,7 @@ function dosat
   echo "sat = ${sat_name}"
 
   # loop over years
-  for year in $(seq 2013 2017); do
+  for year in $(seq 2013 ${current_year}); do
     echo "year = ${year}"
 
     # loop over months

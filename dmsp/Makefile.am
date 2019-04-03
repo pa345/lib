@@ -1,6 +1,6 @@
 bin_PROGRAMS = print print_LTAN stage0 stage2a stage2b atest
 
-commonlibs = -lsatdata -lindices ~/usr/lib/libgsl.a -lgslcblas -lm -lcdf
+commonlibs = -lsatdata -lindices -latt ~/usr/lib/libgsl.a -lgslcblas -lm -lcdf
 
 AM_CPPFLAGS = -I$(top_builddir)/ephemeris -I$(top_builddir)/euler -I$(top_builddir)/magdata -I$(top_builddir)/peak
 
@@ -8,11 +8,11 @@ stage0_SOURCES = stage0.c
 stage0_LDADD = $(top_builddir)/ephemeris/libephemeris.la -lcommon -lm -lcdf ${commonlibs} -lz
 
 atest_SOURCES = atest.c
-atest_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -latt_calc -latt -ltrack -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
+atest_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -latt_calc -ltrack -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
 
 stage2a_SOURCES = jump.c fluxcal.c magcal.c stage2a.c
 stage2a_LDFLAGS = -fopenmp
-stage2a_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -ltrack -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
+stage2a_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -latt_calc -ltrack -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz
 
 stage2b_SOURCES = stage2b.c magcal.c
 stage2b_LDADD = -lcommon -lm ${commonlibs}

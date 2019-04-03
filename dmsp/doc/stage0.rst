@@ -15,9 +15,9 @@ spacecraft axes as follows,
 .. math::
 
    \begin{array}{ll}
-     \textrm{velocity direction} & \hat{s}_1 = \hat{s}_2 \times \hat{s}_3 \\
-     \textrm{east/west} & \hat{s}_2 = \left( \hat{s}_3 \times \mathbf{v} \right) / \left| \hat{s}_3 \times \mathbf{v} \right| \\
-     \textrm{geodetic downward} & \hat{s}_3 = -\hat{e}_{\mu}
+     \textrm{geodetic downward} & \hat{s}_1 = -\hat{e}_{\mu} \\
+     \textrm{velocity direction} & \hat{s}_2 = \hat{s}_3 \times \hat{s}_1 \\
+     \textrm{orbit normal, toward sun} & \hat{s}_3 = \left( \hat{s}_1 \times \mathbf{v} \right) / \left| \hat{s}_1 \times \mathbf{v} \right|
    \end{array}
 
 Here, :math:`\hat{e}_{\mu}` is the outward normal to the local ellipsoid as defined
