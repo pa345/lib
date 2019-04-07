@@ -6,10 +6,13 @@ AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/magdata -I$(top_builddir
 
 common_libs = -L/usr/lib64 -lsatdata -lindices ~/usr/lib/libgsl.a /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf
 
-bin_PROGRAMS = print_modes print_modes3b print print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH print_magfield print_fillion print_fillion2 print_gary print_var3b
+bin_PROGRAMS = print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b stage1c print_SH print_magfield print_fillion print_fillion2 print_gary print_var3b
 
 print_SOURCES = print.c
 print_LDADD = libpca3d.la -lcommon -lm -lgsl -lnetcdf ${common_libs}
+
+print_B_SOURCES = print_B.c
+print_B_LDADD = libpca3d.la -lcommon -lm -lgsl -lnetcdf ${common_libs}
 
 print_magfield_SOURCES = print_magfield.c
 print_magfield_CFLAGS = -fopenmp
@@ -86,6 +89,11 @@ stage3b_SOURCES = stage3b.c
 stage3b_CFLAGS = -fopenmp
 stage3b_LDFLAGS = -fopenmp
 stage3b_LDADD = libpca3d.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lcommon -lm -lmagfield -lgsl -lshtns_omp -lfftw3 -lfftw3_omp -lnetcdf ${common_libs}
+
+stage1c_SOURCES = stage1c.c
+stage1c_CFLAGS = -fopenmp
+stage1c_LDFLAGS = -fopenmp
+stage1c_LDADD = libpca3d.la -lcommon -lm -lmagfield ~/usr/lib/libgsl.a -lptcblas -latlas -lpthread -lshtns_omp -lfftw3 -lfftw3_omp -lnetcdf
 
 print_SH_SOURCES = print_SH.c
 print_SH_CFLAGS = -fopenmp

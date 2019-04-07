@@ -80,5 +80,6 @@ int tiegcm3d_print_time(const char *filename, const tiegcm3d_data *data, const i
 
 /* tiegcm3d_read.c */
 tiegcm3d_data *tiegcm3d_read(const char *filename, tiegcm3d_data *data);
+tiegcm3d_data *tiegcm3d_read_B(const char *filename, tiegcm3d_data *data);
 
 #endif /* INCLUDED_tiegcm3d_h */

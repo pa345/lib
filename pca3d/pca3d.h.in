@@ -32,6 +32,10 @@
 #define PCA3D_STAGE3B_SVAL_DAT         "@abs_top_builddir@/pca3d/data/stage3b/stage3b_sval"
 #define PCA3D_STAGE3B_U                "@abs_top_builddir@/pca3d/data/stage3b/stage3b_U"
 
+/* stage1c: output files */
+#define PCA3D_STAGE1C_DATA             "@abs_top_builddir@/pca3d/data/stage1c/stage1c.dat"
+#define PCA3D_STAGE1C_SH_PREFIX        "@abs_top_builddir@/pca3d/data/stage1c/stage1c_SH"
+
 typedef struct
 {
   time_t *t;             /* timestamps, size nt */

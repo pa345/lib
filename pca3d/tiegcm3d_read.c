@@ -261,3 +261,225 @@ tiegcm3d_read(const char *filename, tiegcm3d_data *data)
 
   return data;
 }
+
+/*
+ * read 3D dB_dBei_xxx files with B grids
+ *
+ * Note: B grids are stored in data->{Jr,Jt,Jp} to conserve memory
+ */
+tiegcm3d_data *
+tiegcm3d_read_B(const char *filename, tiegcm3d_data *data)
+{
+  int status;
+  size_t cur_idx, i, j, k, l;
+  int ncid;
+  int timeid, hid, glonid, glatid;
+  int doyid, utid, hvid, glonvid, glatvid, Buid, Bnid, Beid;
+  size_t ntot, ncur;
+  size_t nt, nr, nlon, nlat;
+  size_t grid_base;
+  double *work;
+
+  status = nc_open(filename, NC_NOWRITE, &ncid);
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: unable to open %s: %s\n",
+              filename, nc_strerror(status));
+      return data;
+    }
+
+  status = 0;
+  status += nc_inq_dimid(ncid, "time", &timeid);
+  status += nc_inq_dimid(ncid, "ghgtB", &hid);
+  status += nc_inq_dimid(ncid, "glon", &glonid);
+  status += nc_inq_dimid(ncid, "glat", &glatid);
+
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: error reading dimension ids: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  /* find dimension lengths */
+  status = 0;
+  status += nc_inq_dimlen(ncid, timeid, &nt);
+  status += nc_inq_dimlen(ncid, hid, &nr);
+  status += nc_inq_dimlen(ncid, glonid, &nlon);
+  status += nc_inq_dimlen(ncid, glatid, &nlat);
+
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read_B: error reading dimension lengths: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  status = 0;
+  status += nc_inq_varid(ncid, "doy", &doyid);
+  status += nc_inq_varid(ncid, "ut", &utid);
+  status += nc_inq_varid(ncid, "ghgtB", &hvid);
+  status += nc_inq_varid(ncid, "glon", &glonvid);
+  status += nc_inq_varid(ncid, "glat", &glatvid);
+  status += nc_inq_varid(ncid, "Be3D", &Beid);
+  status += nc_inq_varid(ncid, "Bn3D", &Bnid);
+  status += nc_inq_varid(ncid, "Bu3D", &Buid);
+
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: error reading variable ids: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  /* allocate more data if needed */
+  ntot = data ? data->ntot : 0;
+  ncur = data ? data->nt : 0;
+  if (ntot < ncur + nt)
+    data = tiegcm3d_realloc(nt + ntot, nr, nlon, nlat, data);
+
+  if (!data)
+    return 0;
+
+  cur_idx = data->nt;
+
+  if (nt > data->nt_max)
+    {
+      fprintf(stderr, "tiegcm3d_read: error: nt_max too small [%zu]\n", data->nt_max);
+      return 0;
+    }
+
+  /* offset for grid reading */
+  grid_base = data->nt * data->nr * data->nlon * data->nlat;
+
+  work = malloc(nt * nr * nlon * nlat * sizeof(double));
+
+  status = 0;
+  status += nc_get_var_double(ncid, doyid, &(data->doy[cur_idx]));
+  status += nc_get_var_double(ncid, utid, &(data->ut[cur_idx]));
+  status += nc_get_var_double(ncid, hvid, data->r);
+  status += nc_get_var_double(ncid, glonvid, data->glon);
+  status += nc_get_var_double(ncid, glatvid, data->glat);
+
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: error reading variables: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  data->nt += nt;
+
+  /* Astrid transposed nlat/nlon for the B grids vs J grids, so read one
+   * at a time into work array, and transpose back to same order */
+  status += nc_get_var_double(ncid, Bnid, &work[0]);
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: error reading variables: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  for (i = cur_idx; i < data->nt; ++i)
+    {
+      for (j = 0; j < nlat; ++j)
+        {
+          for (k = 0; k < nlon; ++k)
+            {
+              for (l = 0; l < nr - 1; ++l)
+                {
+                  size_t idx_dest = TIEGCM3D_IDX(i, l, j, k, data);
+                  size_t idx_work = CIDX4(i - cur_idx, nt, l, nr, j, nlat, k, nlon);
+                  data->Jt[idx_dest] = -work[idx_work];
+                }
+            }
+        }
+    }
+
+  status += nc_get_var_double(ncid, Beid, &work[0]);
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: error reading variables: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  for (i = cur_idx; i < data->nt; ++i)
+    {
+      for (j = 0; j < nlat; ++j)
+        {
+          for (k = 0; k < nlon; ++k)
+            {
+              for (l = 0; l < nr - 1; ++l)
+                {
+                  size_t idx_dest = TIEGCM3D_IDX(i, l, j, k, data);
+                  size_t idx_work = CIDX4(i - cur_idx, nt, l, nr, j, nlat, k, nlon);
+                  data->Jp[idx_dest] = work[idx_work];
+                }
+            }
+        }
+    }
+
+  status += nc_get_var_double(ncid, Buid, &work[0]);
+  if (status)
+    {
+      fprintf(stderr, "tiegcm3d_read: error reading variables: %s\n",
+              nc_strerror(status));
+      return data;
+    }
+
+  for (i = cur_idx; i < data->nt; ++i)
+    {
+      for (j = 0; j < nlat; ++j)
+        {
+          for (k = 0; k < nlon; ++k)
+            {
+              for (l = 0; l < nr - 1; ++l)
+                {
+                  size_t idx_dest = TIEGCM3D_IDX(i, l, j, k, data);
+                  size_t idx_work = CIDX4(i - cur_idx, nt, l, nr, j, nlat, k, nlon);
+                  data->Jr[idx_dest] = work[idx_work];
+                }
+            }
+        }
+    }
+
+  /* set Bt = -Bn */
+
+  /* convert heights to km radii */
+  for (i = 0; i < nr; ++i)
+    data->r[i] = 6371.2 + data->r[i] * 1.0e-3;
+
+  /* compute timestamps */
+  putenv("TZ=GMT");
+
+  for (i = cur_idx; i < data->nt; ++i)
+    {
+      int iyear = 2009;
+      int idoy = (int) data->doy[i];
+      int month, day, hour, min, sec;
+      struct tm tminfo;
+
+      doy2md(iyear, idoy, &month, &day);
+
+      hour = (int) data->ut[i];
+      min = (int) ((data->ut[i] - hour) * 60.0);
+      sec = 0;
+
+      tminfo.tm_sec = sec;
+      tminfo.tm_min = min;
+      tminfo.tm_hour = hour;
+      tminfo.tm_mday = day;
+      tminfo.tm_mon = month - 1;
+      tminfo.tm_year = iyear - 1900;
+      tminfo.tm_isdst = 0;
+
+      data->t[i] = mktime(&tminfo);
+    }
+
+  nc_close(ncid);
+
+  free(work);
+
+  return data;
+}
