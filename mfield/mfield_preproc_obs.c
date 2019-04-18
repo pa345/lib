@@ -58,21 +58,6 @@ typedef struct
   double max_dRC;         /* maximum dRC/dt (nT/hour) */
 } preprocess_parameters;
 
-#define MFIELD_IDX_X              0
-#define MFIELD_IDX_Y              1
-#define MFIELD_IDX_Z              2
-#define MFIELD_IDX_F              3
-#define MFIELD_IDX_DX_NS          4
-#define MFIELD_IDX_DY_NS          5
-#define MFIELD_IDX_DZ_NS          6
-#define MFIELD_IDX_DF_NS          7
-#define MFIELD_IDX_DX_EW          8
-#define MFIELD_IDX_DY_EW          9
-#define MFIELD_IDX_DZ_EW          10
-#define MFIELD_IDX_DF_EW          11
-#define MFIELD_IDX_B_EULER        12
-#define MFIELD_IDX_END            13
-
 static int
 check_parameters(preprocess_parameters * params)
 {
@@ -299,7 +284,7 @@ print_help(char *argv[])
 {
   fprintf(stderr, "Usage: %s [options]\n", argv[0]);
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "\t --obs_data_file   | -O                        - Observatory data file (%s)\n", OBSDATA_BINARY_FILE);
+  fprintf(stderr, "\t --obs_data_file   | -O obs_binary_file        - Observatory data file (%s)\n", OBSDATA_BINARY_FILE);
   fprintf(stderr, "\t --config_file     | -C config_file            - configuration file\n");
 }
 
@@ -309,7 +294,8 @@ main(int argc, char *argv[])
   int status;
   const char *path_dir = "/data/palken/lib/mfield/data/obs";
   char *datamap_file = "datamap.dat";
-  char *config_file = "OBS.cfg";
+  char *config_file = "MF_preproc_OBS.cfg";
+  char *obs_file = OBSDATA_BINARY_FILE;
   obsdata *data = NULL;
   struct timeval tv0, tv1;
   preprocess_parameters params;
@@ -332,12 +318,12 @@ main(int argc, char *argv[])
       int option_index = 0;
       static struct option long_options[] =
         {
-          { "obs_file", no_argument, NULL, 'O' },
+          { "obs_file", required_argument, NULL, 'O' },
           { "config_file", required_argument, NULL, 'C' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "C:O", long_options, &option_index);
+      c = getopt_long(argc, argv, "C:O:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -348,22 +334,33 @@ main(int argc, char *argv[])
             break;
 
           case 'O':
-            fprintf(stderr, "main: reading %s...", OBSDATA_BINARY_FILE);
-            gettimeofday(&tv0, NULL);
-            data = obsdata_read(OBSDATA_BINARY_FILE);
-            gettimeofday(&tv1, NULL);
-            fprintf(stderr, "done (%g seconds, %zu stations read, %zu total measurements)\n",
-                    time_diff(tv0, tv1), data->nstation, obsdata_n(data));
-            magdata_global_weight = 2.0;
+            obs_file = optarg;
             break;
 
           default:
+            print_help(argv);
+            exit(1);
             break;
         }
     }
 
   /* parse configuration file */
+  fprintf(stderr, "main: parsing configuration file %s...", config_file);
   parse_config_file(config_file, &params);
+  fprintf(stderr, "done\n");
+
+  fprintf(stderr, "main: reading %s...", obs_file);
+  gettimeofday(&tv0, NULL);
+  data = obsdata_read(obs_file);
+  gettimeofday(&tv1, NULL);
+
+  if (data == NULL)
+    exit(1);
+
+  fprintf(stderr, "done (%g seconds, %zu stations read, %zu total measurements)\n",
+          time_diff(tv0, tv1), data->nstation, obsdata_n(data));
+
+  magdata_global_weight = 2.0;
 
   /* check parameters */
   status = check_parameters(&params);
@@ -426,38 +423,6 @@ main(int argc, char *argv[])
 
   /* free data after copying arrays to free up memory */
   obsdata_free(data);
-
-  exit(1);
-
-#if 0
-  magdata_init(mdata);
-
-  fprintf(stderr, "main: computing spatial weighting of data...");
-  gettimeofday(&tv0, NULL);
-  magdata_calc(mdata);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-#if 0
-  fprintf(stderr, "main: writing data map to %s...", datamap_file);
-  magdata_map(datamap_file, mdata);
-  fprintf(stderr, "done\n");
-#endif
-
-  fprintf(stderr, "main: observatory rmin = %.1f (%.1f) [km]\n",
-          mdata->rmin, mdata->rmin - mdata->R);
-  fprintf(stderr, "main: observatory rmax = %.1f (%.1f) [km]\n",
-          mdata->rmax, mdata->rmax - mdata->R);
-
-  if (output_file)
-    {
-      fprintf(stderr, "main: writing data to %s...", output_file);
-      magdata_write(output_file, mdata);
-      fprintf(stderr, "done\n");
-    }
-
-  magdata_free(mdata);
-#endif
 
   return 0;
 }

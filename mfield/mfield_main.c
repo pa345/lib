@@ -182,6 +182,7 @@ print_gnm(const char *prefix, const size_t iter, mfield_workspace *w)
 
           i = 1;
           fprintf(fp, "# %c(%zu,%d) time series\n", gh, n, abs(m));
+          fprintf(fp, "# Field %zu: time (decimal years)\n", i++);
           fprintf(fp, "# Field %zu: %c(%zu,%d)(t) (nT)\n", i++, gh, n, abs(m));
 
           if (nderiv > 0)

@@ -781,7 +781,7 @@ main(int argc, char *argv[])
           time_diff(tv0, tv1), spike_file);
 #endif
 
-#if 0
+#if 1
   /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
@@ -856,7 +856,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
 #endif
 
-#if 0 /*XXX*/
+#if 1 /*XXX*/
   for (i = 0; i < data->n; ++i)
     {
       data->r[i] = 0.0;

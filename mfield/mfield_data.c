@@ -141,7 +141,8 @@ mfield_data_filter_time(const double tmin, const double tmax,
           double t = satdata_epoch2year(mptr->t[j]);
 
           if ((tmin > 0.0 && t < tmin) ||
-              (tmax > 0.0 && t > tmax))
+              (tmax > 0.0 && t > tmax) ||
+              ((mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV) && (t > 2013.5)))
             {
               mptr->flags[j] |= MAGDATA_FLG_DISCARD;
               ++cnt;
