@@ -48,6 +48,8 @@
 #include "stage2_filter.c"
 #include "stage2_spikes.c"
 
+#include "attitude.c"
+
 #define WRITE_JUMP_DATA                   0
 
 size_t
@@ -765,7 +767,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-#if 1
+#if 0
   fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
   preclean_jumps(jump_file, data, track_p);
@@ -854,6 +856,14 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: INITIAL SCALAR RMS = %.2f [nT]\n", rms0);
   fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
+#endif
+
+#if 1
+
+  fprintf(stderr, "main: performing attitude correction...");
+  attitude_correct(NULL, data, track_p);
+  fprintf(stderr, "done\n");
+
 #endif
 
 #if 1 /*XXX*/
