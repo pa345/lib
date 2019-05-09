@@ -53,6 +53,9 @@
 #include "mfield_residual.h"
 #include "mfield_synth.h"
 
+/*XXX*/
+#include "task2.c"
+
 #define MAX_BUFFER           2048
 
 /*
@@ -547,7 +550,6 @@ main(int argc, char *argv[])
   double lambda_2 = -1.0;     /* 2nd time derivative of MF damping parameter */
   double lambda_3 = -1.0;     /* 3rd time derivative of MF damping parameter */
   double sigma = -1.0;        /* sigma for artificial noise */
-  double bias = 0.0;          /* bias for artificial noise */
   struct timeval tv0, tv1;
   char buf[MAX_BUFFER];
 
@@ -577,11 +579,10 @@ main(int argc, char *argv[])
           { "lambda_2", required_argument, NULL, 'L' },
           { "lambda_3", required_argument, NULL, 'M' },
           { "sigma", required_argument, NULL, 'S' },
-          { "bias", required_argument, NULL, 'B' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:B:c:C:de:l:mJ:K:L:M:n:o:p:rS:", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:n:o:p:rS:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -645,10 +646,6 @@ main(int argc, char *argv[])
 
           case 'l':
             Lfile = optarg;
-            break;
-
-          case 'B':
-            bias = atof(optarg);
             break;
 
           case 'S':
@@ -808,12 +805,14 @@ main(int argc, char *argv[])
     fprintf(stderr, "done (%zu observatories flagged)\n", nflag);
   }
 
-  if (bias > 0.0 || sigma > 0.0)
-    {
-      fprintf(stderr, "main: adding noise (sigma = %.1f [nT], bias = %.1f [nT])...", sigma, bias);
-      mfield_data_add_noise(sigma, bias, mfield_data_p);
-      fprintf(stderr, "done\n");
-    }
+#if 0
+  /*XXX*/
+  {
+    fprintf(stderr, "main: TASK2 adding noise (sigma = %.1f [nT])...", sigma);
+    task2_add_noise(sigma, mfield_data_p);
+    fprintf(stderr, "done\n");
+  }
+#endif
 
   fprintf(stderr, "main: data epoch = %.2f\n", mfield_data_epoch(mfield_data_p));
   fprintf(stderr, "main: data tmin  = %.2f\n", satdata_epoch2year(mfield_data_p->t0_data));

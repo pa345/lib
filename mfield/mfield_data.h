@@ -88,6 +88,5 @@ int mfield_data_map(const char *dir_prefix, const mfield_data_workspace *w);
 int mfield_data_print(const char *dir_prefix, const gsl_vector *wts_spatial, const mfield_data_workspace *w);
 magdata *mfield_data_ptr(const size_t idx, const mfield_data_workspace *w);
 int mfield_data_t(double *t0, double *t1, const magdata *data);
-int mfield_data_add_noise(const double sigma, const double bias, mfield_data_workspace * w);
 
 #endif /* INCLUDED_mfield_data_h */

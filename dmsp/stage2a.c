@@ -861,7 +861,7 @@ main(int argc, char *argv[])
 #if 1
 
   fprintf(stderr, "main: performing attitude correction...");
-  attitude_correct(NULL, data, track_p);
+  attitude_correct("attitude.txt", data, track_p);
   fprintf(stderr, "done\n");
 
 #endif

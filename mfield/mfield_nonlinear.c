@@ -1,4 +1,4 @@
-#define OLD_FDF     1
+#define OLD_FDF     0
 
 #include <gsl/gsl_integration.h>
 
