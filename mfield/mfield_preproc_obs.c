@@ -300,7 +300,6 @@ main(int argc, char *argv[])
   struct timeval tv0, tv1;
   preprocess_parameters params;
   size_t magdata_flags = 0;  /* MAGDATA_GLOBFLG_xxx */
-  double magdata_global_weight = 1.0; /* global weight factor for this data source */
   char output_file[2048];
   size_t i;
 
@@ -360,8 +359,6 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%g seconds, %zu stations read, %zu total measurements)\n",
           time_diff(tv0, tv1), data->nstation, obsdata_n(data));
 
-  magdata_global_weight = 2.0;
-
   /* check parameters */
   status = check_parameters(&params);
   if (status)
@@ -387,7 +384,6 @@ main(int argc, char *argv[])
 
       if (mdata != NULL)
         {
-          magdata_set_weight(magdata_global_weight, mdata);
           sprintf(output_file, "%s/%s_SV.dat", path_dir, station->name);
           fprintf(stderr, "main: writing data to %s...", output_file);
           magdata_write(output_file, mdata);
@@ -405,7 +401,6 @@ main(int argc, char *argv[])
 
       if (mdata != NULL)
         {
-          magdata_set_weight(magdata_global_weight, mdata);
           sprintf(output_file, "%s/%s.dat", path_dir, station->name);
           fprintf(stderr, "main: writing data to %s...", output_file);
           magdata_write(output_file, mdata);
@@ -418,8 +413,6 @@ main(int argc, char *argv[])
           fprintf(stderr, "main: WARNING: station %s has no usable daily mean data\n", station->name);
         }
     }
-
-  fprintf(stderr, "main: global weight factor = %g\n", magdata_global_weight);
 
   /* free data after copying arrays to free up memory */
   obsdata_free(data);

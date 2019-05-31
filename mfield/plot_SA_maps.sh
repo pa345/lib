@@ -5,36 +5,34 @@ set term pngcairo enh col size 1000,1000
 mapprog="$DATAHOME/palken/repo/msynth/src/print_map"
 plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 
-#coefdir="coef_F17"
 #outfile="F17.mp4"
 #title="DMSP F-17"
 
-coefdir="coef3"
-outfile="SA"
-title="Smoothed BOUMME"
+#coef_file="mfield_coeffs.shc"
+coefdir="maps_F"
+coef_file="./Model_All_F.shc"
+title="Model B"
 
 plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
+
+start_time="2008.0"
+end_time="2019.0"
+time_step="0.1"
 
 # maximum SH degree for SA maps
 nmax="6"
 
+mkdir ${coefdir}
+
 idx=1
-for f in $(ls ${coefdir}/coef*.txt); do
-  bname=$(basename $f ".txt")
-  istr=$(seq -f "%03g" $idx $idx)
-  outfile="${coefdir}/map.${istr}.png"
+for epoch in $(seq ${start_time} ${time_step} ${end_time}); do
+  outfile="${coefdir}/map.${epoch}.png"
 
-  # extract epoch and round to 2 decimal places
-  epoch=$(echo $f | sed -r 's/.*\.([0-9]*\.[0-9]*)\..*/\1/g')
-  epoch=$(printf '%.2f' ${epoch})
-
-  echo "generating SA map for $f..."
+  echo "generating SA map for epoch ${epoch}..."
   tmpfile=$(mktemp)
-  ${mapprog} -c $f -n $nmax -o $tmpfile
-  #python ${plotprog} -i $tmpfile -o ${outfile} -t "${title}, epoch ${epoch}" ${plot_args}
+  ${mapprog} -h ${coef_file} -e ${epoch} -n $nmax -o $tmpfile
   ${plotprog} -i $tmpfile -o ${outfile} -t "${title}, epoch ${epoch}" ${plot_args}
   rm -f $tmpfile
-  idx=$((idx+1))
 done
 
 # cleanup

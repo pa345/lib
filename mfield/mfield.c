@@ -268,13 +268,14 @@ mfield_alloc(const mfield_parameters *params)
       for (i = 0; i < w->nsat; ++i)
         {
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-          double t0 = epoch2year(w->data_workspace_p->t0_data);
-          double t1 = epoch2year(w->data_workspace_p->t1_data);
-          double dt = (t1 - t0) * 365.25; /* convert to days */
+          double t0, t1, dt;
           size_t nbreak, ncontrol;
 
           if (!(mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL))
             continue;
+
+          magdata_t(&t0, &t1, mptr);
+          dt = (t1 - t0) / 86400000.0; /* convert to days */
 
           if (params->fluxcal_period <= 0.0)
             nbreak = 2;
@@ -1398,6 +1399,9 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% lambda_1: %.4f\n", params->lambda_1);
   fprintf(fp, "%% lambda_2: %.4f\n", params->lambda_2);
   fprintf(fp, "%% lambda_3: %.4f\n", params->lambda_3);
+  fprintf(fp, "%% lambda_s: %.4f\n", params->lambda_s);
+  fprintf(fp, "%% lambda_o: %.4f\n", params->lambda_o);
+  fprintf(fp, "%% lambda_u: %.4f\n", params->lambda_u);
 
   fprintf(fp, "%% %3s %5s %20s %20s %20s\n",
           "n",
@@ -1513,6 +1517,9 @@ mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w
     fprintf(fp, "%% lambda_1: %.2f\n", params->lambda_1);
     fprintf(fp, "%% lambda_2: %.2f\n", params->lambda_2);
     fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
+    fprintf(fp, "%% lambda_s: %.2f\n", params->lambda_s);
+    fprintf(fp, "%% lambda_o: %.2f\n", params->lambda_o);
+    fprintf(fp, "%% lambda_u: %.2f\n", params->lambda_u);
 
     fwrite(buf, fsize, 1, fp);
 

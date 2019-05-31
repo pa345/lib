@@ -626,7 +626,6 @@ main(int argc, char *argv[])
   struct timeval tv0, tv1;
   preprocess_parameters params;
   size_t magdata_flags = 0;           /* MAGDATA_GLOBFLG_xxx */
-  double magdata_global_weight = 1.0; /* global weight factor for this data source */
   magdata * mdata;
   char * output_file = NULL;
 
@@ -710,7 +709,6 @@ main(int argc, char *argv[])
     }
 
   mdata = copy_data(magdata_flags, &data_out);
-  magdata_set_weight(magdata_global_weight, mdata);
 
   if (output_file)
     {
@@ -718,8 +716,6 @@ main(int argc, char *argv[])
       magdata_write(output_file, mdata);
       fprintf(stderr, "done (%zu data written)\n", mdata->n);
     }
-
-  fprintf(stderr, "main: global weight factor = %g\n", magdata_global_weight);
 
   magdata_free(mdata);
 

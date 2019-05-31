@@ -1,9 +1,15 @@
-#define OLD_FDF     0
+/* least squares solver to use,
+ *
+ * FDF_SOLVER = 0   GSL multifit solver / LM
+ * FDF_SOLVER = 1   GSL multilarge solver / LM
+ * FDF_SOLVER = 2   GSL multilarge solver / Gauss-Newton
+ */
+#define FDF_SOLVER     1
 
 #include <gsl/gsl_integration.h>
+#include <spatwt/spatwt.h>
 
 static int mfield_init_nonlinear(mfield_workspace *w);
-static int mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w);
 static int mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector *u,
                            void *params, gsl_vector * v, gsl_matrix * JTJ);
 static inline int mfield_jacobian_JTu(const double t, const size_t flags, const double weight,
@@ -49,11 +55,11 @@ static void mfield_nonlinear_callback2(const size_t iter, void *params,
 static int mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace * w);
 static double huber(const double x);
 static double bisquare(const double x);
-static int mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs, mfield_workspace * w);
 static int gsl_linalg_symband_unpack(const gsl_matrix * AB, gsl_matrix * A);
 
 #include "mfield_multifit.c"
 #include "mfield_multilarge.c"
+#include "mfield_gn.c"
 
 
 /*
@@ -76,6 +82,8 @@ Notes:
 4) static coefficients have units of nT
 5) SV coefficients have units of nT/dimensionless_time
 6) SA coefficients have units of nT/dimensionless_time^2
+
+Return: GSL_SUCCESS if converged, GSL_CONTINUE if not
 */
 
 int
@@ -143,11 +151,7 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
         }
     }
 
-#if !OLD_FDF
-
-  s = mfield_calc_nonlinear_multilarge(c, w);
-
-#else
+#if FDF_SOLVER == 0 /* GSL multifit */
 
   fprintf(stderr, "mfield_calc_nonlinear: initializing multifit...");
   gettimeofday(&tv0, NULL);
@@ -188,9 +192,17 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
   /* store final coefficients in physical units */
   {
     gsl_vector *x_final = gsl_multifit_nlinear_position(w->multifit_nlinear_p);
-
     gsl_vector_memcpy(w->c, x_final);
   }
+
+#elif FDF_SOLVER == 1 /* GSL multilarge */
+
+  s = mfield_calc_nonlinear_multilarge(c, w);
+
+#elif FDF_SOLVER == 2 /* Gauss-Newton */
+
+  s = mfield_calc_nonlinear_gn(c, w);
+
 #endif
 
   gsl_vector_memcpy(c, w->c);
@@ -198,187 +210,6 @@ mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w)
   printv_octave(c, "cfinal");
 
   w->niter++;
-
-  return s;
-} /* mfield_calc_nonlinear() */
-
-/*
-mfield_calc_nonlinear_multilarge()
-  Calculate a solution to current inverse problem using multilarge
-
-Inputs: c - coefficient vector
-        w - workspace
-
-Notes:
-1) w->wts_final must be initialized prior to calling this function
-2) On output, w->c contains the solution coefficients in dimensionless units
-*/
-
-static int
-mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
-{
-  int s = 0;
-  const mfield_parameters *params = &(w->params);
-  const size_t max_iter = 50;     /* maximum iterations */
-  const double xtol = 1.0e-6;
-  const double gtol = 1.0e-6;
-  const double ftol = 1.0e-6;
-  int info;
-  const size_t p = w->p;          /* number of coefficients */
-  size_t n;                       /* number of residuals */
-  gsl_multilarge_nlinear_fdf fdf;
-  struct timeval tv0, tv1;
-  double res0;                    /* initial residual */
-  gsl_vector *f;
-
-  n = w->nres;
-  if (params->regularize == 1 && !params->synth_data)
-    n += p;
-
-  fdf.f = mfield_calc_Wf;
-  fdf.df = mfield_calc_df3;
-  fdf.fvv = mfield_calc_Wfvv;
-  fdf.n = n;
-  fdf.p = p;
-  fdf.params = w;
-
-  fprintf(stderr, "mfield_calc_nonlinear: precomputing vector J_int^T W J_int...");
-  gettimeofday(&tv0, NULL);
-  mfield_nonlinear_precompute(w->sqrt_wts_final, w);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  if (w->lls_solution == 1)
-    {
-      /*
-       * There are no scalar residuals or Euler angles in the inverse problem,
-       * so it is linear and we can use a LLS method
-       */
-
-      gsl_matrix *JTJ = w->JTJ_vec;
-      gsl_vector *JTf = w->nlinear_workspace_p->g;
-      size_t N = JTJ->size1;
-      gsl_vector *work = gsl_vector_alloc(3 * N);
-      double rcond;
-
-      /* compute J^T f where f is the right hand side (residual vector when c = 0) */
-      fprintf(stderr, "mfield_calc_nonlinear: computing RHS of linear system...");
-      gsl_vector_set_zero(w->c);
-      mfield_calc_Wf(w->c, w, w->wfvec);
-      mfield_calc_df3(CblasTrans, w->c, w->wfvec, w, JTf, NULL);
-      fprintf(stderr, "done\n");
-
-      /* regularize JTJ matrix */
-      gsl_spmatrix_add_to_dense(JTJ, w->Lambda);
-
-      fprintf(stderr, "mfield_calc_nonlinear: solving linear normal equations system...");
-      gettimeofday(&tv0, NULL);
-
-      lapack_cholesky_solve(JTJ, JTf, w->c, &rcond, w->choleskyL);
-
-      gsl_vector_scale(w->c, -1.0);
-
-      gettimeofday(&tv1, NULL);
-      fprintf(stderr, "done (%g seconds, cond(A) = %g)\n", time_diff(tv0, tv1), 1.0 / rcond);
-
-#if 0
-      {
-        const char *error_file = "error.txt";
-        gsl_vector_const_view d = gsl_matrix_const_diagonal(L);
-        FILE *fp;
-        size_t n;
-
-        /* compute (J^T J)^{-1} from Cholesky factor */
-        fprintf(stderr, "mfield_calc_nonlinear: computing (J^T J)^{-1}...");
-        gettimeofday(&tv0, NULL);
-
-        lapack_cholesky_invert(L);
-
-        gettimeofday(&tv1, NULL);
-        fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-        fprintf(stderr, "mfield_calc_nonlinear: printing parameter uncertainties to %s...", error_file);
-
-        fp = fopen(error_file, "w");
-
-        n = 1;
-        fprintf(fp, "# Field %zu: spherical harmonic degree n\n", n++);
-        fprintf(fp, "# Field %zu: spherical harmonic order m\n", n++);
-        fprintf(fp, "# Field %zu: uncertainty in g(n,m) (dimensionless)\n", n++);
-        fprintf(fp, "# Field %zu: g(n,m) (nT)\n", n++);
-
-        for (n = 1; n <= w->nmax_max; ++n)
-          {
-            int m, ni = (int) n;
-
-            for (m = -ni; m <= ni; ++m)
-              {
-                size_t cidx = mfield_coeff_nmidx(n, m);
-                double gnm = gsl_vector_get(w->c, cidx);
-                double err_gnm = gsl_vector_get(&d.vector, cidx);
-
-                fprintf(fp, "%5d %5zu %20.4e %20.4e\n", m, n, err_gnm, gnm);
-              }
-
-            fprintf(fp, "\n");
-          }
-
-        fclose(fp);
-
-        fprintf(stderr, "done\n");
-      }
-#endif
-
-      gsl_vector_free(work);
-    }
-  else
-    {
-      fprintf(stderr, "mfield_calc_nonlinear: initializing multilarge...");
-      gettimeofday(&tv0, NULL);
-      gsl_multilarge_nlinear_init(c, &fdf, w->nlinear_workspace_p);
-      gettimeofday(&tv1, NULL);
-      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-      /* compute initial residual */
-      f = gsl_multilarge_nlinear_residual(w->nlinear_workspace_p);
-      res0 = gsl_blas_dnrm2(f);
-
-      fprintf(stderr, "mfield_calc_nonlinear: computing nonlinear least squares solution...");
-      gettimeofday(&tv0, NULL);
-      s = gsl_multilarge_nlinear_driver(max_iter, xtol, gtol, ftol,
-                                        mfield_nonlinear_callback2, (void *) w,
-                                        &info, w->nlinear_workspace_p);
-      gettimeofday(&tv1, NULL);
-      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-      /* store final coefficients in dimensionless units in w->c */
-      {
-        gsl_vector *x_final = gsl_multilarge_nlinear_position(w->nlinear_workspace_p);
-        gsl_vector_memcpy(w->c, x_final);
-      }
-
-      if (s == GSL_SUCCESS)
-        {
-          fprintf(stderr, "mfield_calc_nonlinear: NITER  = %zu\n",
-                  gsl_multilarge_nlinear_niter(w->nlinear_workspace_p));
-          fprintf(stderr, "mfield_calc_nonlinear: NFEV   = %zu\n", fdf.nevalf);
-          fprintf(stderr, "mfield_calc_nonlinear: NJUEV  = %zu\n", fdf.nevaldfu);
-          fprintf(stderr, "mfield_calc_nonlinear: NJTJEV = %zu\n", fdf.nevaldf2);
-          fprintf(stderr, "mfield_calc_nonlinear: NAEV   = %zu\n", fdf.nevalfvv);
-          fprintf(stderr, "mfield_calc_nonlinear: reason for stopping: %d\n", info);
-          fprintf(stderr, "mfield_calc_nonlinear: initial |f(x)|: %.12e\n", res0);
-          fprintf(stderr, "mfield_calc_nonlinear: final   |f(x)|: %.12e\n",
-                  gsl_blas_dnrm2(f));
-        }
-      else
-        {
-          fprintf(stderr, "mfield_calc_nonlinear: failed: %s\n",
-                  gsl_strerror(s));
-
-          /* LM solver stalled or is converging slowly, switch to dogleg for next iteration */
-          mfield_nonlinear_alloc_multilarge(gsl_multilarge_nlinear_trs_ddogleg, w);
-        }
-    } /* w->lls_solution == 0 */
 
   return s;
 }
@@ -401,9 +232,11 @@ mfield_calc_JTJ_multilarge(const gsl_vector *c, gsl_matrix * JTJ, mfield_workspa
 gsl_vector *
 mfield_residual(const gsl_vector *c, mfield_workspace *w)
 {
-#if OLD_FDF
+#if FDF_SOLVER == 0
   gsl_vector *f = gsl_multifit_nlinear_residual(w->multifit_nlinear_p);
-#else
+#elif FDF_SOLVER == 1
+  gsl_vector *f = gsl_multilarge_nlinear_residual(w->nlinear_workspace_p);
+#elif FDF_SOLVER == 2
   gsl_vector *f = gsl_multilarge_nlinear_residual(w->nlinear_workspace_p);
 #endif
 
@@ -560,7 +393,7 @@ mfield_init_nonlinear(mfield_workspace *w)
   fprintf(stderr, "mfield_init_nonlinear: %zu total residuals (including regularization terms)\n", w->nres_tot);
   fprintf(stderr, "mfield_init_nonlinear: %zu total parameters\n", p);
 
-#if OLD_FDF
+#if FDF_SOLVER == 0 /* GSL multifit */
 
   w->old_fdf = 1;
 
@@ -577,11 +410,14 @@ mfield_init_nonlinear(mfield_workspace *w)
     w->multifit_nlinear_p = gsl_multifit_nlinear_alloc(T, &fdf_params, w->nres_tot, p);
   }
 
-#else
+#elif FDF_SOLVER == 1 /* GSL multilarge */
 
   /* allocate fit workspace - start with Levenberg-Marquardt solver */
-  /*mfield_nonlinear_alloc_multilarge(gsl_multilarge_nlinear_trs_lm, w);*/
   mfield_nonlinear_alloc_multilarge(gsl_multilarge_nlinear_trs_lm, w);
+
+#elif FDF_SOLVER == 2 /* Gauss-Newton */
+
+  mfield_nonlinear_alloc_gn(w);
 
 #endif
 
@@ -618,6 +454,13 @@ mfield_init_nonlinear(mfield_workspace *w)
     for (i = 0; i < w->nsat; ++i)
       {
         magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+        double global_weight = 1.0; /* global weight for this data source */
+
+        /* down-weight DMSP data relative to CHAMP/Swarm; this should be a cfg file parameter */
+        if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
+          global_weight = 0.01;
+        else if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
+          global_weight = 2.0;
 
         for (j = 0; j < mptr->n; ++j)
           {
@@ -636,7 +479,7 @@ mfield_init_nonlinear(mfield_workspace *w)
               track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
 
             /* include global weight factor for this satellite / observatory */
-            wt *= mptr->global_weight;
+            wt *= global_weight;
 
             if (MAGDATA_ExistX(mptr->flags[j]))
               gsl_vector_set(w->wts_spatial, idx++, params->weight_X * wt);
@@ -2790,7 +2633,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
-              double t0 = epoch2year(w->data_workspace_p->t0[i]);
+              double t0 = w->data_workspace_p->t0[i];
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
@@ -2860,7 +2703,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
   size_t i;
 
   /* print out state every 5 iterations */
-  if (iter % 5 != 0 && iter != 1)
+  if (iter % 1 != 0 && iter != 1)
     return;
 
   fprintf(stderr, "iteration %zu (method: %s/%s):\n",
@@ -2949,7 +2792,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
-              double t0 = epoch2year(w->data_workspace_p->t0[i]);
+              double t0 = w->data_workspace_p->t0[i];
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
@@ -2997,27 +2840,6 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
 
   gsl_multilarge_nlinear_rcond(&rcond, multilarge_p);
   fprintf(stderr, "\t cond(J(x)):  %12g\n", 1.0 / rcond);
-}
-
-/* allocate w->nlinear_workspace_p with given TRS method; this function makes
- * it easy to switch TRS methods in the middle of an iteration */
-static int
-mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs,
-                                  mfield_workspace * w)
-{
-  const gsl_multilarge_nlinear_type *T = gsl_multilarge_nlinear_trust;
-  gsl_multilarge_nlinear_parameters fdf_params =
-    gsl_multilarge_nlinear_default_parameters();
-
-  if (w->nlinear_workspace_p)
-    gsl_multilarge_nlinear_free(w->nlinear_workspace_p);
-
-  fdf_params.trs = trs;
-  fdf_params.scale = gsl_multilarge_nlinear_scale_levenberg;
-
-  w->nlinear_workspace_p = gsl_multilarge_nlinear_alloc(T, &fdf_params, w->nres_tot, w->p);
-
-  return 0;
 }
 
 static int

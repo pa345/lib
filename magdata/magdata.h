@@ -42,6 +42,9 @@
 #define MAGDATA_GLOBFLG_SATELLITE       (1 << 4)  /* dataset is from satellite */
 #define MAGDATA_GLOBFLG_FLUXCAL         (1 << 5)  /* fit fluxgate calibration parameters to this dataset */
 #define MAGDATA_GLOBFLG_EEJ_MAGEQ       (1 << 6)  /* dataset is from EEJ measurements of magnetic equator position */
+#define MAGDATA_GLOBFLG_DMSP            (1 << 7)  /* dataset is from a DMSP satellite */
+#define MAGDATA_GLOBFLG_CHAMP           (1 << 8)  /* dataset is from CHAMP satellite */
+#define MAGDATA_GLOBFLG_SWARM           (1 << 9)  /* dataset is from a Swarm satellite */
 
 /* k_b * mu_0 in units of: nT^2 cm^3 / K */
 #define MAGDATA_KB_MU0                (1.73497445090703e-05)
@@ -209,7 +212,6 @@ typedef struct
 
   size_t euler_flags;   /* EULER_FLG_xxx flags for Euler angle convention */
   size_t global_flags;  /* MAGDATA_GLOBFLG_xxx flags applying to all data */
-  double global_weight; /* weight factor applying to all data */
 
   track_weight_workspace *weight_workspace_p;
 } magdata;

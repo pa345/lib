@@ -135,7 +135,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                   gsl_vector_const_view v2 = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
-                  gsl_bspline2_vector_eval(tyr, &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+                  gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
                   mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
                 }
 
@@ -666,7 +666,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                   gsl_vector_const_view v2 = gsl_vector_const_subvector(&y.vector, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
-                  gsl_bspline2_vector_eval(tyr, &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+                  gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
                   /* compute jac_fluxcal := d/dm B_vfm(m) */
                   mfield_fluxcal_jac(&cal_params.vector, B_vfm, &jac_fluxcal.matrix);
@@ -678,7 +678,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                   mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
 
                   /* evaluate non-zero basis splines for time t */
-                  gsl_bspline2_eval_basis_nonzero(tyr, N_fluxcal, &istart_fluxcal, fluxcal_spline_p);
+                  gsl_bspline2_eval_basis_nonzero(mptr->t[j], N_fluxcal, &istart_fluxcal, fluxcal_spline_p);
                 }
 
               /* compute alpha derivative of: R_q R_3 B_vfm */

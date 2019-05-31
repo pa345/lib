@@ -517,6 +517,9 @@ print_help(char *argv[])
   fprintf(stderr, "\t --lambda_1 | -K lambda_1        - 1st time derivative of main field damping parameter\n");
   fprintf(stderr, "\t --lambda_2 | -L lambda_2        - 2nd time derivative of main field damping parameter\n");
   fprintf(stderr, "\t --lambda_3 | -M lambda_3        - 3rd time derivative of main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_s | -N lambda_s        - scale factor damping parameter\n");
+  fprintf(stderr, "\t --lambda_o | -O lambda_o        - offset factor damping parameter\n");
+  fprintf(stderr, "\t --lambda_u | -P lambda_u        - non-orthogonality factor damping parameter\n");
 } /* print_help() */
 
 int
@@ -549,6 +552,9 @@ main(int argc, char *argv[])
   double lambda_1 = -1.0;     /* 1st time derivative of MF damping parameter */
   double lambda_2 = -1.0;     /* 2nd time derivative of MF damping parameter */
   double lambda_3 = -1.0;     /* 3rd time derivative of MF damping parameter */
+  double lambda_s = -1.0;     /* scale factor damping parameter */
+  double lambda_o = -1.0;     /* offset factor damping parameter */
+  double lambda_u = -1.0;     /* non-orthogonality factor damping parameter */
   double sigma = -1.0;        /* sigma for artificial noise */
   struct timeval tv0, tv1;
   char buf[MAX_BUFFER];
@@ -578,11 +584,14 @@ main(int argc, char *argv[])
           { "lambda_1", required_argument, NULL, 'K' },
           { "lambda_2", required_argument, NULL, 'L' },
           { "lambda_3", required_argument, NULL, 'M' },
+          { "lambda_s", required_argument, NULL, 'N' },
+          { "lambda_o", required_argument, NULL, 'O' },
+          { "lambda_u", required_argument, NULL, 'P' },
           { "sigma", required_argument, NULL, 'S' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:n:o:p:rS:", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:n:o:p:rS:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -602,6 +611,18 @@ main(int argc, char *argv[])
 
           case 'M':
             lambda_3 = atof(optarg);
+            break;
+
+          case 'N':
+            lambda_s = atof(optarg);
+            break;
+
+          case 'O':
+            lambda_o = atof(optarg);
+            break;
+
+          case 'P':
+            lambda_u = atof(optarg);
             break;
 
           case 'b':
@@ -688,6 +709,12 @@ main(int argc, char *argv[])
     mfield_params.lambda_2 = lambda_2;
   if (lambda_3 >= 0.0)
     mfield_params.lambda_3 = lambda_3;
+  if (lambda_s >= 0.0)
+    mfield_params.lambda_s = lambda_s;
+  if (lambda_o >= 0.0)
+    mfield_params.lambda_o = lambda_o;
+  if (lambda_u >= 0.0)
+    mfield_params.lambda_u = lambda_u;
 
   status = check_parameters(&mfield_params, &data_params);
   if (status)
@@ -882,11 +909,17 @@ main(int argc, char *argv[])
 
   gettimeofday(&tv0, NULL);
 
+  status = GSL_CONTINUE;
   while (iter++ < mfield_params.max_iter)
     {
       fprintf(stderr, "main: ROBUST ITERATION %zu/%zu\n", iter, mfield_params.max_iter);
 
-      mfield_calc_nonlinear(coeffs, mfield_workspace_p);
+      status = mfield_calc_nonlinear(coeffs, mfield_workspace_p);
+
+      /*XXX*/
+      fprintf(stderr, "main: writing J^T W J matrix...");
+      printsym_octave(mfield_workspace_p->nlinear_workspace_p->JTJ, "JTJ");
+      fprintf(stderr, "done\n");
 
       /* output coefficients for this iteration */
       sprintf(buf, "coef.txt.iter%zu", iter);
@@ -932,6 +965,10 @@ main(int argc, char *argv[])
   /* calculate covariance matrix */
   if (mfield_workspace_p->old_fdf == 0)
     {
+      fprintf(stderr, "main: writing J^T W J matrix...");
+      printsym_octave(mfield_workspace_p->nlinear_workspace_p->JTJ, "JTJ");
+      fprintf(stderr, "done\n");
+
       fprintf(stderr, "main: calculating covariance matrix...");
       gettimeofday(&tv0, NULL);
       status = mfield_covariance(mfield_workspace_p->covar, mfield_workspace_p);
@@ -1092,8 +1129,8 @@ main(int argc, char *argv[])
 
             if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
               {
-                double t0 = epoch2year(mfield_workspace_p->data_workspace_p->t0[n]);
-                double t1 = epoch2year(mfield_workspace_p->data_workspace_p->t1[n]);
+                double t0 = mfield_workspace_p->data_workspace_p->t0[n];
+                double t1 = mfield_workspace_p->data_workspace_p->t1[n];
                 gsl_bspline2_workspace *fluxcal_spline_p = mfield_workspace_p->fluxcal_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
                 size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
                 size_t fluxcal_idx = mfield_workspace_p->fluxcal_offset + mfield_workspace_p->offset_fluxcal[n];

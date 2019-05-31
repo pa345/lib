@@ -30,19 +30,19 @@ set ytics 25
 
 set multiplot layout nrow,ncol
 
-file = '../output/res'.satnum.'_X_iter'.iternum.'.dat'
+file = '../output_C/res'.satnum.'_X_iter'.iternum.'.dat'
 set title "X residuals"
 plot file us 5:13 every nskip w p
 
 load 'incrow.cfg'
 
-file = '../output/res'.satnum.'_Y_iter'.iternum.'.dat'
+file = '../output_C/res'.satnum.'_Y_iter'.iternum.'.dat'
 set title "Y residuals"
 plot file us 5:13 every nskip w p
 
 load 'incrow.cfg'
 
-file = '../output/res'.satnum.'_Z_iter'.iternum.'.dat'
+file = '../output_C/res'.satnum.'_Z_iter'.iternum.'.dat'
 set title "Z residuals"
 plot file us 5:13 every nskip w p
 
@@ -50,7 +50,7 @@ load 'incrow.cfg'
 
 set xlabel "QD latitude (degrees)"
 
-file = '../output/res'.satnum.'_F_iter'.iternum.'.dat'
+file = '../output_C/res'.satnum.'_F_iter'.iternum.'.dat'
 set title "F residuals"
 plot file us 5:12 every nskip w p
 

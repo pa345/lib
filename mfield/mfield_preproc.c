@@ -1174,7 +1174,6 @@ main(int argc, char *argv[])
   size_t magdata_flags = 0;       /* MAGDATA_GLOBFLG_xxx */
   size_t magdata_flags2 = 0;
   size_t magdata_euler_flags = 0; /* EULER_FLG_xxx */
-  double magdata_global_weight = 1.0; /* global weighting factor for this data source */
   double polar_gap = -1.0;
   int flag_vec_rms = 1;
 
@@ -1237,7 +1236,7 @@ main(int argc, char *argv[])
           /* Swarm ASM-V */
           case 'a':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER;
+            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_SWARM;
             magdata_euler_flags = EULER_FLG_ZYZ | EULER_FLG_RINV;
             flag_vec_rms = 0; /* no NEC data for rms flagging */
             break;
@@ -1245,16 +1244,15 @@ main(int argc, char *argv[])
           /* Swarm official */
           case 's':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER;
+            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_SWARM;
             magdata_euler_flags = EULER_FLG_ZYX;
             break;
 
           /* DMSP data in Swarm format */
           case 'D':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL;
+            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_DMSP;
             magdata_euler_flags = EULER_FLG_ZYX;
-            /*magdata_global_weight = 0.1;*/
             break;
 
           /* For E/W gradients */
@@ -1264,6 +1262,7 @@ main(int argc, char *argv[])
             break;
 
           case 'c':
+            magdata_flags = MAGDATA_GLOBFLG_CHAMP;
             data = read_champ(optarg);
             break;
 
@@ -1440,9 +1439,6 @@ main(int argc, char *argv[])
 
   /* set Euler convention flags */
   magdata_set_euler(magdata_euler_flags, mdata);
-  magdata_set_weight(magdata_global_weight, mdata);
-
-  fprintf(stderr, "main: global weight factor = %g\n", magdata_global_weight);
 
 #if 0
   fprintf(stderr, "main: writing data to %s...", data_file);
