@@ -179,8 +179,8 @@ and :math:`g_n^m(t), h_n^m(t)` are parameterized with B-splines:
 
 .. math::
 
-   g_n^m(t) &= \sum_k g_{n,k}^m N_k(t) \\
-   h_n^m(t) &= \sum_k h_{n,k}^m N_k(t)
+   g_n^m(t) &= \sum_i g_{n,i}^m N_{i,k}(t) \\
+   h_n^m(t) &= \sum_i h_{n,i}^m N_{i,k}(t)
 
 Jacobian
 ========
