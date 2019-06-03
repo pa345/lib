@@ -8,10 +8,10 @@ plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 #outfile="F17.mp4"
 #title="DMSP F-17"
 
-#coef_file="mfield_coeffs.shc"
-coefdir="maps_F"
-coef_file="./Model_All_F.shc"
-title="Model B"
+coef_file="mfield_coeffs.shc"
+coefdir="maps_A"
+#coef_file="./Model_All_F.shc"
+title="Model A"
 
 plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
 

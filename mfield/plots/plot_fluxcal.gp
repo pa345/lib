@@ -15,7 +15,7 @@ load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
 satnum = '3'
-iternum = '5'
+iternum = '15'
 outfile = 'fluxcal.'.satnum.'_iter'.iternum.'.png'
 set out outfile
 

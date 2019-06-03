@@ -1227,6 +1227,9 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
               gsl_vector_view Jv = gsl_matrix_subrow(w->omp_J[thread_id], w->omp_rowidx[thread_id]++, 0, w->p_int);
               double X, Y, Z, F;
 
+              /*XXX*/
+              gsl_vector_set_zero(&Jv.vector);
+
               /* compute internal field model */
               X = mfield_nonlinear_model_int(N_gauss, istart_gauss, &vx.vector, x, w);
               Y = mfield_nonlinear_model_int(N_gauss, istart_gauss, &vy.vector, x, w);

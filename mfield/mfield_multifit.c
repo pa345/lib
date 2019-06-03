@@ -1212,6 +1212,26 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 #if 0
   print_octave(J, "J");
   exit(1);
+#elif 1
+  {
+    static int niter = 0;
+
+    if (niter++ == 0)
+      {
+        const size_t p = J->size2;
+        gsl_matrix * JTJ = gsl_matrix_alloc(p, p);
+        gsl_blas_dsyrk(CblasLower, CblasTrans, 1.0, J, 0.0, JTJ);
+
+        printv_octave(x, "xa");
+        printsym_octave(JTJ, "JTJa");
+
+        if (w->p_sparse > 0)
+          printsp_octave(w->J2, "J2a");
+
+        gsl_matrix_free(JTJ);
+        exit(1);
+      }
+  }
 #endif
 
   return s;

@@ -2703,7 +2703,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
   size_t i;
 
   /* print out state every 5 iterations */
-  if (iter % 1 != 0 && iter != 1)
+  if (iter % 5 != 0 && iter != 1)
     return;
 
   fprintf(stderr, "iteration %zu (method: %s/%s):\n",
