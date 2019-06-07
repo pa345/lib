@@ -916,11 +916,6 @@ main(int argc, char *argv[])
 
       status = mfield_calc_nonlinear(coeffs, mfield_workspace_p);
 
-      /*XXX*/
-      fprintf(stderr, "main: writing J^T W J matrix...");
-      printsym_octave(mfield_workspace_p->nlinear_workspace_p->JTJ, "JTJ");
-      fprintf(stderr, "done\n");
-
       /* output coefficients for this iteration */
       sprintf(buf, "coef.txt.iter%zu", iter);
       fprintf(stderr, "main: writing coefficient file %s...", buf);
@@ -965,17 +960,11 @@ main(int argc, char *argv[])
   /* calculate covariance matrix */
   if (mfield_workspace_p->old_fdf == 0)
     {
-      fprintf(stderr, "main: writing J^T W J matrix...");
-      printsym_octave(mfield_workspace_p->nlinear_workspace_p->JTJ, "JTJ");
-      fprintf(stderr, "done\n");
-
       fprintf(stderr, "main: calculating covariance matrix...");
       gettimeofday(&tv0, NULL);
       status = mfield_covariance(mfield_workspace_p->covar, mfield_workspace_p);
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (status = %d, %g seconds)\n", status, time_diff(tv0, tv1));
-
-      printsym_octave(mfield_workspace_p->covar, "covar");
 
       /* calculate errors in coefficients */
       fprintf(stderr, "main: printing coefficient uncertainties to %s...", error_file);
