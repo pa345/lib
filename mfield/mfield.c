@@ -51,8 +51,6 @@
 #include <spblas2/gsl_spblas2.h>
 #include <spblas2/gsl_spcblas.h>
 
-#include "mfield_green.h"
-
 #include <common/common.h>
 #include <common/oct.h>
 #include <track/track_weight.h>
@@ -71,7 +69,6 @@ static int mfield_compare_int(const void *a, const void *b);
 static int mfield_debug(const char *format, ...);
 
 #include "mfield_nonlinear.c"
-#include "lapack_inverse.c"
 
 /*
 mfield_alloc()
@@ -449,9 +446,6 @@ mfield_alloc(const mfield_parameters *params)
   w->dY = malloc(w->nnm_tot * sizeof(double));
   w->dZ = malloc(w->nnm_tot * sizeof(double));
 
-  w->green_workspace_p = mfield_green_alloc(w->nmax, w->R);
-  w->green_workspace_p2 = green_alloc(w->nmax, w->nmax, w->R);
-
   w->nobs_cnt = 0;
 
   /* these are computed later in mfield_init() */
@@ -598,12 +592,6 @@ mfield_free(mfield_workspace *w)
 
   if (w->robust_workspace_p)
     gsl_multifit_robust_free(w->robust_workspace_p);
-
-  if (w->green_workspace_p)
-    mfield_green_free(w->green_workspace_p);
-
-  if (w->green_workspace_p2)
-    green_free(w->green_workspace_p2);
 
   if (w->weight_workspace_p)
     track_weight_free(w->weight_workspace_p);

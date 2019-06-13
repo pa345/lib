@@ -6,7 +6,18 @@ AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/magdata -I$(top_builddir
 
 common_libs = -L/usr/lib64 -lsatdata -lindices ~/usr/lib/libgsl.a /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf
 
-bin_PROGRAMS = print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH print_magfield print_fillion print_fillion2 print_gary print_var3b
+bin_PROGRAMS = invert invert_preproc invert_write_tmode print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH print_magfield print_fillion print_fillion2 print_gary print_var3b
+
+invert_SOURCES = invert_main.c invert.c invert_data.c invert_tmode.c
+invert_CFLAGS = -fopenmp
+invert_LDFLAGS = -fopenmp
+invert_LDADD = libpca3d.la ${top_builddir}/magdata/libmagdata.la ${top_builddir}/green/libgreen.la -lobsdata -ltrack -lmagcoord -lapex -lconfig -lcommon -lmsynth -lbspline2 -lpomme -lm -lgslspblas2 ~/usr/lib/libgsl.a -lspatwt ${common_libs}
+
+invert_preproc_SOURCES = invert_preproc.c
+invert_preproc_LDADD = libpca3d.la ${top_builddir}/magdata/libmagdata.la -lobsdata -ltrack -lmagcoord -lapex -lconfig -lcommon -lmsynth -lbspline2 -lpomme -lm -lgsl -lnetcdf ${common_libs}
+
+invert_write_tmode_SOURCES = invert_write_tmode.c invert_tmode.c
+invert_write_tmode_LDADD = -lcommon -lm -lgsl -lnetcdf ${common_libs}
 
 print_SOURCES = print.c
 print_LDADD = libpca3d.la -lcommon -lm -lgsl -lnetcdf ${common_libs}

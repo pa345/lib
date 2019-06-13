@@ -116,6 +116,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
 
       gsl_matrix *JTJ = w->JTJ_vec;
       gsl_vector *JTf = w->nlinear_workspace_p->g;
+      gsl_vector *work = gsl_vector_alloc(3 * JTJ->size1);
       double rcond;
 
       /* compute J^T f where f is the right hand side (residual vector when c = 0) */
@@ -131,60 +132,21 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
       fprintf(stderr, "mfield_calc_nonlinear: solving linear normal equations system...");
       gettimeofday(&tv0, NULL);
 
+#if 0
       lapack_cholesky_solve(JTJ, JTf, w->c, &rcond, w->choleskyL);
+#else
+      gsl_linalg_cholesky_decomp1(JTJ);
+      gsl_linalg_cholesky_solve(JTJ, JTf, w->c);
+      gsl_linalg_cholesky_rcond(JTJ, &rcond, work);
+      gsl_matrix_tricpy('L', 1, w->choleskyL, JTJ);
+#endif
 
       gsl_vector_scale(w->c, -1.0);
 
       gettimeofday(&tv1, NULL);
-      fprintf(stderr, "done (%g seconds, cond(A) = %g)\n", time_diff(tv0, tv1), 1.0 / rcond);
+      fprintf(stderr, "done (%g seconds, cond(JTJ) = %g)\n", time_diff(tv0, tv1), 1.0 / rcond);
 
-#if 0
-      {
-        const char *error_file = "error.txt";
-        gsl_vector_const_view d = gsl_matrix_const_diagonal(L);
-        FILE *fp;
-        size_t n;
-
-        /* compute (J^T J)^{-1} from Cholesky factor */
-        fprintf(stderr, "mfield_calc_nonlinear: computing (J^T J)^{-1}...");
-        gettimeofday(&tv0, NULL);
-
-        lapack_cholesky_invert(L);
-
-        gettimeofday(&tv1, NULL);
-        fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-        fprintf(stderr, "mfield_calc_nonlinear: printing parameter uncertainties to %s...", error_file);
-
-        fp = fopen(error_file, "w");
-
-        n = 1;
-        fprintf(fp, "# Field %zu: spherical harmonic degree n\n", n++);
-        fprintf(fp, "# Field %zu: spherical harmonic order m\n", n++);
-        fprintf(fp, "# Field %zu: uncertainty in g(n,m) (dimensionless)\n", n++);
-        fprintf(fp, "# Field %zu: g(n,m) (nT)\n", n++);
-
-        for (n = 1; n <= w->nmax_max; ++n)
-          {
-            int m, ni = (int) n;
-
-            for (m = -ni; m <= ni; ++m)
-              {
-                size_t cidx = mfield_coeff_nmidx(n, m);
-                double gnm = gsl_vector_get(w->c, cidx);
-                double err_gnm = gsl_vector_get(&d.vector, cidx);
-
-                fprintf(fp, "%5d %5zu %20.4e %20.4e\n", m, n, err_gnm, gnm);
-              }
-
-            fprintf(fp, "\n");
-          }
-
-        fclose(fp);
-
-        fprintf(stderr, "done\n");
-      }
-#endif
+      gsl_vector_free(work);
     }
   else
     {

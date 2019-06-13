@@ -33,7 +33,7 @@
 
 #include "tiegcm3d.h"
 
-#define MAX_N            15000
+#define MAX_N            25000
 
 typedef struct
 {
@@ -62,14 +62,14 @@ read_path(const char *filename, path_data *data)
   while (fgets(buffer, sizeof(buffer), fp) != NULL)
     {
       int c;
-      double fday, r, colat, lon;
+      double t, r, colat, lon;
 
-      c = sscanf(buffer, "%lf %lf %lf %lf", &fday, &r, &colat, &lon);
+      c = sscanf(buffer, "%lf %lf %lf %lf", &t, &r, &colat, &lon);
       if (c != 4)
         continue;
 
-      data->t[n] = fday2timet(fday);
-      data->fday[n] = fday;
+      data->t[n] = (time_t) round(t);
+      data->fday[n] = time2fday(data->t[n]);
       data->r[n] = r;
       data->lat[n] = 90.0 - colat;
       data->lon[n] = lon;
@@ -121,7 +121,7 @@ main(int argc, char *argv[])
   time_t t;
   struct tm *tmp;
   size_t tidx = 0;
-  magfield_workspace *magfield_p, *magfield_p2;
+  magfield_workspace *magfield_p;
   magfield_params params;
   size_t i, k;
   FILE *fp;
@@ -181,21 +181,16 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "\t allocating magfield workspace...");
   magfield_p = magfield_alloc(&params);
-  magfield_p2 = magfield_alloc(&params);
   fprintf(stderr, "done\n");
 
   magfield_set_r(data->r, magfield_p);
-  magfield_set_r(data->r, magfield_p2);
   for (i = 0; i < data->nr; ++i)
-    {
-      magfield_p->r[i] *= 1.0e3; /* convert to m */
-      magfield_p2->r[i] *= 1.0e3; /* convert to m */
-    }
+    magfield_p->r[i] *= 1.0e3; /* convert to m */
 
   fp = fopen(outfileJ, "w");
 
   i = 1;
-  fprintf(fp, "# Field %zu: timestamp (MJD2000)\n", i++);
+  fprintf(fp, "# Field %zu: timestamp (seconds since 1970-01-01 00:00:00 UTC)\n", i++);
   fprintf(fp, "# Field %zu: geocentric radius (km)\n", i++);
   fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
   fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
@@ -206,68 +201,34 @@ main(int argc, char *argv[])
   fprintf(fp, "# Field %zu: B_t (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_p (nT)\n", i++);
 
-  t = data_path.t[0];
-  tmp = gmtime(&t);
+  tidx = 0;
 
-  /* TIEGCM run is for 2009, change year and search for month/day in tiegcm3d data */
-  tmp->tm_year = 2009 - 1900;
-  t = mktime(tmp);
-
-  tidx = bsearch_timet(data->t, t, 0, data->nt - 1);
-
-  fprintf(stderr, "main: filling current grid for timestamp %zu...", tidx);
+  fprintf(stderr, "main: filling current grid for timestamp %zu (%ld)...", tidx, data->t[tidx]);
   fill_grid(tidx, data, magfield_p);
-  fill_grid(tidx+1, data, magfield_p2);
   fprintf(stderr, "done\n");
 
   fprintf(stderr, "main: performing SH decomposition for timestamp %zu...", tidx);
   magfield_decomp(magfield_p);
-  magfield_decomp(magfield_p2);
   fprintf(stderr, "done\n");
 
   for (i = 0; i < npath; ++i)
     {
-      double fday = data_path.fday[i];
       double r = data_path.r[i];
       double theta = M_PI / 2.0 - data_path.lat[i] * M_PI / 180.0;
       double phi = data_path.lon[i] * M_PI / 180.0;
-      double B1[4], B2[4], B[4];
-      double J1[3], J2[3], J[3];
+      double B[4];
+      double J[3];
 
       t = data_path.t[i];
       tmp = gmtime(&t);
       tmp->tm_year = 2009 - 1900;
       t = mktime(tmp);
 
-      if (t > data->t[tidx + 1])
-        {
-          tidx = bsearch_timet(data->t, t, 0, data->nt - 1);
+      magfield_eval_B(r * 1.0e3, theta, phi, B, magfield_p);
+      magfield_eval_J(r * 1.0e3, theta, phi, J, magfield_p);
 
-          fprintf(stderr, "main: filling current grid for timestamp %zu...", tidx);
-          fill_grid(tidx, data, magfield_p);
-          fill_grid(tidx+1, data, magfield_p2);
-          fprintf(stderr, "done\n");
-
-          fprintf(stderr, "main: performing SH decomposition for timestamp %zu...", tidx);
-          magfield_decomp(magfield_p);
-          magfield_decomp(magfield_p2);
-          fprintf(stderr, "done\n");
-        }
-
-      magfield_eval_B(r * 1.0e3, theta, phi, B1, magfield_p);
-      magfield_eval_B(r * 1.0e3, theta, phi, B2, magfield_p2);
-
-      magfield_eval_J(r * 1.0e3, theta, phi, J1, magfield_p);
-      magfield_eval_J(r * 1.0e3, theta, phi, J2, magfield_p2);
-
-      for (k = 0; k < 3; ++k)
-        {
-          B[k] = interp1d((double) data->t[tidx], (double) data->t[tidx+1], B1[k], B2[k], (double) t);
-          J[k] = interp1d((double) data->t[tidx], (double) data->t[tidx+1], J1[k], J2[k], (double) t);
-        }
-
-      fprintf(fp, "%f %.4f %.4f %.4f %.12e %.12e %.12e %.4f %.4f %.4f\n",
-              fday,
+      fprintf(fp, "%ld %.4f %.4f %.4f %.12e %.12e %.12e %.4f %.4f %.4f\n",
+              data_path.t[i],
               r,
               data_path.lat[i],
               data_path.lon[i],

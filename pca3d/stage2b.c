@@ -363,7 +363,7 @@ main(int argc, char *argv[])
 {
   char *input_prefix = PCA3D_STAGE1B_SH_PREFIX;
   const double fs = 24.0;    /* sample frequency (samples/day) */
-  double window_size = 5.0;  /* number of days in each time segment */
+  double window_size = 2.0;  /* number of days in each time segment */
   double window_shift = 1.0; /* number of days to shift forward in time */
   pca3d_data data;
 

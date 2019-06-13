@@ -41,7 +41,6 @@ magdata_print2(const char *filename, const magdata *data)
   int s = 0;
   size_t i;
   FILE *fp;
-  msynth_workspace *msynth_p;
 
   fp = fopen(filename, "w");
   if (!fp)
@@ -50,9 +49,6 @@ magdata_print2(const char *filename, const magdata *data)
               filename, strerror(errno));
       return -1;
     }
-
-  msynth_p = msynth_read(MSYNTH_BOUMME_FILE);
-  msynth_set(1, 15, msynth_p);
 
   if (data->name[0] != '\0')
     fprintf(fp, "# Name: %s\n", data->name);
@@ -65,9 +61,9 @@ magdata_print2(const char *filename, const magdata *data)
   fprintf(fp, "# Field %zu: B_x NEC (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_y NEC (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_z NEC (nT)\n", i++);
-  fprintf(fp, "# Field %zu: B_x minus core field (nT)\n", i++);
-  fprintf(fp, "# Field %zu: B_y minus core field (nT)\n", i++);
-  fprintf(fp, "# Field %zu: B_z minus core field (nT)\n", i++);
+  fprintf(fp, "# Field %zu: B_x residual (nT)\n", i++);
+  fprintf(fp, "# Field %zu: B_y residual (nT)\n", i++);
+  fprintf(fp, "# Field %zu: B_z residual (nT)\n", i++);
   fprintf(fp, "# Field %zu: d/dt B_x (nT/year)\n", i++);
   fprintf(fp, "# Field %zu: d/dt B_y (nT/year)\n", i++);
   fprintf(fp, "# Field %zu: d/dt B_z (nT/year)\n", i++);
@@ -75,7 +71,7 @@ magdata_print2(const char *filename, const magdata *data)
   for (i = 0; i < data->n; ++i)
     {
       time_t unix_time = satdata_epoch2timet(data->t[i]);
-      double B_core[4], B[4];
+      double B[4];
 
       if (data->flags[i] & MAGDATA_FLG_DISCARD)
         continue;
@@ -83,18 +79,16 @@ magdata_print2(const char *filename, const magdata *data)
       if (!(data->flags[i] & MAGDATA_FLG_FIT_MF))
         continue;
 
-#if 0
-      if (!(data->flags[i] & MAGDATA_FLG_Z))
+#if 1
+      if (!MAGDATA_ExistVector(data->flags[i]))
         continue;
-#else
+#elif 0
       if (!(data->flags[i] & MAGDATA_FLG_DZDT))
         continue;
 #endif
 
       /* subtract external POMME */
       magdata_residual(i, B, data);
-
-      msynth_eval(satdata_epoch2year(data->t[i]), data->r[i], data->theta[i], data->phi[i], B_core, msynth_p);
 
       if ((i > 0) && (data->flags[i] & MAGDATA_FLG_TRACK_START))
         fprintf(fp, "\n");
@@ -107,15 +101,13 @@ magdata_print2(const char *filename, const magdata *data)
               data->Bx_nec[i],
               data->By_nec[i],
               data->Bz_nec[i],
-              B[0] - B_core[0],
-              B[1] - B_core[1],
-              B[2] - B_core[2],
+              B[0],
+              B[1],
+              B[2],
               data->dXdt_nec[i],
               data->dYdt_nec[i],
               data->dZdt_nec[i]);
     }
-
-  msynth_free(msynth_p);
 
   fclose(fp);
 

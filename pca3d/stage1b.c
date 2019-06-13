@@ -14,6 +14,8 @@
 #include <assert.h>
 #include <omp.h>
 #include <complex.h>
+#include <string.h>
+#include <errno.h>
 
 #include <fftw3.h>
 
@@ -25,6 +27,7 @@
 #include <gsl/gsl_test.h>
 
 #include <common/common.h>
+#include <common/bsearch.h>
 
 #include <magfield/magfield.h>
 
@@ -59,27 +62,98 @@ main_fill_grid(const size_t it, const tiegcm3d_data * data, magfield_workspace *
 }
 
 /*
+print_residual()
+  Print J grid for a fixed time and altitude from TIEGCM and magfield
+
+Inputs: data - tiegcm data
+*/
+
+int
+print_residual(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir, magfield_workspace *w)
+{
+  int s = 0;
+  size_t i;
+  size_t ilat, ilon;
+  FILE *fp;
+
+  fp = fopen(filename, "w");
+  if (!fp)
+    {
+      fprintf(stderr, "print_residual: unable to open %s: %s\n",
+              filename, strerror(errno));
+    }
+
+  i = 1;
+  fprintf(fp, "# Time: %ld (%.6f DOY)\n", data->t[time_idx], data->doy[time_idx] + data->ut[time_idx] / 24.0);
+  fprintf(fp, "# Radius: %.2f (km) [%.2f km altitude]\n", data->r[ir], data->r[ir] - 6371.2);
+  fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: TIEGCM J_r (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: TIEGCM J_t (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: TIEGCM J_p (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: magfield J_r (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: magfield J_t (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: magfield J_p (A/m^2)\n", i++);
+
+  for (ilon = 0; ilon < data->nlon; ++ilon)
+    {
+      double phi = w->phi[ilon];
+
+      for (ilat = 0; ilat < data->nlat; ++ilat)
+        {
+          size_t idx = TIEGCM3D_IDX(time_idx, ir, ilat, ilon, data);
+          double theta = w->theta[ilat];
+          double J[4];
+
+          magfield_eval_J(data->r[ir], theta, phi, J, w);
+
+          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
+                  data->glon[ilon],
+                  data->glat[ilat],
+                  data->Jr[idx],
+                  data->Jt[idx],
+                  data->Jp[idx],
+                  J[0],
+                  J[1],
+                  J[2]);
+        }
+
+      fprintf(fp, "\n");
+    }
+
+  fclose(fp);
+
+  return s;
+}
+
+/*
 main_proc()
   Compute SH decomposition of each radial shell of TIEGCM 3D current
 values; store SH coefficients to disk
 
-Inputs: prefix - output file prefix
-        tidx   - on input, starting time index
-                 on output, ending time index
-        tsteps - (output) array of timestamps
-        data   - TIEGCM data
-        w      - magfield workspace
+Inputs: prefix        - output file prefix
+        tidx          - on input, starting time index
+                        on output, ending time index
+        tsteps        - (output) array of timestamps
+        data          - TIEGCM data
+        residual_file - (optional) write file of residuals between TIEGCM/magfield for first timestep
+        w             - magfield workspace
 
 Return: success/error
 */
 
 int
-main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_data * data, magfield_workspace * w)
+main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_data * data, const char * residual_file, magfield_workspace * w)
 {
   int s = 0;
   const size_t ttot = *tidx + data->nt;
+  const double residual_alt = 110.0;
+  int residual_ir = 0;
   char buf[2048];
   size_t i;
+
+  if (residual_file != NULL)
+    residual_ir = (int) bsearch_double(data->r, R_EARTH_KM + residual_alt, 0, data->nr - 1);
 
   /* ensure theta/phi grids from magfield match those from TIEGCM */
 
@@ -101,10 +175,19 @@ main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_da
 
       /* write output file */
       sprintf(buf, "%s_%03zu.dat", prefix, *tidx + 1);
+      fprintf(stderr, "main_proc: writing %s...", buf);
       magfield_write_SH(buf, w);
+      fprintf(stderr, "done\n");
 
       tsteps[*tidx] = data->t[i];
       ++(*tidx);
+
+      if (i == 0 && residual_file != NULL)
+        {
+          fprintf(stderr, "main_proc: writing residual for time index %zu to %s...", i, residual_file);
+          print_residual(residual_file, data, i, residual_ir, w);
+          fprintf(stderr, "done\n");
+        }
     }
 
   return s;
@@ -117,6 +200,7 @@ main(int argc, char *argv[])
   const size_t lmax = 60;
   const double R = R_EARTH_KM;
   char *file_prefix = PCA3D_STAGE1B_SH_PREFIX;
+  char *residual_file = NULL;
   struct timeval tv0, tv1;
   magfield_workspace *w = NULL;
   size_t tidx = 0;
@@ -128,24 +212,29 @@ main(int argc, char *argv[])
       int option_index = 0;
       static struct option long_options[] =
         {
+          { "residual_file", required_argument, NULL, 'r' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "", long_options, &option_index);
+      c = getopt_long(argc, argv, "r:", long_options, &option_index);
       if (c == -1)
         break;
 
       switch (c)
         {
+          case 'r':
+            residual_file = optarg;
+            break;
+
           default:
-            fprintf(stderr, "Usage: %s file1.nc file2.nc ...\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-r residual_file] file1.nc file2.nc ...\n", argv[0]);
             break;
         }
     }
 
   if (optind >= argc)
     {
-      fprintf(stderr, "Usage: %s file1.nc file2.nc ...\n",
+      fprintf(stderr, "Usage: %s [-r residual_file] file1.nc file2.nc ...\n",
               argv[0]);
       exit(1);
     }
@@ -201,7 +290,7 @@ main(int argc, char *argv[])
       fprintf(stderr, "main: nlat       = %zu\n", data->nlat);
       fprintf(stderr, "main: nlon       = %zu\n", data->nlon);
 
-      main_proc(file_prefix, &tidx, tsteps, data, w);
+      main_proc(file_prefix, &tidx, tsteps, data, residual_file, w);
 
       tiegcm3d_free(data);
 

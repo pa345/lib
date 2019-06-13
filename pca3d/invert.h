@@ -1,9 +1,9 @@
 /*
- * mfield.h
+ * invert.h
  */
 
-#ifndef INCLUDED_mfield_h
-#define INCLUDED_mfield_h
+#ifndef INCLUDED_invert_h
+#define INCLUDED_invert_h
 
 #include <satdata/satdata.h>
 
@@ -21,9 +21,12 @@
 #include <track/track_weight.h>
 #include <bspline2/gsl_bspline2.h>
 
-#include "mfield_data.h"
+#include "invert_data.h"
+#include "invert_tmode.h"
 
 #include "green.h"
+
+#define INVERT_MAX_BUFFER          2048
 
 #define MFIELD_SYNTH_HIGH_LAT_ONLY 0
 
@@ -61,36 +64,16 @@ typedef struct
 {
   double epoch;                         /* model epoch (decimal year) */
   double R;                             /* reference radius (km) */
-  size_t nmax_core;                     /* core field B-spline representation nmax */
   size_t nmax;                          /* total nmax including core and crustal field */
-  size_t nmax_mf;                       /* MF nmax */
-  size_t nmax_sv;                       /* SV nmax */
-  size_t nmax_sa;                       /* SA nmax */
   size_t nsat;                          /* number of satellites */
-  double gauss_period;                  /* knot spacing for Gauss coefficient splines (decimal years) */
-  double euler_period;                  /* time period for Euler angles (decimal days) */
-  double fluxcal_period;                /* knot spacing for fluxgate calibration parameters (decimal days) */
+  char tmode_file[INVERT_MAX_BUFFER];   /* temporal mode file */
 
   size_t max_iter;                      /* number of robust iterations */
   int fit_mf;                           /* fit MF coefficients */
-  int fit_sv;                           /* fit SV coefficients */
-  int fit_sa;                           /* fit SA coefficients */
-  int fit_euler;                        /* fit Euler angles */
-  int fit_ext;                          /* fit external field correction */
-  int fit_fluxcal;                      /* fit VFM calibration parameters */
-  int fit_cbias;                        /* fit crustal biases to observatories */
 
-  int scale_time;                       /* scale time into dimensionless units */
   int use_weights;                      /* use weights in the fitting */
 
   int regularize;                       /* regularize the solution vector */
-  double lambda_0;                      /* main field damping factor */
-  double lambda_1;                      /* 1st time derivative of main field damping factor */
-  double lambda_2;                      /* 2nd time derivative of main field damping factor */
-  double lambda_3;                      /* 3rd time derivative of main field damping factor */
-  double lambda_s;                      /* fluxgate scale factor regularization parameter */
-  double lambda_o;                      /* fluxgate offset regularization parameter */
-  double lambda_u;                      /* fluxgate non-orthogonality angle regularization parameter */
 
   double weight_X;                      /* relative weighting for X component */
   double weight_Y;                      /* relative weighting for Y component */
@@ -110,56 +93,32 @@ typedef struct
   int synth_noise;                      /* add gaussian noise to synthetic model */
   size_t synth_nmin;                    /* minimum spherical harmonic degree for synthetic model */
 
-  size_t gauss_spline_order;            /* order of spline for Gauss coefficients */
-  size_t euler_spline_order;            /* order of spline for Euler angles */
-  size_t fluxcal_spline_order;          /* order of spline for fluxgate calibration parameters */
-
-  mfield_data_workspace *mfield_data_p; /* satellite data */
-} mfield_parameters;
+  invert_data_workspace *invert_data_p; /* satellite data */
+} invert_parameters;
 
 typedef struct
 {
   size_t nsat;      /* number of different satellites */
-  size_t nmax_core; /* maximum internal spherical harmonic degree for MF splines */
   size_t nmax;      /* maximum internal spherical harmonic degree MF and crustal field */
-  size_t nmax_mf;   /* maximum internal spherical harmonic degree for MF */
-  size_t nmax_sv;   /* maximum internal spherical harmonic degree for SV */
-  size_t nmax_sa;   /* maximum internal spherical harmonic degree for SA */
-  size_t nmax_ext;  /* maximum external spherical harmonic degree */
   size_t nmax_max;  /* MAX(nmax_mf, nmax_sv, nmax_sa) */
 
-  mfield_parameters params;
+  invert_parameters params;
 
-  size_t nnm_core;  /* number of (n,m) coefficients in model for core field splines */
-  size_t nnm_crust; /* number of (n,m) coefficients in model for crustal field */
   size_t nnm_tot;   /* total nnm for internal field (core + crust) */
-  size_t nnm_mf;    /* number of (n,m) coefficients in model for MF */
-  size_t nnm_sv;    /* number of (n,m) coefficients in model for SV */
-  size_t nnm_sa;    /* number of (n,m) coefficients in model for SA */
 
   size_t nnm_max;   /* total nnm for internal field (main + crust) */
 
-  size_t *offset_euler;   /* start index of each satellite's Euler angles in coefficient vector */
-  size_t *offset_fluxcal; /* start index of each satellite's fluxgate calibration parameters in coefficient vector */
   size_t *bias_idx;       /* indices of observatory biases in coefficient vector */
 
   int ext_fdayi[3 * 366 + 30]; /* sorted array of daily timestamps with data for that day */
 
   size_t p;         /* number of model coefficients */
   size_t p_core;    /* number of model coefficients for internal field represented by B-splines */
-  size_t p_crust;   /* number of model coefficients for internal crustal field */
   size_t p_int;     /* number of model coefficients for internal field only (p_core + p_crust) */
-  size_t p_sparse;  /* number of model coefficients for sparse part of Jacobian (p_euler + p_fluxcal + p_ext + p_bias) */
-  size_t p_euler;   /* number of Euler angles parameters in model */
-  size_t p_fluxcal; /* number of VFM calibration parameters */
-  size_t p_ext;     /* number of external parameters in model */
-  size_t p_bias;    /* number of crustal bias parameters in model */
 
   size_t nobs_cnt;
 
   double *t;        /* data timestamps minus epoch (t - t0) in units of years */
-  double t_mu;      /* time array mean (years) */
-  double t_sigma;   /* time array stddev (years) */
   double epoch;     /* time epoch t0 (years) */
 
   double t0_data;   /* time of first data input (CDF_EPOCH) */
@@ -188,13 +147,6 @@ typedef struct
 
   size_t niter;        /* number of robust LS iterations */
 
-  size_t sv_offset;    /* offset of SV coefficients in 'c' */
-  size_t sa_offset;    /* offset of SA coefficients in 'c' */
-  size_t euler_offset; /* offset of Euler angles in 'c' */
-  size_t ext_offset;   /* offset of external coefficients in 'c' */
-  size_t fluxcal_offset; /* offset of fluxcal coefficients in 'c' */
-  size_t bias_offset;  /* offset of crustal bias coefficients in 'c' */
-
   /* nonlinear least squares parameters */
   gsl_vector *wts_spatial; /* spatial weights, nres-by-1 */
   gsl_vector *wts_robust;  /* robust weights, nres-by-1 */
@@ -214,13 +166,6 @@ typedef struct
   /* regularization parameters */
   gsl_spmatrix *L;         /* regularization matrix Cholesky factor, p-by-p */
   gsl_spmatrix *Lambda;    /* regularization matrix (L * L'), p-by-p */
-  double lambda_0;         /* main field damping */
-  double lambda_1;         /* 1st time derivative of main field damping */
-  double lambda_2;         /* 2nd time derivative of main field damping */
-  double lambda_3;         /* 3rd time derivative of main field damping */
-  double lambda_s;         /* fluxgate scale factor regularization parameter */
-  double lambda_o;         /* fluxgate offset regularization parameter */
-  double lambda_u;         /* fluxgate non-orthogonality angle regularization parameter */
   int old_fdf;             /* use multifit instead of multilarge */
 
   /*
@@ -248,8 +193,6 @@ typedef struct
    */
   gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
   gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p_int-by-p_int */
-  gsl_spmatrix *J2;        /* Jacobian matrix for euler, fluxcal and external parameters (sparse), nres-by-(p_euler+p_fluxcal+p_ext) */
-  gsl_spmatrix *J2_csr;    /* J2 matrix in CSR format */
 
   size_t max_threads;      /* maximum number of threads/processors available */
   gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_tot */
@@ -273,16 +216,13 @@ typedef struct
   gsl_vector *wfvec;       /* weighted residual vector */
   gsl_multifit_robust_workspace *robust_workspace_p;
 
-  mfield_data_workspace *data_workspace_p;
+  invert_tmode_workspace *tmode_workspace_p;
+  invert_data_workspace *data_workspace_p;
   track_weight_workspace *weight_workspace_p;
   spatwt_workspace *spatwtMF_workspace_p; /* spatial weights for observatory MF measurements */
   spatwt_workspace *spatwtSV_workspace_p; /* spatial weights for observatory SV measurements */
   gsl_eigen_symm_workspace *eigen_workspace_p;
-
-  gsl_bspline2_workspace **gauss_spline_workspace_p;
-  gsl_bspline2_workspace **euler_spline_workspace_p;
-  gsl_bspline2_workspace **fluxcal_spline_workspace_p;
-} mfield_workspace;
+} invert_workspace;
 
 #define MFIELD_EULER_DERIV_ALPHA       (1 << 0)
 #define MFIELD_EULER_DERIV_BETA        (1 << 1)
@@ -292,52 +232,22 @@ typedef struct
  * Prototypes
  */
 
-mfield_workspace *mfield_alloc(const mfield_parameters *params);
-void mfield_free(mfield_workspace *w);
-int mfield_init_params(mfield_parameters * params);
-mfield_workspace *mfield_copy(const mfield_workspace *w);
-int mfield_init(mfield_workspace *w);
-int mfield_calc_linear(gsl_vector *c, mfield_workspace *w);
-int mfield_calc_nonlinear(gsl_vector *c, mfield_workspace *w);
-int mfield_calc_JTJ_multilarge(const gsl_vector *c, gsl_matrix * JTJ, mfield_workspace *w);
-gsl_vector *mfield_residual(const gsl_vector *c, mfield_workspace *w);
-int mfield_reset(mfield_workspace *w);
-int mfield_eval(const double t, const double r, const double theta, const double phi,
-                double B[4], mfield_workspace *w);
-int mfield_eval_dBdt(const double t, const double r, const double theta,
-                     const double phi, double dBdt[4], mfield_workspace *w);
-int mfield_eval_dgdt(const double t, const double r, const double theta,
-                     const double phi, const gsl_vector *c,
-                     double dBdt[4], mfield_workspace *w);
-int mfield_eval_ext(const double t, const double r, const double theta, const double phi,
-                    double B[4], mfield_workspace *w);
-int mfield_eval_ext_coeff(const double r, const double theta, const double phi,
-                          const double extcoeff, double B[4], mfield_workspace *w);
-int mfield_eval_g_ext(const double t, const double r, const double theta, const double phi,
-                      const double E_st, const double I_st,
-                      const gsl_vector *g, const gsl_vector *dg,
-                      double B[4], mfield_workspace *w);
-int mfield_calc_evals(gsl_vector *evals, mfield_workspace *w);
-double mfield_spectrum(const double t, const size_t n, const size_t nderiv, mfield_workspace *w);
-int mfield_write(const char *filename, mfield_workspace *w);
-mfield_workspace *mfield_read(const char *filename);
-int mfield_write_ascii(const char *filename, const double epoch,
-                       const gsl_vector * c, mfield_workspace *w);
-int mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w);
-size_t mfield_coeff_nmidx(const size_t n, const int m);
-size_t mfield_extidx(const double t, const mfield_workspace *w);
-extern inline double mfield_get_gnm(const double t, const size_t n, const int m,
-                                    const size_t nderiv, const gsl_vector * c, mfield_workspace * w);
-extern inline double mfield_get_mf(const gsl_vector *c, const size_t idx, const mfield_workspace *w);
-extern inline int mfield_set_mf(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
-extern inline int mfield_set_sv(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
-extern inline int mfield_set_sa(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
-int mfield_fill_g(gsl_vector * g, msynth_workspace * core_p, msynth_workspace * crust_p, mfield_workspace * w);
+invert_workspace *invert_alloc(const invert_parameters *params);
+void invert_free(invert_workspace *w);
+int invert_init_params(invert_parameters * params);
+invert_workspace *invert_copy(const invert_workspace *w);
+int invert_init(invert_workspace *w);
+int invert_calc_linear(gsl_vector *c, invert_workspace *w);
+int invert_calc_nonlinear(gsl_vector *c, invert_workspace *w);
+int invert_calc_JTJ_multilarge(const gsl_vector *c, gsl_matrix * JTJ, invert_workspace *w);
+gsl_vector *invert_residual(const gsl_vector *c, invert_workspace *w);
+int invert_reset(invert_workspace *w);
+int invert_eval(const double t, const double r, const double theta, const double phi,
+                double B[4], invert_workspace *w);
+int invert_write(const char *filename, invert_workspace *w);
+invert_workspace *invert_read(const char *filename);
+int invert_write_ascii(const char *filename, const double epoch,
+                       const gsl_vector * c, invert_workspace *w);
+size_t invert_coeff_nmidx(const size_t n, const int m);
 
-/* mfield_euler.c */
-int mfield_euler_print(const char *filename, const size_t sat_idx, const mfield_workspace *w);
-
-/* mfield_fill.c */
-int mfield_fill(const char *coeffile, satdata_mag *data);
-
-#endif /* INCLUDED_mfield_h */
+#endif /* INCLUDED_invert_h */

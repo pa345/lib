@@ -8,9 +8,9 @@ ncol = 1
 load 'multi_default.cfg'
 
 plotheight = 1.5
-plotwidth = 5.5
+plotwidth = 10
 fontsize = ",10"
-r = -0.9
+r = -0.2
 l = 0.5
 hbuffer = 1.3
 
@@ -26,7 +26,7 @@ load 'xtimeon.cfg'
 load 'jet.pal'
 
 # xtics every ndays days
-ndays = 5
+ndays = 30
 set xtics 3600*24*ndays
 
 set palette maxcol 0

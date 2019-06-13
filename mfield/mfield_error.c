@@ -10,6 +10,7 @@
 #include <assert.h>
 
 #include <gsl/gsl_math.h>
+#include <gsl/gsl_linalg.h>
 #include <gsl/gsl_rstat.h>
 
 #include "mfield.h"
@@ -111,7 +112,7 @@ mfield_covariance(gsl_matrix * covar, mfield_workspace *w)
        */
 
       gsl_matrix_tricpy('L', 1, covar, w->choleskyL);
-      s += lapack_cholesky_invert(covar);
+      s += gsl_linalg_cholesky_invert(covar);
     }
   else
     {
