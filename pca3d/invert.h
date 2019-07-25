@@ -5,6 +5,7 @@
 #ifndef INCLUDED_invert_h
 #define INCLUDED_invert_h
 
+#include <stdarg.h>
 #include <satdata/satdata.h>
 
 #include <gsl/gsl_math.h>
@@ -14,7 +15,6 @@
 #include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_multilarge_nlinear.h>
 #include <gsl/gsl_histogram.h>
-#include <gsl/gsl_eigen.h>
 #include <gsl/gsl_spmatrix.h>
 
 #include <spatwt/spatwt.h>
@@ -23,8 +23,7 @@
 
 #include "invert_data.h"
 #include "invert_tmode.h"
-
-#include "green.h"
+#include "invert_smode.h"
 
 #define INVERT_MAX_BUFFER          2048
 
@@ -66,10 +65,10 @@ typedef struct
   double R;                             /* reference radius (km) */
   size_t nmax;                          /* total nmax including core and crustal field */
   size_t nsat;                          /* number of satellites */
+  size_t nspatmodes;                    /* number of spatial modes in each frequency bin */
   char tmode_file[INVERT_MAX_BUFFER];   /* temporal mode file */
 
   size_t max_iter;                      /* number of robust iterations */
-  int fit_mf;                           /* fit MF coefficients */
 
   int use_weights;                      /* use weights in the fitting */
 
@@ -98,23 +97,16 @@ typedef struct
 
 typedef struct
 {
-  size_t nsat;      /* number of different satellites */
-  size_t nmax;      /* maximum internal spherical harmonic degree MF and crustal field */
-  size_t nmax_max;  /* MAX(nmax_mf, nmax_sv, nmax_sa) */
+  size_t nsat;       /* number of different satellites */
+  size_t nspatmodes; /* number of spatial modes in each frequency bin */
 
   invert_parameters params;
 
-  size_t nnm_tot;   /* total nnm for internal field (core + crust) */
+  size_t *tmode_idx; /* length nfreq; tmode_idx[i] = index of start of frequency band i */
+  size_t ntmodes;    /* number of temporal modes for all frequency bands */
 
-  size_t nnm_max;   /* total nnm for internal field (main + crust) */
-
-  size_t *bias_idx;       /* indices of observatory biases in coefficient vector */
-
-  int ext_fdayi[3 * 366 + 30]; /* sorted array of daily timestamps with data for that day */
-
-  size_t p;         /* number of model coefficients */
-  size_t p_core;    /* number of model coefficients for internal field represented by B-splines */
-  size_t p_int;     /* number of model coefficients for internal field only (p_core + p_crust) */
+  size_t p;          /* number of real model coefficients */
+  size_t p_complex;  /* number of complex model coefficients (p/2) */
 
   size_t nobs_cnt;
 
@@ -124,16 +116,6 @@ typedef struct
   double t0_data;   /* time of first data input (CDF_EPOCH) */
 
   double R;         /* reference radius (km) */
-
-  double *cosmphi;  /* array of cos(m phi) */
-  double *sinmphi;  /* array of sin(m phi) */
-
-  double *Plm;      /* associated legendres */
-  double *dPlm;     /* associated legendre derivatives */
-
-  double *dX;       /* basis functions for X */
-  double *dY;       /* basis functions for Y */
-  double *dZ;       /* basis functions for Z */
 
   /*
    * The model coefficients are partitioned as follows:
@@ -191,24 +173,14 @@ typedef struct
    * where we only need to compute the lower triangle since
    * the matrix is symmetric
    */
-  gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
-  gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p_int-by-p_int */
+  gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p-by-p */
+  gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p-by-p */
 
   size_t max_threads;      /* maximum number of threads/processors available */
-  gsl_matrix *omp_dX;      /* dX/dg max_threads-by-nnm_tot */
-  gsl_matrix *omp_dY;      /* dY/dg max_threads-by-nnm_tot */
-  gsl_matrix *omp_dZ;      /* dZ/dg max_threads-by-nnm_tot */
-  gsl_matrix *omp_dF;      /* dF/dg max_threads-by-nnm_tot */
-  gsl_matrix **omp_dB;     /* max_threads matrices, dF/dg, each 3-by-nnm_tot */
-  gsl_matrix *omp_dX_grad; /* gradient dX/dg max_threads-by-nnm_max */
-  gsl_matrix *omp_dY_grad; /* gradient dY/dg max_threads-by-nnm_max */
-  gsl_matrix *omp_dZ_grad; /* gradient dZ/dg max_threads-by-nnm_max */
-  gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p_int */
-  gsl_matrix **omp_T;      /* max_threads matrices, each nnm_tot-by-4*data_block */
-  gsl_matrix **omp_S;      /* max_threads matrices, each 4*data_block-by-nnm_tot */
+  gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p */
+  gsl_matrix **omp_B;      /* max_threads matrices, each 3-by-p */
   size_t *omp_rowidx;      /* row indices for omp_J */
   size_t *omp_colidx;      /* column indices for omp_T */
-  green_workspace **green_array_p; /* array of green workspaces, size max_threads */
 
   int lls_solution;        /* 1 if inverse problem is linear (no scalar residuals or Euler angles) */
 
@@ -217,16 +189,12 @@ typedef struct
   gsl_multifit_robust_workspace *robust_workspace_p;
 
   invert_tmode_workspace *tmode_workspace_p;
+  invert_smode_workspace *smode_workspace_p;
   invert_data_workspace *data_workspace_p;
   track_weight_workspace *weight_workspace_p;
   spatwt_workspace *spatwtMF_workspace_p; /* spatial weights for observatory MF measurements */
   spatwt_workspace *spatwtSV_workspace_p; /* spatial weights for observatory SV measurements */
-  gsl_eigen_symm_workspace *eigen_workspace_p;
 } invert_workspace;
-
-#define MFIELD_EULER_DERIV_ALPHA       (1 << 0)
-#define MFIELD_EULER_DERIV_BETA        (1 << 1)
-#define MFIELD_EULER_DERIV_GAMMA       (1 << 2)
 
 /*
  * Prototypes
@@ -248,6 +216,7 @@ int invert_write(const char *filename, invert_workspace *w);
 invert_workspace *invert_read(const char *filename);
 int invert_write_ascii(const char *filename, const double epoch,
                        const gsl_vector * c, invert_workspace *w);
-size_t invert_coeff_nmidx(const size_t n, const int m);
+size_t invert_coeff_idx(const size_t f, const size_t tmode, const size_t smode, const invert_workspace * w);
+int invert_debug(const char *format, ...);
 
 #endif /* INCLUDED_invert_h */

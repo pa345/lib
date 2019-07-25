@@ -9,6 +9,8 @@
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_matrix.h>
 
+#include <magfield/magfield.h>
+
 #include "pca3d.h"
 #include "tiegcm3d.h"
 
@@ -21,6 +23,7 @@ tiegcm3d_fft_data pca3d_read_fft_data(const char *filename);
 
 int pca3d_write_data(const char *filename, const pca3d_data * data);
 pca3d_data pca3d_read_data(const char *filename);
+magfield_params pca3d_read_params(const char *filename);
 int pca3d_write_fft_data2(const char *filename, const pca3d_fft_data *data, const int light);
 pca3d_fft_data pca3d_read_fft_data2(const char *filename);
 int pca3d_write_vector(const char *filename, const gsl_vector *v);

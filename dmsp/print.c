@@ -60,6 +60,10 @@ print_data(const int down_sample, const satdata_mag *data)
   printf("# Field %zu: Y model rotated to S/C fixed (nT)\n", i++);
   printf("# Field %zu: Z model rotated to S/C fixed (nT)\n", i++);
   printf("# Field %zu: modeled scalar field (nT)\n", i++);
+  printf("# Field %zu: q1\n", i++);
+  printf("# Field %zu: q2\n", i++);
+  printf("# Field %zu: q3\n", i++);
+  printf("# Field %zu: q4\n", i++);
 
   for (i = 0; i < data->n; i += down_sample)
     {
@@ -77,7 +81,7 @@ print_data(const int down_sample, const satdata_mag *data)
       /* rotate B_model into VFM frame */
       quat_apply_inverse(q, B_model, B_model_VFM);
 
-      printf("%ld %f %6.2f %10.4f %10.4f %10.4f %10.4f %2d %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\n",
+      printf("%ld %f %6.2f %10.4f %10.4f %10.4f %10.4f %2d %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %e %e %e %e\n",
              satdata_epoch2timet(data->t[i]),
              year,
              lt,
@@ -93,7 +97,11 @@ print_data(const int down_sample, const satdata_mag *data)
              B_model_VFM[0],
              B_model_VFM[1],
              B_model_VFM[2],
-             B_model[3]);
+             B_model[3],
+             q[0],
+             q[1],
+             q[2],
+             q[3]);
     }
 
   return s;

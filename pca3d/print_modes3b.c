@@ -28,6 +28,9 @@
 #include <common/common.h>
 #include <common/bsearch.h>
 
+#include <magfield/magfield.h>
+#include <magfield/magfield_eval.h>
+
 #include "io.h"
 #include "pca3d.h"
 #include "tiegcm3d.h"
@@ -39,13 +42,16 @@ in magfield and compute radial splines to prepare for magfield_eval_J()
 and magfield_eval_B() routines
 
 Inputs: u - singular vector (3*N-by-1, where N = nr*nlm)
-        w - magfield workspace
+        w - magfield_eval workspace
 */
 
 int
-fill_magfield(const gsl_vector_complex * u, magfield_workspace * w)
+fill_magfield(const gsl_vector_complex * u, magfield_eval_workspace * w)
 {
   const size_t N = w->nr * w->nlm;
+  gsl_vector_complex * qtcoeff = gsl_vector_complex_alloc(N);
+  gsl_vector_complex * qcoeff = gsl_vector_complex_alloc(N);
+  gsl_vector_complex * pcoeff = gsl_vector_complex_alloc(N);
   size_t ir;
 
   for (ir = 0; ir < w->nr; ++ir)
@@ -67,27 +73,28 @@ fill_magfield(const gsl_vector_complex * u, magfield_workspace * w)
               gsl_complex p = gsl_vector_complex_get(u, uidx + N);
               gsl_complex q = gsl_vector_complex_get(u, uidx + 2*N);
 
-              gsl_vector_complex_set(w->qtcoeff, midx, qt);
-              gsl_vector_complex_set(w->pcoeff, midx, p);
-              gsl_vector_complex_set(w->qcoeff, midx, q);
+              gsl_vector_complex_set(qtcoeff, midx, qt);
+              gsl_vector_complex_set(pcoeff, midx, p);
+              gsl_vector_complex_set(qcoeff, midx, q);
             }
         }
     }
 
   /* compute spline coefficients */
-  magfield_spline_qt_calc(w);
-  magfield_spline_p_calc(w);
-  magfield_spline_q_calc(w);
+  magfield_eval_init(qtcoeff, qcoeff, pcoeff, w);
 
-  w->field_computed = 1;
+  gsl_vector_complex_free(qtcoeff);
+  gsl_vector_complex_free(qcoeff);
+  gsl_vector_complex_free(pcoeff);
 
   return 0;
 }
 
 int
-print_modes(const double freq, const double r, const gsl_matrix_complex *U, magfield_workspace * w)
+print_modes(const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
 {
   const size_t T = U->size2;
+  magfield_eval_workspace * w = magfield_eval_alloc(params);
   double lat, lon;
   size_t t;
 
@@ -111,11 +118,10 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fprintf(fp, "# Field %zu: J_t\n", i++);
       fprintf(fp, "# Field %zu: J_p\n", i++);
 
-      /* fill magfield workspace for this singular vector */
+      /* prepare magfield_eval workspace for this singular vector */
       fill_magfield(&v.vector, w);
 
       for (lon = -180.0; lon <= 180.0; lon += 1.0)
-      /*for (lon = 0.0; lon <= 360.0; lon += 1.0)*/
         {
           double phi = lon * M_PI / 180.0;
 
@@ -142,6 +148,8 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fprintf(stderr, "done\n");
     }
 
+  magfield_eval_free(w);
+
   return 0;
 }
 
@@ -149,10 +157,10 @@ int
 main(int argc, char *argv[])
 {
   const double freq = 1.0; /* desired frequency in cpd */
-  pca3d_data pcadata;
   pca3d_fft_data data;
   struct timeval tv0, tv1;
   gsl_matrix_complex *U;
+  magfield_params params;
   double alt = 110.0;
   size_t ifreq;            /* index of desired frequency */
   char buf[2048];
@@ -186,15 +194,15 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: frequency: %g [cpd]\n", freq);
   fprintf(stderr, "main: altitude:  %g [km]\n", alt);
 
-  fprintf(stderr, "main: reading %s...", PCA3D_STAGE2B_FFT_DATA);
+  fprintf(stderr, "main: reading %s...", PCA3D_STAGE2B_FFT_DATA_LIGHT);
   gettimeofday(&tv0, NULL);
-  data = pca3d_read_fft_data2(PCA3D_STAGE2B_FFT_DATA);
+  data = pca3d_read_fft_data2(PCA3D_STAGE2B_FFT_DATA_LIGHT);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  fprintf(stderr, "main: allocating magfield workspace from %s...", PCA3D_STAGE1B_DATA);
+  fprintf(stderr, "main: reading magfield parameters from %s...", PCA3D_STAGE1B_DATA);
   gettimeofday(&tv0, NULL);
-  pcadata = pca3d_read_data(PCA3D_STAGE1B_DATA);
+  params = pca3d_read_params(PCA3D_STAGE1B_DATA);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
@@ -207,7 +215,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  print_modes(freq, alt + R_EARTH_KM, U, pcadata.w);
+  print_modes(freq, alt + R_EARTH_KM, U, &params);
 
   gsl_matrix_complex_free(U);
 

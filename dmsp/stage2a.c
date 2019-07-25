@@ -166,7 +166,7 @@ stage2_scalar_calibrate(const char *res_file, satdata_mag * data, track_workspac
     }
 
   gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+  fprintf(stderr, "done (%g seconds, %zu data added)\n", time_diff(tv0, tv1), magcal_p->n);
 
   /* set initial values of calibration parameters */
   gsl_vector_set(c, MAGCAL_IDX_SX, 1.0);
@@ -767,7 +767,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-#if 0
+#if 1
   fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
   preclean_jumps(jump_file, data, track_p);
@@ -858,20 +858,12 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: FINAL SCALAR RMS   = %.2f [nT]\n", rms1);
 #endif
 
-#if 1
+#if 0
 
   fprintf(stderr, "main: performing attitude correction...");
   attitude_correct("attitude.txt", data, track_p);
   fprintf(stderr, "done\n");
 
-#endif
-
-#if 1 /*XXX*/
-  for (i = 0; i < data->n; ++i)
-    {
-      data->r[i] = 0.0;
-      data->longitude[i] = 0.0;
-    }
 #endif
 
   if (data_file)

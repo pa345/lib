@@ -5,7 +5,7 @@ commonlibs = -lsatdata -lindices -latt ~/usr/lib/libgsl.a -lgslcblas -lm -lcdf
 AM_CPPFLAGS = -I$(top_builddir)/ephemeris -I$(top_builddir)/euler -I$(top_builddir)/magdata -I$(top_builddir)/peak
 
 stage0_SOURCES = stage0.c
-stage0_LDADD = $(top_builddir)/ephemeris/libephemeris.la -lcommon -lm -lcdf ${commonlibs} -lz
+stage0_LDADD = $(top_builddir)/ephemeris/libephemeris.la -lcommon -lm -lcdf ${commonlibs} -lz -lsofa -lsofa_c -lspice -lcspice
 
 atest_SOURCES = atest.c
 atest_LDADD = $(top_builddir)/ephemeris/libephemeris.la $(top_builddir)/euler/libeuler.la $(top_builddir)/peak/libpeak.la -latt_calc -ltrack -lapex -lmagcoord -lcommon -lpomme -lmsynth -lbspline2 -lm -lgfortran ${commonlibs} -lz

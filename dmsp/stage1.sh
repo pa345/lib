@@ -5,7 +5,8 @@
 # Usage: stage1.sh [FXX] [year]
 
 # load environment variables
-. $HOME/.bashrc
+#. $HOME/.bashrc
+export LD_LIBRARY_PATH="/home/palken/usr/lib:/usr/local/MATLAB/MATLAB_Runtime/v91/runtime/glnxa64:/usr/local/MATLAB/MATLAB_Runtime/v91/bin/glnxa64:/usr/local/MATLAB/MATLAB_Runtime/v91/sys/os/glnxa64:/usr/lib64:/usr/local/cdf/lib:"
 
 # satellite to process
 dmsp_sat="F15"

@@ -503,8 +503,8 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
                             const size_t nsource, const magdata * mptr, size_t * index)
 {
   int s = 0;
-  const char *fmtstr = "%ld %.8f %.4f %.4f %.4f %.4f %.3f %.4f %.4f\n";
-  const char *fmtstr_grad = "%ld %.8f %.4f %.4f %.4f %.4f %.3f %.4f %.4f %.4f %.4f\n";
+  const char *fmtstr = "%ld %.4f %.4f %.4f %.4f %.4f %.3f %.4f %.4f\n";
+  const char *fmtstr_grad = "%ld %.4f %.4f %.4f %.4f %.4f %.3f %.4f %.4f %.4f %.4f\n";
   const size_t n = 12; /* number of components to print */
   FILE *fp[12];
   char buf[2048];
@@ -574,7 +574,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
     {
       k = 1;
       fprintf(fp[j], "# Field %zu: timestamp (UT seconds since 1970-01-01)\n", k++);
-      fprintf(fp[j], "# Field %zu: time (decimal year)\n", k++);
+      fprintf(fp[j], "# Field %zu: local time (hours)\n", k++);
       fprintf(fp[j], "# Field %zu: longitude (degrees)\n", k++);
       fprintf(fp[j], "# Field %zu: geocentric latitude (degrees)\n", k++);
       fprintf(fp[j], "# Field %zu: QD latitude (degrees)\n", k++);
@@ -632,8 +632,8 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
 
   for (j = 0; j < mptr->n; ++j)
     {
-      double t = satdata_epoch2year(mptr->t[j]);
       time_t unix_time = satdata_epoch2timet(mptr->t[j]);
+      double lt = get_localtime(unix_time, mptr->phi[j]);
       double phi = wrap180(mptr->phi[j] * 180.0 / M_PI);
       double lat = 90.0 - mptr->theta[j] * 180.0 / M_PI;
       double qdlat = mptr->qdlat[j];
@@ -677,7 +677,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[0], fmtstr, unix_time, t, phi, lat, qdlat, r, wj, B[0], B_model[0]);
+            fprintf(fp[0], fmtstr, unix_time, lt, phi, lat, qdlat, r, wj, B[0], B_model[0]);
         }
 
       if (MAGDATA_ExistY(mptr->flags[j]))
@@ -685,7 +685,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[1], fmtstr, unix_time, t, phi, lat, qdlat, r, wj, B[1], B_model[1]);
+            fprintf(fp[1], fmtstr, unix_time, lt, phi, lat, qdlat, r, wj, B[1], B_model[1]);
         }
 
       if (MAGDATA_ExistZ(mptr->flags[j]))
@@ -693,13 +693,13 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[2], fmtstr, unix_time, t, phi, lat, qdlat, r, wj, B[2], B_model[2]);
+            fprintf(fp[2], fmtstr, unix_time, lt, phi, lat, qdlat, r, wj, B[2], B_model[2]);
         }
 
       if (MAGDATA_ExistScalar(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
         {
           double wj = gsl_vector_get(wts_spatial, idx++);
-          fprintf(fp[3], fmtstr, unix_time, t, phi, lat, qdlat, r, wj, B[3], B_model[3]);
+          fprintf(fp[3], fmtstr, unix_time, lt, phi, lat, qdlat, r, wj, B[3], B_model[3]);
         }
 
       if (MAGDATA_ExistDX_NS(mptr->flags[j]))
@@ -707,7 +707,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[4], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[0], B_model[0], B_grad[0], B_grad_model[0]);
+            fprintf(fp[4], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[0], B_model[0], B_grad[0], B_grad_model[0]);
         }
 
       if (MAGDATA_ExistDY_NS(mptr->flags[j]))
@@ -715,7 +715,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[5], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[1], B_model[1], B_grad[1], B_grad_model[1]);
+            fprintf(fp[5], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[1], B_model[1], B_grad[1], B_grad_model[1]);
         }
 
       if (MAGDATA_ExistDZ_NS(mptr->flags[j]))
@@ -723,13 +723,13 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[6], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[2], B_model[2], B_grad[2], B_grad_model[2]);
+            fprintf(fp[6], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[2], B_model[2], B_grad[2], B_grad_model[2]);
         }
 
       if (MAGDATA_ExistDF_NS(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
         {
           double wj = gsl_vector_get(wts_spatial, idx++);
-          fprintf(fp[7], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[3], B_model[3], B_grad[3], B_grad_model[3]);
+          fprintf(fp[7], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[3], B_model[3], B_grad[3], B_grad_model[3]);
         }
 
       if (MAGDATA_ExistDX_EW(mptr->flags[j]))
@@ -737,7 +737,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[8], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[0], B_model[0], B_grad[0], B_grad_model[0]);
+            fprintf(fp[8], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[0], B_model[0], B_grad[0], B_grad_model[0]);
         }
 
       if (MAGDATA_ExistDY_EW(mptr->flags[j]))
@@ -745,7 +745,7 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[9], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[1], B_model[1], B_grad[1], B_grad_model[1]);
+            fprintf(fp[9], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[1], B_model[1], B_grad[1], B_grad_model[1]);
         }
 
       if (MAGDATA_ExistDZ_EW(mptr->flags[j]))
@@ -753,13 +753,13 @@ invert_data_print_satellite(const char *dir_prefix, const gsl_vector *wts_spatia
           double wj = gsl_vector_get(wts_spatial, idx++);
 
           if (MAGDATA_FitMF(mptr->flags[j]))
-            fprintf(fp[10], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[2], B_model[2], B_grad[2], B_grad_model[2]);
+            fprintf(fp[10], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[1], B_model[2], B_grad[2], B_grad_model[2]);
         }
 
       if (MAGDATA_ExistDF_EW(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
         {
           double wj = gsl_vector_get(wts_spatial, idx++);
-          fprintf(fp[11], fmtstr_grad, unix_time, t, phi, lat, qdlat, r, wj, B[3], B_model[3], B_grad[3], B_grad_model[3]);
+          fprintf(fp[11], fmtstr_grad, unix_time, lt, phi, lat, qdlat, r, wj, B[3], B_model[3], B_grad[3], B_grad_model[3]);
         }
     }
 

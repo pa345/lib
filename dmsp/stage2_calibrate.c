@@ -62,7 +62,7 @@ stage2_calibrate(const char *res_file, const satdata_mag * data, const track_wor
     }
 
   gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+  fprintf(stderr, "done (%g seconds, %zu data added)\n", time_diff(tv0, tv1), fluxcal_p->n);
 
   /* set initial values of calibration parameters */
   gsl_vector_set(c, FLUXCAL_IDX_SX, 1.0);

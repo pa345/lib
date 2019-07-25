@@ -11,6 +11,9 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_interp.h>
 
+#include <common/common.h>
+#include <common/eci.h>
+
 #include "eph.h"
 #include "eph_data.h"
 #include "hermite.h"
@@ -156,7 +159,7 @@ eph_interp_sph(const double t, double r_sph[3], eph_workspace *w)
   else if (w->data->flags & EPH_DATA_FLG_ECI)
     {
       /* position is ECI */
-      time_t unix_time = satdata_epoch2timet(t);
+      time_t unix_time = epoch2timet(t);
       eci2sph_pos(unix_time, pos, r_sph);
     }
   else

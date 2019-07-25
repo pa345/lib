@@ -39,7 +39,6 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_multifit.h>
 #include <gsl/gsl_errno.h>
-#include <gsl/gsl_eigen.h>
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_multilarge_nlinear.h>
@@ -47,6 +46,8 @@
 #include <gsl/gsl_sort_vector.h>
 #include <gsl/gsl_spblas.h>
 #include <gsl/gsl_spmatrix.h>
+#include <gsl/gsl_complex.h>
+#include <gsl/gsl_complex_math.h>
 
 #include <spblas2/gsl_spblas2.h>
 #include <spblas2/gsl_spcblas.h>
@@ -62,7 +63,6 @@
 #include "invert_tmode.h"
 
 static int invert_compare_int(const void *a, const void *b);
-static int invert_debug(const char *format, ...);
 
 #include "invert_nonlinear.c"
 
@@ -83,8 +83,7 @@ invert_alloc(const invert_parameters *params)
   invert_workspace *w;
   const size_t ntheta = 100;
   const size_t nphi = 100;
-  size_t plm_size;
-  size_t i, j;
+  size_t i;
 
   w = calloc(1, sizeof(invert_workspace));
   if (!w)
@@ -93,7 +92,7 @@ invert_alloc(const invert_parameters *params)
   w->nsat = params->nsat;
   w->epoch = params->epoch;
   w->R = params->R;
-  w->nmax = params->nmax;
+  w->nspatmodes = params->nspatmodes;
   w->data_workspace_p = params->invert_data_p;
   w->max_threads = (size_t) omp_get_max_threads();
 
@@ -103,67 +102,46 @@ invert_alloc(const invert_parameters *params)
   w->spatwtMF_workspace_p = spatwt_alloc(8, 12);
   w->spatwtSV_workspace_p = spatwt_alloc(8, 12);
 
+  fprintf(stderr, "invert_alloc: reading temporal modes from %s...", params->tmode_file);
+  w->tmode_workspace_p = invert_tmode_read_binary(params->tmode_file);
+  w->tmode_workspace_p->nfreq = 1; /*XXX just to match spatial modes currently */
+  fprintf(stderr, "done (%zu frequency bands)\n", w->tmode_workspace_p->nfreq);
+
+  fprintf(stderr, "invert_alloc: reading spatial modes...");
+  w->smode_workspace_p = invert_smode_alloc(1, &w->nspatmodes);
+  fprintf(stderr, "done (%zu frequency bands)\n", w->smode_workspace_p->nfreq);
+
+  w->tmode_idx = malloc(w->tmode_workspace_p->nfreq * sizeof(size_t));
+
   /*
-   * Add up all the contributions to the coefficient vector, which will
-   * be partitioned as:
+   * coefficient vector will be partitioned as:
    *
-   * c = [ MF | SV | SA | Euler | external ]
+   * c = [ beta_r | beta_i ]
    */
 
-  /* subtract 1 to exclude the (0,0) coefficient */
-  w->nnm_tot = (w->nmax + 1) * (w->nmax + 1) - 1;
-
-  /*XXX*/
-  w->nnm_max = w->nnm_tot;
-
-  /* compute total (internal) model coefficients */
-
-  w->p_core = 0;
-  if (params->fit_mf && w->data_workspace_p)
+  /* count number of temporal modes in each frequency band */
+  w->ntmodes = 0;
+  for (i = 0; i < w->tmode_workspace_p->nfreq; ++i)
     {
+      w->tmode_idx[i] = w->ntmodes;
+      w->ntmodes += w->tmode_workspace_p->nmodes[i];
     }
 
-  w->p_int = GSL_MAX(w->p_core, 1);
-
-  if (w->p_int == 0)
-    {
-      invert_free(w);
-      GSL_ERROR_NULL("no internal model parameters to fit", GSL_EINVAL);
-    }
-
-  w->p = w->p_int;
-
-  /* compute max nmax */
-  w->nmax_max = 0;
-
-  plm_size = gsl_sf_legendre_array_n(w->nmax);
+  /* compute total number of model coefficients */
+  w->p_complex = w->ntmodes * w->nspatmodes;
+  w->p = 2 * w->p_complex;
 
   if (w->p == 0)
     {
       invert_free(w);
-      GSL_ERROR_NULL("no parameters to fit", GSL_EINVAL);
-    }
-
-  w->cosmphi = malloc((w->nmax + 1) * sizeof(double));
-  w->sinmphi = malloc((w->nmax + 1) * sizeof(double));
-
-  w->Plm = malloc(plm_size * sizeof(double));
-  w->dPlm = malloc(plm_size * sizeof(double));
-  if (!w->Plm || !w->dPlm)
-    {
-      invert_free(w);
-      return 0;
+      GSL_ERROR_NULL("no model parameters to fit", GSL_EINVAL);
     }
 
   w->c = gsl_vector_calloc(w->p);
   w->c_copy = gsl_vector_alloc(w->p);
 
-  /* covariance matrix of the internal field coefficients */
+  /* covariance matrix of model parameters */
   w->covar = gsl_matrix_alloc(w->p, w->p);
-
-  w->dX = malloc(w->nnm_tot * sizeof(double));
-  w->dY = malloc(w->nnm_tot * sizeof(double));
-  w->dZ = malloc(w->nnm_tot * sizeof(double));
 
   w->nobs_cnt = 0;
 
@@ -172,23 +150,12 @@ invert_alloc(const invert_parameters *params)
 
   w->niter = 0;
 
-  w->JTJ_vec = gsl_matrix_alloc(w->p_int, w->p_int);
-  w->choleskyL = gsl_matrix_alloc(w->p_int, w->p_int);
-
-  w->eigen_workspace_p = gsl_eigen_symm_alloc(w->p);
+  w->JTJ_vec = gsl_matrix_alloc(w->p, w->p);
+  w->choleskyL = gsl_matrix_alloc(w->p, w->p);
 
   w->L = gsl_spmatrix_alloc(w->p, w->p);
   w->Lambda = gsl_spmatrix_alloc(w->p, w->p);
 
-  w->omp_dX = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-  w->omp_dY = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-  w->omp_dZ = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-  w->omp_dF = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-  w->omp_dX_grad = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-  w->omp_dY_grad = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-  w->omp_dZ_grad = gsl_matrix_alloc(w->max_threads, w->nnm_tot);
-
-  /* initialize green workspaces and omp_J */
   {
     /*
      * Number of components added to omp_J matrix:
@@ -201,31 +168,21 @@ invert_alloc(const invert_parameters *params)
      * maximum observations to accumulate at once in LS system, calculated to make
      * each omp_J matrix approximately of size 'MFIELD_MATRIX_SIZE'
      */
-    w->data_block = MFIELD_MATRIX_SIZE / (ncomp * w->p_int * sizeof(double));
-    w->data_block_tot = MFIELD_MATRIX_SIZE / (ncomp * w->nnm_tot * sizeof(double));
+    w->data_block = MFIELD_MATRIX_SIZE / (ncomp * w->p * sizeof(double));
 
-    w->green_array_p = malloc(w->max_threads * sizeof(green_workspace *));
     w->omp_J = malloc(w->max_threads * sizeof(gsl_matrix *));
-    w->omp_dB = malloc(w->max_threads * sizeof(gsl_matrix *));
+    w->omp_B = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_rowidx = malloc(w->max_threads * sizeof(size_t));
-    w->omp_T = malloc(w->max_threads * sizeof(gsl_matrix *));
-    w->omp_S = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_colidx = malloc(w->max_threads * sizeof(size_t));
 
     for (i = 0; i < w->max_threads; ++i)
       {
-        w->green_array_p[i] = green_alloc(w->nmax, w->nmax, w->R);
-        w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p_int);
-        w->omp_dB[i] = gsl_matrix_alloc(3, w->nnm_tot);
-        w->omp_S[i] = gsl_matrix_alloc(w->nnm_tot, ncomp * w->data_block_tot);
-        w->omp_T[i] = gsl_matrix_alloc(ncomp * w->data_block_tot, w->nnm_tot);
+        w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p);
+        w->omp_B[i] = gsl_matrix_alloc(3, w->p);
       }
 
     fprintf(stderr, "invert_alloc: data_block     = %zu\n", w->data_block);
-    fprintf(stderr, "invert_alloc: data_block_tot = %zu\n", w->data_block_tot);
   }
-
-  w->tmode_workspace_p = invert_tmode_read_binary(params->tmode_file);
 
   return w;
 }
@@ -235,18 +192,6 @@ invert_free(invert_workspace *w)
 {
   size_t i;
 
-  if (w->cosmphi)
-    free(w->cosmphi);
-
-  if (w->sinmphi)
-    free(w->sinmphi);
-
-  if (w->Plm)
-    free(w->Plm);
-
-  if (w->dPlm)
-    free(w->dPlm);
-
   if (w->c)
     gsl_vector_free(w->c);
 
@@ -255,18 +200,6 @@ invert_free(invert_workspace *w)
 
   if (w->covar)
     gsl_matrix_free(w->covar);
-
-  if (w->dX)
-    free(w->dX);
-
-  if (w->dY)
-    free(w->dY);
-
-  if (w->dZ)
-    free(w->dZ);
-
-  if (w->bias_idx)
-    free(w->bias_idx);
 
   if (w->L)
     gsl_spmatrix_free(w->L);
@@ -313,52 +246,25 @@ invert_free(invert_workspace *w)
   if (w->choleskyL)
     gsl_matrix_free(w->choleskyL);
 
-  if (w->omp_dX)
-    gsl_matrix_free(w->omp_dX);
-
-  if (w->omp_dY)
-    gsl_matrix_free(w->omp_dY);
-
-  if (w->omp_dZ)
-    gsl_matrix_free(w->omp_dZ);
-
-  if (w->omp_dF)
-    gsl_matrix_free(w->omp_dF);
-
-  if (w->omp_dX_grad)
-    gsl_matrix_free(w->omp_dX_grad);
-
-  if (w->omp_dY_grad)
-    gsl_matrix_free(w->omp_dY_grad);
-
-  if (w->omp_dZ_grad)
-    gsl_matrix_free(w->omp_dZ_grad);
-
   if (w->nlinear_workspace_p)
     gsl_multilarge_nlinear_free(w->nlinear_workspace_p);
 
-  if (w->eigen_workspace_p)
-    gsl_eigen_symm_free(w->eigen_workspace_p);
-
   for (i = 0; i < w->max_threads; ++i)
     {
-      green_free(w->green_array_p[i]);
       gsl_matrix_free(w->omp_J[i]);
-      gsl_matrix_free(w->omp_dB[i]);
-      gsl_matrix_free(w->omp_T[i]);
-      gsl_matrix_free(w->omp_S[i]);
+      gsl_matrix_free(w->omp_B[i]);
     }
 
-  free(w->green_array_p);
   free(w->omp_J);
-  free(w->omp_dB);
-  free(w->omp_T);
-  free(w->omp_S);
+  free(w->omp_B);
   free(w->omp_rowidx);
   free(w->omp_colidx);
 
   if (w->tmode_workspace_p)
     invert_tmode_free(w->tmode_workspace_p);
+
+  if (w->tmode_idx)
+    free(w->tmode_idx);
 
   free(w);
 }
@@ -369,10 +275,8 @@ invert_init_params(invert_parameters * params)
 {
   params->epoch = -1.0;
   params->R = -1.0;
-  params->nmax = 0;
   params->nsat = 0;
   params->max_iter = 0;
-  params->fit_mf = 0;
   params->qdlat_fit_cutoff = -1.0;
   params->regularize = 0;
   params->use_weights = 0;
@@ -594,12 +498,7 @@ invert_write(const char *filename, invert_workspace *w)
 
   fwrite(&(w->params), sizeof(invert_parameters), 1, fp);
   fwrite(&(w->t0_data), sizeof(double), 1, fp);
-
-  /*
-   * only write internal coefficients since when we later read
-   * the file we won't be able to recalculate w->p_euler
-   */
-  fwrite(w->c->data, sizeof(double), w->p_int, fp);
+  fwrite(w->c->data, sizeof(double), w->p, fp);
 
   gsl_matrix_fwrite(fp, w->covar);
 
@@ -630,7 +529,7 @@ invert_read(const char *filename)
   w = invert_alloc(&params);
 
   fread(&(w->t0_data), sizeof(double), 1, fp);
-  fread(w->c->data, sizeof(double), w->p_int, fp);
+  fread(w->c->data, sizeof(double), w->p, fp);
   gsl_matrix_fread(fp, w->covar);
 
   fclose(fp);
@@ -644,7 +543,7 @@ invert_write_ascii()
 
 Inputs: filename - output file
         epoch    - epoch to evaluate B-splines (decimal years)
-        c        - coefficient vector, length at least p_int
+        c        - coefficient vector, length at least p
         w        - workspace
 */
 
@@ -667,7 +566,6 @@ invert_write_ascii(const char *filename, const double epoch,
 
   /* print header information */
   fprintf(fp, "%% Magnetic field model coefficients\n");
-  fprintf(fp, "%% nmax:  %zu\n", w->nmax);
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
 
@@ -676,59 +574,7 @@ invert_write_ascii(const char *filename, const double epoch,
   return s;
 }
 
-/*******************************************************
- *      INTERNAL ROUTINES                              *
- *******************************************************/
-
-/*
-invert_coeff_nmidx()
-  This function returns a unique index in [0,w->p-1] corresponding
-to a given (l,m) pair. The array will look like:
-
-[(1,-1) (1,0) (1,1) (2,-2) (2,-1) (2,0) (2,1) (2,2) ...]
-
-(the (0,0) coefficient is not solved for)
-
-Inputs: n - SH degree (> 0)
-        m - SH order (-l <= m <= l)
-
-Return: index in [0,nnm-1]
-*/
-
-size_t
-invert_coeff_nmidx(const size_t n, const int m)
-{
-  size_t base = n * n; /* index of block for this n */
-  int offset = m + n;  /* offset within block for this m */
-  size_t nmidx;
-
-  if (n == 0)
-    {
-      fprintf(stderr, "invert_coeff_nmidx: error: n = 0\n");
-      return 0;
-    }
-
-  nmidx = base + offset;
-
-  /* subtract 1 to exclude (0,0) coefficient */
-  return nmidx - 1;
-} /* invert_coeff_nmidx() */
-
-static int
-invert_compare_int(const void *a, const void *b)
-{
-  int ai = *(int *) a;
-  int bi = *(int *) b;
-
-  if (ai < bi)
-    return -1;
-  else if (ai == bi)
-    return 0;
-  else
-    return 1;
-}
-
-static int
+int
 invert_debug(const char *format, ...)
 {
   int s = 0;
@@ -745,4 +591,42 @@ invert_debug(const char *format, ...)
 #endif
 
   return s;
+}
+
+/*******************************************************
+ *      INTERNAL ROUTINES                              *
+ *******************************************************/
+
+/*
+invert_coeff_idx()
+  This function returns a unique index in [0,w->p_complex-1] corresponding
+to a given set of (f,tmode,smode).
+
+Inputs: f     - frequency band, in [0,nfreq-1]
+        tmode - temporal mode number in band f, in [0,nmodes[f]-1]
+        smode - spatial mode number in band f, in [0,nspatmodes-1]
+        w     - workspace
+
+Return: index in [0,p_complex-1]
+*/
+
+size_t
+invert_coeff_idx(const size_t f, const size_t tmode, const size_t smode,
+                 const invert_workspace * w)
+{
+  return CIDX2(w->tmode_idx[f] + tmode, w->ntmodes, smode, w->nspatmodes);
+}
+
+static int
+invert_compare_int(const void *a, const void *b)
+{
+  int ai = *(int *) a;
+  int bi = *(int *) b;
+
+  if (ai < bi)
+    return -1;
+  else if (ai == bi)
+    return 0;
+  else
+    return 1;
 }

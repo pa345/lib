@@ -104,6 +104,7 @@ build_X(const size_t ifreq, const pca3d_fft_data * data, gsl_matrix_complex * X)
 int
 main(int argc, char *argv[])
 {
+  double freq = 1.0;   /* desired frequency in cpd */
   pca3d_fft_data data;
   struct timeval tv0, tv1;
   char *infile = PCA3D_STAGE2B_FFT_DATA;
@@ -117,7 +118,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "i:", long_options, &option_index);
+      c = getopt_long(argc, argv, "i:f:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -127,12 +128,18 @@ main(int argc, char *argv[])
             infile = optarg;
             break;
 
+          case 'f':
+            freq = atof(optarg);
+            break;
+
           default:
-            fprintf(stderr, "Usage: %s [-i fft_data_file]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-i fft_data_file] [-f frequency (cpd)]\n", argv[0]);
             exit(1);
             break;
         }
     }
+
+  fprintf(stderr, "main: frequency = %g [cpd]\n", freq);
 
   fprintf(stderr, "main: reading %s...", infile);
   gettimeofday(&tv0, NULL);
@@ -147,7 +154,6 @@ main(int argc, char *argv[])
     int status;
     const double window_size = data.window_size;
     const double window_shift = data.window_shift;
-    const double freq = 1.0;                                  /* desired frequency in cpd */
     const size_t ifreq = (size_t) (freq * data.window_size);  /* index of desired frequency */
     const size_t N = data.nr * data.nlm;                      /* spatial grid size */
     const size_t T = data.T;                                  /* number of time window segments */
@@ -157,14 +163,14 @@ main(int argc, char *argv[])
     gsl_matrix_complex *V = gsl_matrix_complex_alloc(T, T);
     char buf[2048];
 
-    fprintf(stderr, "main: building matrix X (%zu-by-%zu) for frequency %.2f [cpd]...",
-            X->size1, X->size2, freq);
+    fprintf(stderr, "main: building matrix X (%zu-by-%zu) for frequency %.2f [cpd] (index = %zu)...",
+            X->size1, X->size2, freq, ifreq);
     gettimeofday(&tv0, NULL);
     build_X(ifreq, &data, X);
     gettimeofday(&tv1, NULL);
     fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-    fprintf(stderr, "main: performing SVD of Q for frequency %g [cpd]...", freq);
+    fprintf(stderr, "main: performing SVD of X for frequency %g [cpd]...", freq);
     gettimeofday(&tv0, NULL);
     status = lapack_complex_svd_thin(X, S, U, V);
     gettimeofday(&tv1, NULL);

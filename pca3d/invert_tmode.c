@@ -7,6 +7,7 @@
 #include <math.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/time.h>
 #include <assert.h>
 
 #include <gsl/gsl_math.h>
@@ -14,8 +15,11 @@
 #include <gsl/gsl_complex_math.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_errno.h>
+#include <gsl/gsl_interp.h>
 
 #include <common/common.h>
+#include <common/interp.h>
+#include <satdata/satdata.h>
 
 #include "invert_tmode.h"
 
@@ -69,6 +73,8 @@ invert_tmode_alloc(const size_t nfreq, const size_t nmodes[], const size_t N)
         }
     }
 
+  w->t = malloc(N * sizeof(double));
+
   return w;
 }
 
@@ -91,7 +97,58 @@ invert_tmode_free(invert_tmode_workspace *w)
       free(w->modes);
     }
 
+  if (w->t)
+    free(w->t);
+
   free(w);
+}
+
+/*
+invert_tmode_get()
+  Return value of temporal mode for a specified frequency band and mode number
+
+Inputs: t    - timestamp (CDF_EPOCH)
+        f    - frequency band, in [0,nfreq-1]
+        mode - mode number in frequency band f, in [0,nmodes[f]-1]
+        w    - workspace
+
+Return: alpha_{f,mode}(t)
+
+Notes:
+1) Temporal mode is interpolated to timestamp
+
+2) Index acceleration lookup is not used, to keep function thread-safe
+*/
+
+gsl_complex
+invert_tmode_get(const double t, const size_t f, const size_t mode, const invert_tmode_workspace * w)
+{
+  if (f >= w->nfreq)
+    {
+      GSL_ERROR_VAL ("invalid frequency band", GSL_EINVAL, GSL_COMPLEX_ZERO);
+    }
+  else if (mode >= w->nmodes[f])
+    {
+      GSL_ERROR_VAL ("invalid mode number", GSL_EINVAL, GSL_COMPLEX_ZERO);
+    }
+  else if (t < w->t[0] || t > w->t[w->N - 1])
+    {
+      fprintf(stderr, "t = %ld [%ld,%ld]\n", epoch2timet(t), epoch2timet(w->t[0]), epoch2timet(w->t[w->N-1]));
+      GSL_ERROR_VAL ("t outside temporal mode range", GSL_EINVAL, GSL_COMPLEX_ZERO);
+    }
+  else
+    {
+      size_t idx = gsl_interp_bsearch(w->t, t, 0, w->N - 1);
+      gsl_complex z1 = gsl_matrix_complex_get(w->modes[f], idx, mode);
+      gsl_complex z2 = gsl_matrix_complex_get(w->modes[f], idx + 1, mode);
+      gsl_complex z;
+
+      /* interpolate to time t */
+      GSL_REAL(z) = interp1d(w->t[idx], w->t[idx + 1], GSL_REAL(z1), GSL_REAL(z2), t);
+      GSL_IMAG(z) = interp1d(w->t[idx], w->t[idx + 1], GSL_IMAG(z1), GSL_IMAG(z2), t);
+
+      return z;
+    }
 }
 
 /*
@@ -140,6 +197,7 @@ invert_tmode_read_ascii(const char * filename, const size_t freq, const size_t m
           if (c != 3)
             continue;
 
+          w->t[n] = satdata_timet2epoch(t);
           gsl_vector_complex_set(&v.vector, n++, gsl_complex_rect(re, im));
         }
 
@@ -171,6 +229,7 @@ invert_tmode_write_binary(const char * filename, invert_tmode_workspace * w)
   fwrite(&(w->nfreq), sizeof(size_t), 1, fp);
   fwrite(w->nmodes, sizeof(size_t), w->nfreq, fp);
   fwrite(&(w->N), sizeof(size_t), 1, fp);
+  fwrite(w->t, sizeof(double), w->N, fp);
 
   for (i = 0; i < w->nfreq; ++i)
     gsl_matrix_complex_fwrite(fp, w->modes[i]);
@@ -205,6 +264,8 @@ invert_tmode_read_binary(const char * filename)
   fread(&N, sizeof(size_t), 1, fp);
 
   w = invert_tmode_alloc(nfreq, nmodes, N);
+
+  fread(w->t, sizeof(double), N, fp);
 
   for (i = 0; i < nfreq; ++i)
     gsl_matrix_complex_fread(fp, w->modes[i]);

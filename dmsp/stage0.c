@@ -38,10 +38,19 @@
 #include <common/ellipsoid.h>
 #include <common/eci.h>
 #include <common/julian.h>
+#include <sofa/sofa.h>
+#include <spice/spice.h>
 
 #include "eph.h"
 #include "eph_data.h"
 #include "hermite.h"
+
+/*
+ * 0 = old/original Greenwich only transformation
+ * 1 = libspice
+ * 2 = libsofa
+ */
+#define ECI_LIB       0
 
 /*
  * DMSP ellipsoid semi-major and semi-minor axes (km);
@@ -372,9 +381,21 @@ calc_spacecraft_basis_ECI(const time_t t, const double r_ECI[3], const double v_
 
   {
     double r_ECEF[3], tmp[3];
+    double R_data[9];
+    gsl_matrix_view R = gsl_matrix_view_array(R_data, 3, 3);
 
     /* convert ECI position to ECEF */
+#if ECI_LIB == 0
     eci2ecef(t, r_ECI, r_ECEF);
+#elif ECI_LIB == 1
+    {
+      gsl_vector_const_view in = gsl_vector_const_view_array(r_ECI, 3);
+      gsl_vector_view out = gsl_vector_view_array(r_ECEF, 3);
+      spice_c2t(t, &R.matrix);
+      gsl_blas_dgemv(CblasNoTrans, 1.0, &R.matrix, &in.vector, 0.0, &out.vector);
+    }
+#else
+#endif
 
     /* compute tmp = e_mu in ECEF */
 #if 0
@@ -384,7 +405,16 @@ calc_spacecraft_basis_ECI(const time_t t, const double r_ECI[3], const double v_
 #endif
 
     /* compute s1 = e_mu in ECI */
+#if ECI_LIB == 0
     ecef2eci(t, tmp, s1);
+#elif ECI_LIB == 1
+    {
+      gsl_vector_const_view in = gsl_vector_const_view_array(tmp, 3);
+      gsl_vector_view out = gsl_vector_view_array(s1, 3);
+      gsl_blas_dgemv(CblasTrans, 1.0, &R.matrix, &in.vector, 0.0, &out.vector);
+    }
+#else
+#endif
 
     /* compute s1 = -e_mu in ECI */
     for (i = 0; i < 3; ++i)
@@ -516,20 +546,47 @@ calc_quaternions_ECI2(const time_t t, const double r_ECI[3], const double v_ECI[
   double xhat_ECEF[3], yhat_ECEF[3], zhat_ECEF[3]; /* NEC basis vectors in ECEF frame */
   double xhat_ECI[3], yhat_ECI[3], zhat_ECI[3];    /* NEC basis vectors in ECI frame */
   double s1[3], s2[3], s3[3];                      /* spacecraft-fixed basis vectors in ECI frame */
-  double DCM_data[9];
+  double DCM_data[9], R_data[9];
   gsl_matrix_view DCM = gsl_matrix_view_array(DCM_data, 3, 3);
+  gsl_matrix_view R = gsl_matrix_view_array(R_data, 3, 3);
   gsl_vector_view qv = gsl_vector_view_array(q, 4);
 
   /* compute position vector in ECEF frame */
+#if ECI_LIB == 0
   eci2ecef(t, r_ECI, r_ECEF);
+#elif ECI_LIB == 1
+  {
+    gsl_vector_const_view in = gsl_vector_const_view_array(r_ECI, 3);
+    gsl_vector_view out = gsl_vector_view_array(r_ECEF, 3);
+    spice_c2t(t, &R.matrix);
+    gsl_blas_dgemv(CblasNoTrans, 1.0, &R.matrix, &in.vector, 0.0, &out.vector);
+  }
+#else
+#endif
 
   /* compute NEC basis vectors in ECEF frame */
   ecef2nec_basis(r_ECEF, xhat_ECEF, yhat_ECEF, zhat_ECEF);
 
   /* transform NEC basis vectors to ECI components */
+#if ECI_LIB == 0
   ecef2eci(t, xhat_ECEF, xhat_ECI);
   ecef2eci(t, yhat_ECEF, yhat_ECI);
   ecef2eci(t, zhat_ECEF, zhat_ECI);
+#elif ECI_LIB == 1
+  {
+    gsl_vector_const_view xin = gsl_vector_const_view_array(xhat_ECEF, 3);
+    gsl_vector_const_view yin = gsl_vector_const_view_array(yhat_ECEF, 3);
+    gsl_vector_const_view zin = gsl_vector_const_view_array(zhat_ECEF, 3);
+    gsl_vector_view xout = gsl_vector_view_array(xhat_ECI, 3);
+    gsl_vector_view yout = gsl_vector_view_array(yhat_ECI, 3);
+    gsl_vector_view zout = gsl_vector_view_array(zhat_ECI, 3);
+
+    gsl_blas_dgemv(CblasTrans, 1.0, &R.matrix, &xin.vector, 0.0, &xout.vector);
+    gsl_blas_dgemv(CblasTrans, 1.0, &R.matrix, &yin.vector, 0.0, &yout.vector);
+    gsl_blas_dgemv(CblasTrans, 1.0, &R.matrix, &zin.vector, 0.0, &zout.vector);
+  }
+#else
+#endif
 
   calc_spacecraft_basis_ECI(t, r_ECI, v_ECI, s1, s2, s3);
 
@@ -559,6 +616,7 @@ interp_eph(satdata_mag *data, eph_data *eph)
   int s = 0;
   size_t i, j;
   eph_workspace *w = eph_alloc(eph);
+  sofa_workspace * sofa_p = sofa_alloc();
 
   for (i = 0; i < data->n; ++i)
     {
@@ -589,7 +647,13 @@ interp_eph(satdata_mag *data, eph_data *eph)
           double r_sph[3];
 
           /* compute ECEF (r,theta,phi) from ECI position */
+#if ECI_LIB == 0
           eci2sph_pos(unix_time, pos, r_sph);
+#elif ECI_LIB == 1
+          spice_c2sph(unix_time, pos, r_sph);
+#else
+          sofa_c2sph(unix_time, pos, r_sph, sofa_p);
+#endif
 
           r = r_sph[0];
           theta = r_sph[1];
@@ -597,7 +661,7 @@ interp_eph(satdata_mag *data, eph_data *eph)
 
 #if 0
           calc_quaternions_ECI(unix_time, theta, phi, pos, vel, q);
-#else
+#elif 1
           calc_quaternions_ECI2(unix_time, pos, vel, q);
 #endif
         }
@@ -616,6 +680,7 @@ interp_eph(satdata_mag *data, eph_data *eph)
     }
 
   eph_free(w);
+  sofa_free(sofa_p);
 
   return 0;
 }
@@ -629,6 +694,7 @@ main(int argc, char *argv[])
   eph_data *eph = NULL;
   int c;
   struct timeval tv0, tv1;
+  spice_workspace * spice_p;
 
   while ((c = getopt(argc, argv, "i:o:b:t:")) != (-1))
     {
@@ -667,6 +733,8 @@ main(int argc, char *argv[])
       exit(1);
     }
 
+  spice_p = spice_alloc();
+
   data = satdata_mag_alloc(86400);
   data_final = satdata_mag_alloc(86400);
 
@@ -702,6 +770,7 @@ main(int argc, char *argv[])
         }
     }
 
+  spice_free(spice_p);
   satdata_mag_free(data);
   satdata_mag_free(data_final);
   if (eph)

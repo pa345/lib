@@ -248,7 +248,8 @@ fluxcal_nls(const gsl_vector * weights, gsl_vector * c, fluxcal_workspace *w)
   if (w->nlinear_workspace_p)
     gsl_multifit_nlinear_free(w->nlinear_workspace_p);
 
-  fdf_params.solver = gsl_multifit_nlinear_solver_cholesky;
+  /*fdf_params.solver = gsl_multifit_nlinear_solver_cholesky;*/
+  fdf_params.solver = gsl_multifit_nlinear_solver_qr;
   w->nlinear_workspace_p = gsl_multifit_nlinear_alloc(T, &fdf_params, w->n, w->p);
 
   f = gsl_multifit_nlinear_residual(w->nlinear_workspace_p);

@@ -199,6 +199,33 @@ pca3d_read_data(const char *filename)
   return data;
 }
 
+magfield_params
+pca3d_read_params(const char *filename)
+{
+  FILE *fp;
+  pca3d_data data;
+  magfield_params params;
+
+  fp = fopen(filename, "r");
+  if (!fp)
+    {
+      fprintf(stderr, "pca3d_read_params: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return params;
+    }
+
+  fread(&(data.nt), sizeof(size_t), 1, fp);
+
+  data.t = malloc(data.nt * sizeof(time_t));
+  fread(data.t, sizeof(time_t), data.nt, fp);
+
+  fread(&params, sizeof(magfield_params), 1, fp);
+
+  fclose(fp);
+
+  return params;
+}
+
 /*
 pca3d_write_fft_data2()
   Write FFT data to file (based on Mie decomposition of J grids)

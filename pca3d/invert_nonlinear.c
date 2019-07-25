@@ -46,26 +46,6 @@ invert_calc_nonlinear(gsl_vector *c, invert_workspace *w)
 {
   int s = 0;
   const invert_parameters *params = &(w->params);
-  const size_t max_iter = 50;     /* maximum iterations */
-  const double xtol = 1.0e-5;
-  const double gtol = 1.0e-6;
-  const double ftol = 1.0e-6;
-  int info;
-  const size_t p = w->p;          /* number of coefficients */
-  const size_t n = w->nres_tot;   /* number of residuals */
-  gsl_multifit_nlinear_fdf fdf;
-  gsl_vector *f;
-  struct timeval tv0, tv1;
-  double res0;                    /* initial residual */
-
-  fdf.f = invert_calc_f;
-  fdf.df = invert_calc_df;
-  fdf.fvv = NULL;
-  fdf.n = n;
-  fdf.p = p;
-  fdf.params = w;
-
-  printv_octave(c, "c0");
 
   /* compute robust weights with coefficients from previous iteration */
   if (w->niter > 0)
@@ -108,47 +88,7 @@ invert_calc_nonlinear(gsl_vector *c, invert_workspace *w)
 
 #if FDF_SOLVER == 0 /* GSL multifit */
 
-  fprintf(stderr, "invert_calc_nonlinear: initializing multifit...");
-  gettimeofday(&tv0, NULL);
-  gsl_multifit_nlinear_winit(c, w->wts_final, &fdf, w->multifit_nlinear_p);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  /* compute initial residual */
-  f = gsl_multifit_nlinear_residual(w->multifit_nlinear_p);
-  res0 = gsl_blas_dnrm2(f);
-
-  fprintf(stderr, "invert_calc_nonlinear: computing nonlinear least squares solution...");
-  gettimeofday(&tv0, NULL);
-  s = gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol,
-                                  invert_nonlinear_callback, (void *) w,
-                                  &info, w->multifit_nlinear_p);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  if (s == GSL_SUCCESS)
-    {
-      fprintf(stderr, "invert_calc_nonlinear: NITER = %zu\n",
-              gsl_multifit_nlinear_niter(w->multifit_nlinear_p));
-      fprintf(stderr, "invert_calc_nonlinear: NFEV  = %zu\n", fdf.nevalf);
-      fprintf(stderr, "invert_calc_nonlinear: NJEV  = %zu\n", fdf.nevaldf);
-      fprintf(stderr, "invert_calc_nonlinear: NAEV  = %zu\n", fdf.nevalfvv);
-      fprintf(stderr, "invert_calc_nonlinear: reason for stopping: %d\n", info);
-      fprintf(stderr, "invert_calc_nonlinear: initial |f(x)|: %.12e\n", res0);
-      fprintf(stderr, "invert_calc_nonlinear: final   |f(x)|: %.12e\n",
-              gsl_blas_dnrm2(f));
-    }
-  else
-    {
-      fprintf(stderr, "invert_calc_nonlinear: multifit failed: %s\n",
-              gsl_strerror(s));
-    }
-
-  /* store final coefficients in physical units */
-  {
-    gsl_vector *x_final = gsl_multifit_nlinear_position(w->multifit_nlinear_p);
-    gsl_vector_memcpy(w->c, x_final);
-  }
+  s = invert_calc_nonlinear_multifit(c, w);
 
 #elif FDF_SOLVER == 1 /* GSL multilarge */
 
@@ -161,8 +101,6 @@ invert_calc_nonlinear(gsl_vector *c, invert_workspace *w)
 #endif
 
   gsl_vector_memcpy(c, w->c);
-
-  printv_octave(c, "cfinal");
 
   w->niter++;
 
@@ -1060,11 +998,11 @@ static void
 invert_nonlinear_callback(const size_t iter, void *params,
                           const gsl_multifit_nlinear_workspace *multifit_p)
 {
-  invert_workspace *w = (invert_workspace *) params;
-  gsl_vector *x = gsl_multifit_nlinear_position(multifit_p);
   gsl_vector *f = gsl_multifit_nlinear_residual(multifit_p);
   double avratio = gsl_multifit_nlinear_avratio(multifit_p);
   double rcond;
+
+  (void) params;
 
   /* print out state every 5 iterations */
   if (iter % 5 != 0 && iter != 1)

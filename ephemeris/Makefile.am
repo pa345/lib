@@ -11,4 +11,4 @@ print_LDADD = libephemeris.la -lcommon -lm -lcdf -lsatdata -lindices -lz -lgsl -
 check_PROGRAMS = test
 
 test_SOURCES = test.c
-test_LDADD = libephemeris.la -lcommon -lm -lcdf -lsatdata -lindices -lz -lgsl -lgslcblas
+test_LDADD = libephemeris.la -lcommon -lm -lcdf -lsatdata -lindices -lz -lsofa -lsofa_c -lspice -lcspice -lgsl -lgslcblas

@@ -41,6 +41,8 @@
 #include "magdata.h"
 #include "invert.h"
 
+#include "invert_multifit.c"
+
 #define MAX_BUFFER           2048
 
 /*
@@ -115,13 +117,12 @@ parse_config_file(const char *filename, invert_parameters *invert_params,
       return -1;
     }
 
-  if (config_lookup_int(&cfg, "nmax", &ival))
-    invert_params->nmax = (size_t) ival;
-
   if (config_lookup_float(&cfg, "epoch", &fval))
     invert_params->epoch = fval;
   if (config_lookup_float(&cfg, "R", &fval))
     invert_params->R = fval;
+  if (config_lookup_int(&cfg, "num_spatial_modes", &ival))
+    invert_params->nspatmodes = (size_t) ival;
 
   if (config_lookup_string(&cfg, "tmode_file", &sval))
     strcpy(invert_params->tmode_file, sval);
@@ -133,9 +134,6 @@ parse_config_file(const char *filename, invert_parameters *invert_params,
       data_params->qdlat_fit_cutoff = fval;
       invert_params->qdlat_fit_cutoff = fval;
     }
-  if (config_lookup_int(&cfg, "fit_mf", &ival))
-    invert_params->fit_mf = ival;
-
   if (config_lookup_int(&cfg, "use_weights", &ival))
     invert_params->use_weights = ival;
   if (config_lookup_int(&cfg, "regularize", &ival))
@@ -222,6 +220,38 @@ parse_config_file(const char *filename, invert_parameters *invert_params,
   config_destroy(&cfg);
 
   return 0;
+}
+
+void
+print_J_grid(const char * filename, const double t, invert_workspace * w)
+{
+  FILE *fp = fopen(filename, "w");
+  const double r = R_EARTH_KM + 110.0;
+  double lon, lat;
+
+  for (lon = -180.0; lon <= 180.0; lon += 5.0)
+    {
+      double phi = lon * M_PI / 180.0;
+
+      for (lat = -89.9; lat <= 89.9; lat += 5.0)
+        {
+          double theta = M_PI / 2.0 - lat * M_PI / 180.0;
+          double J[3];
+
+          invert_nonlinear_model_J(0, w->c, t, r, theta, phi, 0, J, w);
+
+          fprintf(fp, "%f %f %.6e %.6e %.6e\n",
+                  lon,
+                  lat,
+                  J[0],
+                  J[1],
+                  J[2]);
+        }
+
+      fprintf(fp, "\n");
+    }
+
+  fclose(fp);
 }
 
 void
@@ -350,8 +380,6 @@ main(int argc, char *argv[])
   parse_config_file(config_file, &invert_params, &data_params);
   fprintf(stderr, "done\n");
 
-  invert_params.nmax = invert_params.nmax;
-
   /* check if any command-line arguments should override config file values */
   if (epoch > 0.0)
     invert_params.epoch = epoch;
@@ -362,20 +390,9 @@ main(int argc, char *argv[])
   if (status)
     exit(1);
 
-  /* make sure config flags are consistent with what components are fitted */
-  if (!invert_params.fit_mf)
-    {
-      data_params.fit_X = data_params.fit_Y = data_params.fit_Z = data_params.fit_F = 0;
-      data_params.fit_Z_highlat = data_params.fit_F_highlat = 0;
-      data_params.fit_DZ_NS_highlat = data_params.fit_DF_NS_highlat = 0;
-      data_params.fit_DZ_EW_highlat = data_params.fit_DF_EW_highlat = 0;
-      data_params.fit_DX_NS = data_params.fit_DY_NS = data_params.fit_DZ_NS = data_params.fit_DF_NS = 0;
-      data_params.fit_DX_EW = data_params.fit_DY_EW = data_params.fit_DZ_EW = data_params.fit_DF_EW = 0;
-    }
-
-  fprintf(stderr, "main: epoch           = %.2f\n", invert_params.epoch);
-  fprintf(stderr, "main: radius          = %g [km]\n", invert_params.R);
-  fprintf(stderr, "main: total nmax      = %zu\n", invert_params.nmax);
+  fprintf(stderr, "main: epoch             = %.2f\n", invert_params.epoch);
+  fprintf(stderr, "main: radius            = %g [km]\n", invert_params.R);
+  fprintf(stderr, "main: num_spatial_modes = %zu\n", invert_params.nspatmodes);
 
   fprintf(stderr, "main: tmin = %g\n", tmin);
   fprintf(stderr, "main: tmax = %g\n", tmax);
@@ -455,7 +472,6 @@ main(int argc, char *argv[])
       exit(1);
     }
 
-  fprintf(stderr, "main: number of core field spline parameters:    %zu\n", invert_workspace_p->p_core);
   fprintf(stderr, "main: number of total parameters:                %zu\n", invert_workspace_p->p);
 
 #if 0 /*XXX*/
@@ -488,7 +504,6 @@ main(int argc, char *argv[])
   initial_guess(coeffs, invert_workspace_p);
   fprintf(stderr, "done\n");
 
-#if 0/*XXX*/
   if (print_residuals)
     {
       /* print residuals with initial guess vector */
@@ -497,7 +512,6 @@ main(int argc, char *argv[])
       invert_residual_print(residual_prefix, 0, invert_workspace_p);
       fprintf(stderr, "done\n");
     }
-#endif
 
   gettimeofday(&tv0, NULL);
 
@@ -508,14 +522,12 @@ main(int argc, char *argv[])
 
       status = invert_calc_nonlinear(coeffs, invert_workspace_p);
 
-#if 0 /*XXX*/
       if (print_residuals)
         {
           fprintf(stderr, "main: printing residuals to %s...", residual_prefix);
           invert_residual_print(residual_prefix, iter, invert_workspace_p);
           fprintf(stderr, "done\n");
         }
-#endif
 
       /* reset workspace for a new iteration */
       invert_reset(invert_workspace_p);
@@ -524,6 +536,10 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
 
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
+
+  fprintf(stderr, "main: printing J grid...");
+  print_J_grid("grid.txt", invert_workspace_p->t0_data, invert_workspace_p);
+  fprintf(stderr, "done\n");
 
 #if 0
   /* calculate covariance matrix */

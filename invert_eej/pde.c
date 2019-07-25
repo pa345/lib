@@ -35,7 +35,6 @@
 #include <magfield/magfield.h>
 
 #include "mageq.h"
-#include "lisw.h"
 #include "superlu.h"
 
 #include "pde.h"

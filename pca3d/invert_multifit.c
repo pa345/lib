@@ -4,11 +4,176 @@
  * Contains routines for fitting magnetic field module using gsl_multifit_nlinear framework
  */
 
+#include <gsl/gsl_math.h>
+#include <gsl/gsl_linalg.h>
+#include <gsl/gsl_complex.h>
+#include <gsl/gsl_complex_math.h>
+#include <omp.h>
+
+#include <common/oct.h>
+
+static int invert_calc_nonlinear_multifit(const gsl_vector * c, invert_workspace * w);
 static int invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J);
-static int invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t src_idx,
-                                  const size_t data_idx, const size_t thread_id, double B_model[3], invert_workspace *w);
+static int invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr,
+                                  const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w);
+static int invert_jacobian_vector(const double t, const double r, const double theta, const double phi,
+                                  gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
+                                  const invert_workspace *w);
+static int invert_nonlinear_model_J(const int res_flag, const gsl_vector * x, const double t, const double r,
+                                    const double theta, const double phi,
+                                    const int thread_id, double J_model[3], invert_workspace *w);
+static int invert_jacobian_vector_J(const double t, const double r, const double theta, const double phi,
+                                    gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
+                                    const invert_workspace *w);
+
+/*
+invert_calc_nonlinear_multifit()
+  Calculate a solution to inverse problem using multifit
+
+Inputs: c - coefficient vector
+        w - workspace
+
+Notes:
+1) w->wts_final must be initialized prior to calling this function
+2) On output, w->c contains the solution vector
+*/
+
+static int
+invert_calc_nonlinear_multifit(const gsl_vector * c, invert_workspace * w)
+{
+  int s = 0;
+  const size_t p = w->p;          /* number of coefficients */
+  const size_t n = w->nres_tot;   /* number of residuals */
+  struct timeval tv0, tv1;
+
+  if (w->lls_solution == 1)
+    {
+      gsl_matrix * J = w->multifit_nlinear_p->J;
+      gsl_vector * f = w->multifit_nlinear_p->f;
+      gsl_matrix * T = gsl_matrix_alloc(p, p);
+      gsl_vector * x = gsl_vector_alloc(n);
+      gsl_vector * work = gsl_vector_alloc(p);
+      gsl_vector * work3 = gsl_vector_alloc(3 * p);
+      gsl_vector_view x1 = gsl_vector_subvector(x, 0, p);
+      gsl_vector_view x2 = gsl_vector_subvector(x, p, n - p);
+      double rcond;
+      size_t i;
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: computing RHS of linear system (%zu-by-1)...", n);
+      gettimeofday(&tv0, NULL);
+      invert_calc_Wf(w->c, w, f);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds, || f || = %.12e)\n", time_diff(tv0, tv1), gsl_blas_dnrm2(f));
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: computing design matrix of linear system (%zu-by-%zu)...", n, p);
+      gettimeofday(&tv0, NULL);
+      invert_calc_df(w->c, w, J);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: adding weights to Jacobian matrix...");
+      gettimeofday(&tv0, NULL);
+      for (i = 0; i < w->nres; ++i)
+        {
+          double swi = gsl_vector_get(w->sqrt_wts_final, i);
+          gsl_vector_view v = gsl_matrix_row(J, i);
+
+          if (swi != 1.0)
+            gsl_vector_scale(&v.vector, swi);
+        }
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: computing QR decomposition of design matrix...");
+      gettimeofday(&tv0, NULL);
+      gsl_linalg_QR_decomp_r(J, T);
+      gettimeofday(&tv1, NULL);
+      gsl_linalg_QR_rcond(J, &rcond, work3);
+      fprintf(stderr, "done (%g seconds, condition number = %.12e)\n", time_diff(tv0, tv1), 1.0 / rcond);
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: solving least squares system...");
+      gettimeofday(&tv0, NULL);
+      gsl_linalg_QR_lssolve_r(J, T, f, x, work);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds, residual norm = %.12e)\n",
+              time_diff(tv0, tv1), gsl_blas_dnrm2(&x2.vector));
+
+      gsl_vector_memcpy(w->c, &x1.vector);
+
+      printv_octave(w->c, "c");
+
+      gsl_matrix_free(T);
+      gsl_vector_free(x);
+      gsl_vector_free(work);
+      gsl_vector_free(work3);
+    }
+  else
+    {
+#if 0
+      const size_t max_iter = 50;     /* maximum iterations */
+      const double xtol = 1.0e-5;
+      const double gtol = 1.0e-6;
+      const double ftol = 1.0e-6;
+      gsl_vector *f;
+      int info;
+      gsl_multifit_nlinear_fdf fdf;
+      double res0;                    /* initial residual */
+
+      fdf.f = invert_calc_f;
+      fdf.df = invert_calc_df;
+      fdf.fvv = NULL;
+      fdf.n = n;
+      fdf.p = p;
+      fdf.params = w;
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: initializing multifit...");
+      gettimeofday(&tv0, NULL);
+      gsl_multifit_nlinear_winit(c, w->wts_final, &fdf, w->multifit_nlinear_p);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      /* compute initial residual */
+      f = gsl_multifit_nlinear_residual(w->multifit_nlinear_p);
+      res0 = gsl_blas_dnrm2(f);
+
+      fprintf(stderr, "invert_calc_nonlinear_multifit: computing nonlinear least squares solution...");
+      gettimeofday(&tv0, NULL);
+      s = gsl_multifit_nlinear_driver(max_iter, xtol, gtol, ftol,
+                                      invert_nonlinear_callback, (void *) w,
+                                      &info, w->multifit_nlinear_p);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      if (s == GSL_SUCCESS)
+        {
+          fprintf(stderr, "invert_calc_nonlinear_multifit: NITER = %zu\n",
+                  gsl_multifit_nlinear_niter(w->multifit_nlinear_p));
+          fprintf(stderr, "invert_calc_nonlinear_multifit: NFEV  = %zu\n", fdf.nevalf);
+          fprintf(stderr, "invert_calc_nonlinear_multifit: NJEV  = %zu\n", fdf.nevaldf);
+          fprintf(stderr, "invert_calc_nonlinear_multifit: NAEV  = %zu\n", fdf.nevalfvv);
+          fprintf(stderr, "invert_calc_nonlinear_multifit: reason for stopping: %d\n", info);
+          fprintf(stderr, "invert_calc_nonlinear_multifit: initial |f(x)|: %.12e\n", res0);
+          fprintf(stderr, "invert_calc_nonlinear_multifit: final   |f(x)|: %.12e\n",
+                  gsl_blas_dnrm2(f));
+        }
+      else
+        {
+          fprintf(stderr, "invert_calc_nonlinear_multifit: multifit failed: %s\n",
+                  gsl_strerror(s));
+        }
+
+      /* store final coefficients in physical units */
+      {
+        gsl_vector *x_final = gsl_multifit_nlinear_position(w->multifit_nlinear_p);
+        gsl_vector_memcpy(w->c, x_final);
+      }
+#endif
+    }
+
+  return s;
+}
 
 /*
 invert_calc_f()
@@ -47,8 +212,9 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
         {
           int thread_id = omp_get_thread_num();
           size_t ridx = mptr->index[j]; /* residual index for this data point */
-          double B_model[3];            /* internal + external */
+          double B_model[3];            /* model vector */
           double B_obs[3];              /* observation vector NEC frame */
+          double B_prior[3];            /* a priori model NEC frame */
           double dBdt_model[3];         /* dB/dt (SV of internal model) */
           double dBdt_obs[3];           /* SV observation vector (NEC frame) */
           double F_obs;                 /* scalar field measurement */
@@ -56,8 +222,11 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
 
+          if (!MAGDATA_FitMF(mptr->flags[j]))
+            continue;
+
           /* compute vector model for this residual */
-          invert_nonlinear_model(0, x, mptr, i, j, thread_id, B_model, w);
+          invert_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
 
           /* compute vector SV model for this residual */
           if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
@@ -74,19 +243,23 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 
           F_obs = mptr->F[j];
 
+          B_prior[0] = mptr->Bx_model[j];
+          B_prior[1] = mptr->By_model[j];
+          B_prior[2] = mptr->Bz_model[j];
+
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
-              gsl_vector_set(f, ridx++, B_obs[0] - B_model[0]);
+              gsl_vector_set(f, ridx++, B_obs[0] - B_prior[0] - B_model[0]);
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Y)
             {
-              gsl_vector_set(f, ridx++, B_obs[1] - B_model[1]);
+              gsl_vector_set(f, ridx++, B_obs[1] - B_prior[1] - B_model[1]);
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Z)
             {
-              gsl_vector_set(f, ridx++, B_obs[2] - B_model[2]);
+              gsl_vector_set(f, ridx++, B_obs[2] - B_prior[2] - B_model[2]);
             }
 
           if (MAGDATA_ExistScalar(mptr->flags[j]) &&
@@ -131,12 +304,14 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
         } /* for (j = 0; j < mptr->n; ++j) */
     }
 
+#if 0/*XXX*/
   if (mparams->regularize && !mparams->synth_data)
     {
       /* store L^T*x in bottom of f for regularization */
       gsl_vector_view v = gsl_vector_subvector(f, w->nres, w->p);
       gsl_spblas_dusmv(CblasTrans, 1.0, w->L, x, 0.0, &v.vector);
     }
+#endif
 
   gettimeofday(&tv1, NULL);
   invert_debug("invert_calc_f: leaving function (%g seconds, ||f|| = %g)\n",
@@ -299,63 +474,43 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
       for (j = 0; j < mptr->n; ++j)
         {
           int thread_id = omp_get_thread_num();
-#if 1 /*XXX*/
-          double t = mptr->ts[j];       /* use scaled time */
-#endif
           double r = mptr->r[j];
           double theta = mptr->theta[j];
           double phi = mptr->phi[j];
           size_t ridx = mptr->index[j]; /* residual index for this data point */
           size_t k;
-
-          /* internal Green's functions for current point */
-          gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
-          gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
-          gsl_vector_view vz = gsl_matrix_row(w->omp_dZ, thread_id);
-
-          /* internal Green's functions for gradient point */
-          gsl_vector_view vx_ns = gsl_matrix_row(w->omp_dX_grad, thread_id);
-          gsl_vector_view vy_ns = gsl_matrix_row(w->omp_dY_grad, thread_id);
-          gsl_vector_view vz_ns = gsl_matrix_row(w->omp_dZ_grad, thread_id);
+          gsl_vector_view vx, vy, vz;
+          gsl_vector *VX, *VY, *VZ;
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
 
-          if (MAGDATA_FitMF(mptr->flags[j]))
-            {
-            }
+          if (!MAGDATA_FitMF(mptr->flags[j]))
+            continue;
+
+          VX = VY = VZ = NULL;
 
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
-              /* check if fitting MF to this data point */
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
-                }
-
-              ++ridx;
+              vx = gsl_matrix_row(J, ridx++);
+              VX = &vx.vector;
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Y)
             {
-              /* check if fitting MF to this data point */
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
-                }
-
-              ++ridx;
+              vy = gsl_matrix_row(J, ridx++);
+              VY = &vy.vector;
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_Z)
             {
-              /* check if fitting MF to this data point */
-              if (MAGDATA_FitMF(mptr->flags[j]))
-                {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
-                }
+              vz = gsl_matrix_row(J, ridx++);
+              VZ = &vz.vector;
+            }
 
-              ++ridx;
+          if (mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z))
+            {
+              invert_jacobian_vector(mptr->t[j], r, theta, phi, VX, VY, VZ, w);
             }
 
           if (MAGDATA_ExistScalar(mptr->flags[j]) &&
@@ -368,17 +523,17 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
             {
               if (mptr->flags[j] & MAGDATA_FLG_DXDT)
                 {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p);
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_DYDT)
                 {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p);
                 }
 
               if (mptr->flags[j] & MAGDATA_FLG_DZDT)
                 {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p_int);
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx++, 0, w->p);
                 }
             }
 
@@ -387,7 +542,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               /* check if fitting MF to this data point */
               if (MAGDATA_FitMF(mptr->flags[j]))
                 {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p);
                 }
 
               ++ridx;
@@ -398,7 +553,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               /* check if fitting MF to this data point */
               if (MAGDATA_FitMF(mptr->flags[j]))
                 {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p);
                 }
 
               ++ridx;
@@ -409,7 +564,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               /* check if fitting MF to this data point */
               if (MAGDATA_FitMF(mptr->flags[j]))
                 {
-                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p_int);
+                  gsl_vector_view Jv = gsl_matrix_subrow(J, ridx, 0, w->p);
                 }
 
               ++ridx;
@@ -434,7 +589,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 #if 0
   print_octave(J, "J");
   exit(1);
-#elif 1
+#elif 0
   {
     static int niter = 0;
 
@@ -458,28 +613,215 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
 /*
 invert_nonlinear_model()
-  Compute total model vector for a given residual
+  Compute total B model vector for a given residual
 
 Inputs: res_flag  - 0 = normal residual
                     1 = gradient residual
         x         - parameter vector
         mptr      - magdata structure
-        src_idx   - index of data source (mptr) in [0,w->nsat-1]
         data_idx  - index of datum in magdata
         thread_id - OpenMP thread id
         B_model   - (output) B_model (X,Y,Z) in NEC
         w         - workspace
-
-Notes:
-1) On output, w->omp_d{X,Y,Z}(thread_id,:) is filled with internal Green's functions
-for dX/dg, dY/dg, dZ/dg
 */
 
 static int
-invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr, const size_t src_idx,
-                       const size_t data_idx, const size_t thread_id, double B_model[3], invert_workspace *w)
+invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr,
+                       const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w)
 {
   int s = 0;
+  gsl_matrix * JB = w->omp_B[thread_id];
+  gsl_vector_view X = gsl_matrix_row(w->omp_B[thread_id], 0);
+  gsl_vector_view Y = gsl_matrix_row(w->omp_B[thread_id], 1);
+  gsl_vector_view Z = gsl_matrix_row(w->omp_B[thread_id], 2);
+  gsl_vector_view out = gsl_vector_view_array(B_model, 3);
+
+  /* compute 3 rows of Jacobian corresponding to X,Y,Z residuals */
+  s = invert_jacobian_vector(mptr->t[data_idx], mptr->r[data_idx], mptr->theta[data_idx], mptr->phi[data_idx],
+                             &X.vector, &Y.vector, &Z.vector, w);
+  if (s)
+    return s;
+
+  /* B_model = JB * x */
+  gsl_blas_dgemv(CblasNoTrans, 1.0, JB, x, 0.0, &out.vector);
+
+  return s;
+}
+
+/*
+invert_jacobian_vector()
+  Construct a block of 3 rows of the Jacobian corresponding to vector residuals
+
+Inputs: t     - timestamp (CDF_EPOCH)
+        r     - radius (km)
+        theta - colatitude (radians)
+        phi   - longitude (radians)
+        X     - (output) X row of Jacobian, length p
+        Y     - (output) X row of Jacobian, length p
+        Z     - (output) X row of Jacobian, length p
+        w     - workspace
+*/
+
+static int
+invert_jacobian_vector(const double t, const double r, const double theta, const double phi,
+                       gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
+                       const invert_workspace *w)
+{
+  int s = 0;
+  invert_tmode_workspace * tmode_p = w->tmode_workspace_p;
+  invert_smode_workspace * smode_p = w->smode_workspace_p;
+  const size_t nfreq = tmode_p->nfreq;
+  size_t i, j, k, l;
+
+  /* precompute magfield arrays for this (r,theta,phi) */
+  invert_smode_precompute(r, theta, phi, smode_p);
+
+  for (i = 0; i < nfreq; ++i)
+    {
+      for (j = 0; j < tmode_p->nmodes[i]; ++j)
+        {
+          /* compute temporal mode j of band i for this timestamp */
+          gsl_complex alpha_ij = invert_tmode_get(t, i, j, tmode_p);
+
+          for (k = 0; k < w->nspatmodes; ++k)
+            {
+              size_t idx = invert_coeff_idx(i, j, k, w);
+              gsl_complex phi_ik[3];
+
+              invert_smode_get(r, theta, phi, i, k, phi_ik, smode_p);
+
+              if (X)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[0]);
+                  gsl_vector_set(X, idx, GSL_REAL(z));
+                  gsl_vector_set(X, w->p_complex + idx, -GSL_IMAG(z));
+                }
+
+              if (Y)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[1]);
+                  gsl_vector_set(Y, idx, GSL_REAL(z));
+                  gsl_vector_set(Y, w->p_complex + idx, -GSL_IMAG(z));
+                }
+
+              if (Z)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[2]);
+                  gsl_vector_set(Z, idx, GSL_REAL(z));
+                  gsl_vector_set(Z, w->p_complex + idx, -GSL_IMAG(z));
+                }
+            }
+        }
+    }
+
+  return s;
+}
+
+/*
+invert_nonlinear_model_J()
+  Compute total J model vector for a given residual
+
+Inputs: res_flag  - 0 = normal residual
+                    1 = gradient residual
+        x         - parameter vector
+        t         - timestamp (CDF_EPOCH)
+        r         - radius (km)
+        theta     - colatitude (radians)
+        phi       - longitude (radians)
+        thread_id - OpenMP thread id
+        J_model   - (output) J_model (X,Y,Z) in NEC
+        w         - workspace
+*/
+
+static int
+invert_nonlinear_model_J(const int res_flag, const gsl_vector * x, const double t, const double r,
+                         const double theta, const double phi,
+                         const int thread_id, double J_model[3], invert_workspace *w)
+{
+  int s = 0;
+  gsl_matrix * JB = w->omp_B[thread_id];
+  gsl_vector_view X = gsl_matrix_row(w->omp_B[thread_id], 0);
+  gsl_vector_view Y = gsl_matrix_row(w->omp_B[thread_id], 1);
+  gsl_vector_view Z = gsl_matrix_row(w->omp_B[thread_id], 2);
+  gsl_vector_view out = gsl_vector_view_array(J_model, 3);
+
+  /* compute 3 rows of Jacobian corresponding to X,Y,Z residuals */
+  s = invert_jacobian_vector_J(t, r, theta, phi, &X.vector, &Y.vector, &Z.vector, w);
+  if (s)
+    return s;
+
+  /* B_model = JB * x */
+  gsl_blas_dgemv(CblasNoTrans, 1.0, JB, x, 0.0, &out.vector);
+
+  return s;
+}
+
+/*
+invert_jacobian_vector_J()
+  Construct a block of 3 rows of the Jacobian corresponding to vector residuals
+for the current density
+
+Inputs: t     - timestamp (CDF_EPOCH)
+        r     - radius (km)
+        theta - colatitude (radians)
+        phi   - longitude (radians)
+        X     - (output) X row of Jacobian, length p
+        Y     - (output) X row of Jacobian, length p
+        Z     - (output) X row of Jacobian, length p
+        w     - workspace
+*/
+
+static int
+invert_jacobian_vector_J(const double t, const double r, const double theta, const double phi,
+                         gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
+                         const invert_workspace *w)
+{
+  int s = 0;
+  invert_tmode_workspace * tmode_p = w->tmode_workspace_p;
+  invert_smode_workspace * smode_p = w->smode_workspace_p;
+  const size_t nfreq = tmode_p->nfreq;
+  size_t i, j, k, l;
+
+  /* precompute magfield arrays for this (r,theta,phi) */
+  invert_smode_precompute(r, theta, phi, smode_p);
+
+  for (i = 0; i < nfreq; ++i)
+    {
+      for (j = 0; j < tmode_p->nmodes[i]; ++j)
+        {
+          /* compute temporal mode j of band i for this timestamp */
+          gsl_complex alpha_ij = invert_tmode_get(t, i, j, tmode_p);
+
+          for (k = 0; k < w->nspatmodes; ++k)
+            {
+              size_t idx = invert_coeff_idx(i, j, k, w);
+              gsl_complex phi_ik[3];
+
+              invert_smode_get_J(r, theta, phi, i, k, phi_ik, smode_p);
+
+              if (X)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[0]);
+                  gsl_vector_set(X, idx, GSL_REAL(z));
+                  gsl_vector_set(X, w->p_complex + idx, -GSL_IMAG(z));
+                }
+
+              if (Y)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[1]);
+                  gsl_vector_set(Y, idx, GSL_REAL(z));
+                  gsl_vector_set(Y, w->p_complex + idx, -GSL_IMAG(z));
+                }
+
+              if (Z)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[2]);
+                  gsl_vector_set(Z, idx, GSL_REAL(z));
+                  gsl_vector_set(Z, w->p_complex + idx, -GSL_IMAG(z));
+                }
+            }
+        }
+    }
 
   return s;
 }
