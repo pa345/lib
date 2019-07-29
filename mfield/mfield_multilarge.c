@@ -1224,14 +1224,14 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
                {
                  double Nk = gsl_vector_get(N_gauss, k);
                  gsl_vector_view tmp = gsl_vector_subvector(&Jv.vector, (k + istart_gauss) * w->nnm_core, w->nnm_core);
-                 gsl_vector_memcpy_scale(&tmp.vector, &vf_core.vector, -Nk * sqrt_wj);
+                 gsl_vector_axpby(-Nk * sqrt_wj, &vf_core.vector, 0.0, &tmp.vector);
                }
 
              if (w->nnm_crust > 0)
                {
                  gsl_vector_view vf_crust = gsl_vector_subvector(&vf.vector, w->nnm_core, w->nnm_crust);
                  gsl_vector_view tmp = gsl_vector_subvector(&Jv.vector, w->p_core, w->nnm_crust);
-                 gsl_vector_memcpy_scale(&tmp.vector, &vf_crust.vector, -sqrt_wj);
+                 gsl_vector_axpby(-sqrt_wj, &vf_crust.vector, 0.0, &tmp.vector);
                }
 
 #pragma omp critical

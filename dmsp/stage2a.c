@@ -783,7 +783,7 @@ main(int argc, char *argv[])
           time_diff(tv0, tv1), spike_file);
 #endif
 
-#if 1
+#if 0
   /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);

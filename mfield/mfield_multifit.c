@@ -1088,14 +1088,14 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
                 {
                   double Nk = gsl_vector_get(&N_gauss.vector, k);
                   gsl_vector_view tmp = gsl_matrix_subrow(J, ridx, (k + istart_gauss) * w->nnm_core, w->nnm_core);
-                  gsl_vector_memcpy_scale(&tmp.vector, &vf_core.vector, -Nk);
+                  gsl_vector_axpby(-Nk, &vf_core.vector, 0.0, &tmp.vector);
                 }
 
               if (w->nnm_crust > 0)
                 {
                   gsl_vector_view vf_crust = gsl_vector_subvector(&vf.vector, w->nnm_core, w->nnm_crust);
                   gsl_vector_view tmp = gsl_matrix_subrow(J, ridx, w->p_core, w->nnm_crust);
-                  gsl_vector_memcpy_scale(&tmp.vector, &vf_crust.vector, -1.0);
+                  gsl_vector_axpby(-1.0, &vf_crust.vector, 0.0, &tmp.vector);
                 }
 
 #if MFIELD_FIT_EXTFIELD
@@ -1498,14 +1498,14 @@ jacobian_row_int(const gsl_vector * N, const size_t istart, const gsl_vector * d
     {
       double Nj = gsl_vector_get(N, j);
       gsl_vector_view v = gsl_vector_subvector(J, (j + istart) * w->nnm_core, w->nnm_core);
-      gsl_vector_memcpy_scale(&v.vector, &dB_core.vector, -Nj);
+      gsl_vector_axpby(-Nj, &dB_core.vector, 0.0, &v.vector);
     }
 
   if (w->nnm_crust > 0)
     {
       gsl_vector_const_view dB_crust = gsl_vector_const_subvector(dB, w->nnm_core, w->nnm_crust);
       gsl_vector_view J_crust = gsl_vector_subvector(J, w->p_core, w->nnm_crust);
-      gsl_vector_memcpy_scale(&J_crust.vector, &dB_crust.vector, -1.0);
+      gsl_vector_axpby(-1.0, &dB_crust.vector, 0.0, &J_crust.vector);
     }
 
   return s;
@@ -1537,7 +1537,7 @@ jacobian_row_int_SV(const gsl_vector * dN, const size_t istart, const gsl_vector
     {
       double dNj = gsl_vector_get(dN, j);
       gsl_vector_view v = gsl_vector_subvector(J, (j + istart) * w->nnm_core, w->nnm_core);
-      gsl_vector_memcpy_scale(&v.vector, &dB_core.vector, -dNj);
+      gsl_vector_axpby(-dNj, &dB_core.vector, 0.0, &v.vector);
     }
 
   return s;
