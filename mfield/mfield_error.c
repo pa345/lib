@@ -111,7 +111,7 @@ mfield_covariance(gsl_matrix * covar, mfield_workspace *w)
        * Cholesky factor in w->choleskyL
        */
 
-      gsl_matrix_tricpy('L', 1, covar, w->choleskyL);
+      gsl_matrix_tricpy(CblasLower, CblasNonUnit, covar, w->choleskyL);
       s += gsl_linalg_cholesky_invert(covar);
     }
   else
@@ -120,7 +120,7 @@ mfield_covariance(gsl_matrix * covar, mfield_workspace *w)
     }
 
   /* copy lower to upper triangle */
-  gsl_matrix_transpose_tricpy('L', 0, covar, covar);
+  gsl_matrix_transpose_tricpy(CblasLower, CblasUnit, covar, covar);
 
   return s;
 }

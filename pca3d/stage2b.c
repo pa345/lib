@@ -25,6 +25,7 @@
 #include <gsl/gsl_test.h>
 
 #include <common/common.h>
+#include <common/oct.h>
 
 #include <magfield/magfield.h>
 
@@ -169,7 +170,8 @@ do_transforms(const pca3d_data * data, const double fs, const double window_size
   fprintf(stderr, "do_transforms: window segments (T)  = %zu\n", T);
 
   /* compute window function */
-  apply_ps1(NULL, window);
+  /*apply_ps1(NULL, window);*/
+  apply_modsinsq(NULL, window);
 
   fprintf(stderr, "do_transforms: computing FFTs of windowed data...\n");
   gettimeofday(&tv0, NULL);
@@ -363,8 +365,8 @@ main(int argc, char *argv[])
 {
   char *input_prefix = PCA3D_STAGE1B_SH_PREFIX;
   const double fs = 24.0;    /* sample frequency (samples/day) */
-  double window_size = 2.0;  /* number of days in each time segment */
-  double window_shift = 1.0; /* number of days to shift forward in time */
+  double window_size = 8.0;  /* number of days in each time segment */
+  double window_shift = 4.0; /* number of days to shift forward in time */
   pca3d_data data;
 
   while (1)

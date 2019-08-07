@@ -4,7 +4,7 @@
  * FDF_SOLVER = 1   GSL multilarge solver / LM
  * FDF_SOLVER = 2   GSL multilarge solver / Gauss-Newton
  */
-#define FDF_SOLVER     1
+#define FDF_SOLVER     0
 
 #include <gsl/gsl_integration.h>
 #include <spatwt/spatwt.h>
@@ -575,7 +575,7 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       /* copy previously computed vector internal field portion of J^T J
        * (doesn't depend on x) */
       JTJ_int = gsl_matrix_submatrix(JTJ, 0, 0, w->p_int, w->p_int);
-      gsl_matrix_tricpy('L', 1, &JTJ_int.matrix, w->JTJ_vec);
+      gsl_matrix_tricpy(CblasLower, CblasNonUnit, &JTJ_int.matrix, w->JTJ_vec);
     }
 
   /*
@@ -2869,7 +2869,7 @@ gsl_linalg_symband_unpack(const gsl_matrix * AB, gsl_matrix * A)
           gsl_vector_memcpy(&g.vector, &f.vector);
         }
 
-      gsl_matrix_transpose_tricpy('L', 0, A, A);
+      gsl_matrix_transpose_tricpy(CblasLower, CblasUnit, A, A);
 
       return GSL_SUCCESS;
     }

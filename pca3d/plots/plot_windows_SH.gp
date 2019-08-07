@@ -1,6 +1,7 @@
 #!/usr/bin/env gnuplot
 #
-# Plot SH windowed time series and power spectra
+# Plot SH windowed time series and power spectra; first run
+# print_fft2b
 
 nrow = 3
 ncol = 3

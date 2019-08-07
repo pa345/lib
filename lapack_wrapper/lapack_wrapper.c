@@ -589,7 +589,7 @@ lapack_cholesky_decomp(gsl_matrix * A)
   lapack_int lda = A->size1;
   gsl_matrix *work_A = gsl_matrix_alloc(N, N);
 
-  gsl_matrix_transpose_tricpy('L', 1, work_A, A);
+  gsl_matrix_transpose_tricpy(CblasLower, CblasNonUnit, work_A, A);
 
   s = LAPACKE_dpotrf(LAPACK_COL_MAJOR,
                      'L',
@@ -597,7 +597,7 @@ lapack_cholesky_decomp(gsl_matrix * A)
                      work_A->data,
                      lda);
 
-  gsl_matrix_transpose_tricpy('U', 1, A, work_A);
+  gsl_matrix_transpose_tricpy(CblasUpper, CblasNonUnit, A, work_A);
 
   gsl_matrix_free(work_A);
 
@@ -621,7 +621,7 @@ lapack_cholesky_invert(gsl_matrix * A)
   lapack_int lda = A->size1;
   gsl_matrix *work_A = gsl_matrix_alloc(N, N);
 
-  gsl_matrix_transpose_tricpy('L', 1, work_A, A);
+  gsl_matrix_transpose_tricpy(CblasLower, CblasNonUnit, work_A, A);
 
   s = LAPACKE_dpotri(LAPACK_COL_MAJOR,
                      'L',
@@ -629,7 +629,7 @@ lapack_cholesky_invert(gsl_matrix * A)
                      work_A->data,
                      lda);
 
-  gsl_matrix_transpose_tricpy('U', 1, A, work_A);
+  gsl_matrix_transpose_tricpy(CblasUpper, CblasNonUnit, A, work_A);
 
   gsl_matrix_free(work_A);
 

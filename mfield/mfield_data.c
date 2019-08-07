@@ -140,14 +140,8 @@ mfield_data_filter_time(const double tmin, const double tmax,
         {
           double t = satdata_epoch2year(mptr->t[j]);
 
-#if 1 /*XXX*/
           if ((tmin > 0.0 && t < tmin) ||
               (tmax > 0.0 && t > tmax))
-#else
-          if ((tmin > 0.0 && t < tmin) ||
-              (tmax > 0.0 && t > tmax) ||
-              ((mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV) && (t > 2013.5)))
-#endif
             {
               mptr->flags[j] |= MAGDATA_FLG_DISCARD;
               ++cnt;
@@ -220,6 +214,12 @@ mfield_data_filter_comp(mfield_data_workspace *w)
       for (j = 0; j < mptr->n; ++j)
         {
           double qdlat = mptr->qdlat[j];
+
+#if 1
+          /*XXX fit Swarm scalar data and observatory vector data */
+          if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
+            mptr->flags[j] &= ~(MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z);
+#endif
 
           if (fabs(qdlat) <= qdlat_cutoff)
             {

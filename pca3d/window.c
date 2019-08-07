@@ -11,6 +11,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_sf_bessel.h>
+#include <gsl/gsl_blas.h>
 
 /*
 apply_ps1()
@@ -119,6 +120,57 @@ apply_kaiser(const gsl_vector *in, gsl_vector *out)
           else
             *vi = wi;
         }
+
+      return GSL_SUCCESS;
+    }
+}
+
+/* modified sin^2 window from Gary; constructed so that sum(window) = N/2 */
+int
+apply_modsinsq(const gsl_vector *in, gsl_vector *out)
+{
+  const size_t N = out->size;
+
+  if (in != NULL && N != in->size)
+    {
+      GSL_ERROR("input and output vectors must be same length", GSL_EBADLEN);
+    }
+  else
+    {
+      size_t i;
+      gsl_vector * a = gsl_vector_alloc(N);
+
+      for (i = 0; i < N / 2; ++i)
+        {
+          double xi = (i + 1.0) * M_PI / (double) N;
+          double sxi = sin(xi);
+          double wi = sxi * sxi;
+
+          gsl_vector_set(out, i, wi);
+          gsl_vector_set(out, N - i - 1, wi);
+        }
+
+      for (i = 0; i < N / 2; ++i)
+        {
+          double wi = gsl_vector_get(out, i);
+          double ai = gsl_vector_get(out, N / 2 + i);
+
+          gsl_vector_set(a, i, ai);
+          gsl_vector_set(a, N / 2 + i, wi);
+        }
+
+      for (i = 0; i < N / 2; ++i)
+        {
+          double * wi = gsl_vector_ptr(out, i);
+          double * wNi = gsl_vector_ptr(out, N - i - 1);
+          double ai = gsl_vector_get(a, i);
+          double scale = *wi + ai;
+
+          *wi /= scale;
+          *wNi /= scale;
+        }
+
+      gsl_vector_free(a);
 
       return GSL_SUCCESS;
     }

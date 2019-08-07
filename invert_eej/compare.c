@@ -362,7 +362,7 @@ find_pairs(const satdata_eef *eef, const julia_data *julia,
 
       /* compute E_julia in mV/m */
       E_julia[n] = julia->array[julia_idx].v_vert * B[3] * 1.0e-6;
-      E_eef[n] = eef->EEF[i] * 1.0e3;
+      E_eef[n] = eef->EEF[i];
 
 #if 0
       if (efi)

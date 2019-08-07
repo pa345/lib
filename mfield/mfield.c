@@ -937,7 +937,7 @@ mfield_calc_evals(gsl_vector *evals, mfield_workspace *w)
   gsl_matrix * A = gsl_matrix_alloc(w->p, w->p);
 
   /* copy lower triangle of JTJ to A */
-  gsl_matrix_tricpy('L', 1, A, JTJ);
+  gsl_matrix_tricpy(CblasLower, CblasNonUnit, A, JTJ);
 
   s = gsl_eigen_symm(A, evals, w->eigen_workspace_p);
   gsl_sort_vector(evals);

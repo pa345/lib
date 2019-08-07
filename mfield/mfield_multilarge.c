@@ -138,7 +138,7 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
       gsl_linalg_cholesky_decomp1(JTJ);
       gsl_linalg_cholesky_solve(JTJ, JTf, w->c);
       gsl_linalg_cholesky_rcond(JTJ, &rcond, work);
-      gsl_matrix_tricpy('L', 1, w->choleskyL, JTJ);
+      gsl_matrix_tricpy(CblasLower, CblasNonUnit, w->choleskyL, JTJ);
 #endif
 
       gsl_vector_scale(w->c, -1.0);
@@ -366,7 +366,7 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
            * a diagonal block, we need to copy the lower triangle to the upper */
           if (ii != jj)
             {
-              gsl_matrix_transpose_tricpy('L', 0, &JTJ_block.matrix, &JTJ_block.matrix);
+              gsl_matrix_transpose_tricpy(CblasLower, CblasUnit, &JTJ_block.matrix, &JTJ_block.matrix);
             }
 
         } /* for (jj = 0; jj <= ii; ++jj) */
@@ -974,7 +974,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       /* copy previously computed vector internal field portion of J^T J
        * (doesn't depend on x) */
       JTJ_int = gsl_matrix_submatrix(JTJ, 0, 0, w->p_int, w->p_int);
-      gsl_matrix_tricpy('L', 1, &JTJ_int.matrix, w->JTJ_vec);
+      gsl_matrix_tricpy(CblasLower, CblasNonUnit, &JTJ_int.matrix, w->JTJ_vec);
     }
 
   if (w->p_sparse > 0)
@@ -1628,7 +1628,7 @@ mfield_nonlinear_scalar_core(const gsl_vector * x, const gsl_vector * sqrt_weigh
            * a diagonal block, we need to copy the lower triangle to the upper */
           if (ii != jj)
             {
-              gsl_matrix_transpose_tricpy('L', 0, &JTJ_block.matrix, &JTJ_block.matrix);
+              gsl_matrix_transpose_tricpy(CblasLower, CblasUnit, &JTJ_block.matrix, &JTJ_block.matrix);
             }
 
         } /* for (jj = 0; jj <= ii; ++jj) */
@@ -2003,7 +2003,7 @@ mfield_calc_df4(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
       /* copy previously computed vector internal field portion of J^T J
        * (doesn't depend on x) */
       JTJ_int = gsl_matrix_submatrix(JTJ, 0, 0, w->p_int, w->p_int);
-      gsl_matrix_tricpy('L', 1, &JTJ_int.matrix, w->JTJ_vec);
+      gsl_matrix_tricpy(CblasLower, CblasNonUnit, &JTJ_int.matrix, w->JTJ_vec);
 
       vJTJ = gsl_matrix_submatrix(JTJ, 0, 0, w->p_core, w->p_core);
       mfield_nonlinear_scalar_core(x, w->sqrt_wts_final, &vJTJ.matrix, w);

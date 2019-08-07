@@ -1212,7 +1212,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 #if 0
   print_octave(J, "J");
   exit(1);
-#elif 1
+#elif 0
   {
     static int niter = 0;
 
