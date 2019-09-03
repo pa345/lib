@@ -48,6 +48,7 @@
 #include <gsl/gsl_spmatrix.h>
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_complex_math.h>
+#include <gsl/gsl_test.h>
 
 #include <spblas2/gsl_spblas2.h>
 #include <spblas2/gsl_spcblas.h>
@@ -83,6 +84,7 @@ invert_alloc(const invert_parameters *params)
   invert_workspace *w;
   const size_t ntheta = 100;
   const size_t nphi = 100;
+  size_t * nsmodes;
   size_t i;
 
   w = calloc(1, sizeof(invert_workspace));
@@ -92,7 +94,7 @@ invert_alloc(const invert_parameters *params)
   w->nsat = params->nsat;
   w->epoch = params->epoch;
   w->R = params->R;
-  w->nspatmodes = params->nspatmodes;
+  w->nfreq = params->nfreq;
   w->data_workspace_p = params->invert_data_p;
   w->max_threads = (size_t) omp_get_max_threads();
 
@@ -104,14 +106,31 @@ invert_alloc(const invert_parameters *params)
 
   fprintf(stderr, "invert_alloc: reading temporal modes from %s...", params->tmode_file);
   w->tmode_workspace_p = invert_tmode_read_binary(params->tmode_file);
-  w->tmode_workspace_p->nfreq = 1; /*XXX just to match spatial modes currently */
+  w->tmode_workspace_p->nfreq = w->nfreq;
   fprintf(stderr, "done (%zu frequency bands)\n", w->tmode_workspace_p->nfreq);
 
+  /* use same number of spatial modes per bin as the temporal modes */
+  nsmodes = malloc(w->nfreq * sizeof(size_t));
+  for (i = 0; i < w->nfreq; ++i)
+    nsmodes[i] = w->tmode_workspace_p->nmodes[i];
+
   fprintf(stderr, "invert_alloc: reading spatial modes...");
-  w->smode_workspace_p = invert_smode_alloc(1, &w->nspatmodes);
+  w->smode_workspace_p = invert_smode_alloc(w->nfreq, nsmodes);
+  w->smode_workspace_p->nfreq = w->nfreq;
   fprintf(stderr, "done (%zu frequency bands)\n", w->smode_workspace_p->nfreq);
 
+  /* sanity check that tmodes and smodes have same frequency bands */
+  for (i = 0; i < w->nfreq; ++i)
+    {
+      double tfreq = w->tmode_workspace_p->freqs[i];
+      double sfreq = w->smode_workspace_p->freqs[i];
+
+      gsl_test_rel(tfreq, sfreq, GSL_DBL_EPSILON, "frequency check ifreq=%zu", i);
+    }
+
   w->tmode_idx = malloc(w->tmode_workspace_p->nfreq * sizeof(size_t));
+  w->smode_idx = malloc(w->smode_workspace_p->nfreq * sizeof(size_t));
+  w->mode_idx = malloc(w->smode_workspace_p->nfreq * sizeof(size_t));
 
   /*
    * coefficient vector will be partitioned as:
@@ -127,8 +146,23 @@ invert_alloc(const invert_parameters *params)
       w->ntmodes += w->tmode_workspace_p->nmodes[i];
     }
 
+  /* count number of spatial modes in each frequency band */
+  w->nsmodes = 0;
+  for (i = 0; i < w->smode_workspace_p->nfreq; ++i)
+    {
+      w->smode_idx[i] = w->nsmodes;
+      w->nsmodes += w->smode_workspace_p->nmodes[i];
+    }
+
   /* compute total number of model coefficients */
-  w->p_complex = w->ntmodes * w->nspatmodes;
+  w->p_complex = 0;
+  for (i = 0; i < w->nfreq; ++i)
+    {
+      w->mode_idx[i] = w->p_complex;
+      w->p_complex += w->tmode_workspace_p->nmodes[i] * w->smode_workspace_p->nmodes[i];
+    }
+
+  /*w->p_complex = w->ntmodes * w->nsmodes;*/
   w->p = 2 * w->p_complex;
 
   if (w->p == 0)
@@ -263,8 +297,17 @@ invert_free(invert_workspace *w)
   if (w->tmode_workspace_p)
     invert_tmode_free(w->tmode_workspace_p);
 
+  if (w->smode_workspace_p)
+    invert_smode_free(w->smode_workspace_p);
+
   if (w->tmode_idx)
     free(w->tmode_idx);
+
+  if (w->smode_idx)
+    free(w->smode_idx);
+
+  if (w->mode_idx)
+    free(w->mode_idx);
 
   free(w);
 }
@@ -603,8 +646,8 @@ invert_coeff_idx()
 to a given set of (f,tmode,smode).
 
 Inputs: f     - frequency band, in [0,nfreq-1]
-        tmode - temporal mode number in band f, in [0,nmodes[f]-1]
-        smode - spatial mode number in band f, in [0,nspatmodes-1]
+        tmode - temporal mode number in band f, in [0,ntmodes[f]-1]
+        smode - spatial mode number in band f, in [0,nsmodes[f]-1]
         w     - workspace
 
 Return: index in [0,p_complex-1]
@@ -614,7 +657,9 @@ size_t
 invert_coeff_idx(const size_t f, const size_t tmode, const size_t smode,
                  const invert_workspace * w)
 {
-  return CIDX2(w->tmode_idx[f] + tmode, w->ntmodes, smode, w->nspatmodes);
+  invert_tmode_workspace * tmode_p = w->tmode_workspace_p;
+  invert_smode_workspace * smode_p = w->smode_workspace_p;
+  return w->mode_idx[f] + CIDX2(tmode, tmode_p->nmodes[f], smode, smode_p->nmodes[f]);
 }
 
 static int

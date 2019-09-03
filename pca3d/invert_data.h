@@ -81,6 +81,7 @@ size_t invert_data_filter_time(const double tmin, const double tmax,
                                invert_data_workspace *w);
 size_t invert_data_filter_comp(invert_data_workspace *w);
 size_t invert_data_filter_observatory(invert_data_workspace *w);
+int invert_data_compact(invert_data_workspace * w);
 int invert_data_init(invert_data_workspace *w);
 double invert_data_epoch(invert_data_workspace *w);
 int invert_data_map(const char *dir_prefix, const invert_data_workspace *w);

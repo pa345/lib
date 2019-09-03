@@ -2173,6 +2173,66 @@ magdata_mag2sat(const magdata *mdata)
 }
 
 /*
+magdata_compact()
+  Generate new magdata struct, throwing away all data matching certain flags
+
+Inputs: keep_flags - data matching these flags will be copied
+        old_data   - old magdata
+
+Return: compacted magdata struct
+*/
+
+magdata *
+magdata_compact(const size_t keep_flags, const magdata *old_data)
+{
+  magdata *new_data;
+  size_t i, j;
+  size_t idx = 0;
+
+  new_data = magdata_alloc(old_data->n, old_data->R);
+
+  for (i = 0; i < old_data->n; ++i)
+    {
+      if (MAGDATA_Discarded(old_data->flags[i]))
+        continue;
+
+      if (!(old_data->flags[i] & keep_flags))
+        continue;
+
+      new_data->t[idx] = old_data->t[i];
+      new_data->r[idx] = old_data->r[i];
+      new_data->theta[idx] = old_data->theta[i];
+      new_data->phi[idx] = old_data->phi[i];
+      new_data->qdlat[idx] = old_data->qdlat[i];
+      new_data->Bx_nec[idx] = old_data->Bx_nec[i];
+      new_data->By_nec[idx] = old_data->By_nec[i];
+      new_data->Bz_nec[idx] = old_data->Bz_nec[i];
+      new_data->Bx_vfm[idx] = old_data->Bx_vfm[i];
+      new_data->By_vfm[idx] = old_data->By_vfm[i];
+      new_data->Bz_vfm[idx] = old_data->Bz_vfm[i];
+      new_data->Bx_model[idx] = old_data->Bx_model[i];
+      new_data->By_model[idx] = old_data->By_model[i];
+      new_data->Bz_model[idx] = old_data->Bz_model[i];
+      new_data->F[idx] = old_data->F[i];
+      new_data->satdir[idx] = old_data->satdir[i];
+      new_data->lt[idx] = old_data->lt[i];
+      new_data->lt_eq[idx] = old_data->lt_eq[i];
+      new_data->flags[idx] = old_data->flags[i];
+
+      for (j = 0; j < 4; ++j)
+        new_data->q[4 * idx + j] = old_data->q[4 * i + j];
+
+      ++idx;
+    }
+
+  new_data->n = idx;
+  new_data->global_flags = old_data->global_flags;
+  new_data->euler_flags = old_data->euler_flags;
+
+  return new_data;
+}
+
+/*
 magdata_replace_phi_LT()
   Replace longitude with corresponding LT angle:
 

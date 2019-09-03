@@ -13,6 +13,7 @@
 typedef struct
 {
   size_t nfreq;          /* number of frequency bands */
+  double *freqs;         /* frequencies in cpd, length nfreq */
   size_t *nmodes;        /* number of temporal modes in each frequency band, length nfreq */
   size_t N;              /* length of time series for each mode */
 
@@ -30,11 +31,12 @@ typedef struct
  * Prototypes
  */
 
-invert_tmode_workspace *invert_tmode_alloc(const size_t nfreq, const size_t nmodes[], const size_t N);
+invert_tmode_workspace *invert_tmode_alloc(const size_t nfreq, const double freqs[], const size_t nmodes[], const size_t N);
 void invert_tmode_free(invert_tmode_workspace *w);
 gsl_complex invert_tmode_get(const double t, const size_t f, const size_t mode, const invert_tmode_workspace * w);
-int invert_tmode_read_ascii(const char * filename, const size_t freq, const size_t mode, invert_tmode_workspace * w);
+int invert_tmode_read_ascii(const char * filename, const size_t ifreq, const size_t mode, double * freq, invert_tmode_workspace * w);
 int invert_tmode_write_binary(const char * filename, invert_tmode_workspace * w);
 invert_tmode_workspace * invert_tmode_read_binary(const char * filename);
+int invert_tmode_print(const char * dir_prefix, const invert_tmode_workspace * w);
 
 #endif /* INCLUDED_invert_tmode_h */

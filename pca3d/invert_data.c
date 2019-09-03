@@ -140,14 +140,8 @@ invert_data_filter_time(const double tmin, const double tmax,
         {
           double t = satdata_epoch2year(mptr->t[j]);
 
-#if 1 /*XXX*/
           if ((tmin > 0.0 && t < tmin) ||
               (tmax > 0.0 && t > tmax))
-#else
-          if ((tmin > 0.0 && t < tmin) ||
-              (tmax > 0.0 && t > tmax) ||
-              ((mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV) && (t > 2013.5)))
-#endif
             {
               mptr->flags[j] |= MAGDATA_FLG_DISCARD;
               ++cnt;
@@ -335,6 +329,32 @@ invert_data_filter_observatory(invert_data_workspace *w)
     }
 
   return nflagged;
+}
+
+/*
+invert_data_compact()
+  Remove magdata entries which have the discard flag set or will
+not be used in the model
+*/
+
+int
+invert_data_compact(invert_data_workspace * w)
+{
+  int s = 0;
+  const size_t keep_flags = MAGDATA_FLG_FIT_MF;
+  magdata ** new_data = malloc(w->nsources * sizeof(magdata *));
+  size_t i;
+
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = invert_data_ptr(i, w);
+      new_data[i] = magdata_compact(keep_flags, mptr);
+      magdata_free(mptr);
+    }
+
+  w->mdata = new_data;
+
+  return s;
 }
 
 /*

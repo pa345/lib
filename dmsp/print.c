@@ -70,6 +70,7 @@ print_data(const int down_sample, const satdata_mag *data)
       double year = satdata_epoch2year(data->t[i]);
       time_t unix_time = satdata_epoch2timet(data->t[i]);
       double *q = &(data->q[4 * i]);
+      double *B_NEC = &(data->B[3 * i]);
       double *B_VFM = &(data->B_VFM[3 * i]);
       double theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
       double phi = data->longitude[i] * M_PI / 180.0;
@@ -90,6 +91,7 @@ print_data(const int down_sample, const satdata_mag *data)
              data->r[i] - data->R,
              data->qdlat[i],
              satdata_mag_satdir(i, data),
+#if 0
              B_VFM[0],
              B_VFM[1],
              B_VFM[2],
@@ -98,6 +100,16 @@ print_data(const int down_sample, const satdata_mag *data)
              B_model_VFM[1],
              B_model_VFM[2],
              B_model[3],
+#else
+             B_NEC[0],
+             B_NEC[1],
+             B_NEC[2],
+             data->F[i],
+             B_model[0],
+             B_model[1],
+             B_model[2],
+             B_model[3],
+#endif
              q[0],
              q[1],
              q[2],
@@ -110,18 +122,31 @@ print_data(const int down_sample, const satdata_mag *data)
 int
 main(int argc, char *argv[])
 {
-  satdata_mag *data;
+  satdata_mag *data = NULL;
   struct timeval tv0, tv1;
   int c;
-  char *infile = NULL;
   int down_sample = 20;
 
-  while ((c = getopt(argc, argv, "i:d:")) != (-1))
+  while ((c = getopt(argc, argv, "r:i:d:")) != (-1))
     {
       switch (c)
         {
           case 'i':
-            infile = optarg;
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_dmsp_read_idx(optarg, 0);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
+                    time_diff(tv0, tv1));
+            break;
+
+          case 'r':
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_swarm_read_idx(optarg, 0);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
+                    time_diff(tv0, tv1));
             break;
 
           case 'd':
@@ -133,29 +158,14 @@ main(int argc, char *argv[])
         }
     }
 
-  if (!infile)
+  if (!data)
     {
-      fprintf(stderr, "Usage: %s <-i dmsp_index_file> [-d down_sample]\n",
+      fprintf(stderr, "Usage: %s <-i dmsp_index_file> <-r cryosat_index_file> [-d down_sample]\n",
               argv[0]);
       exit(1);
     }
 
-  fprintf(stderr, "input file = %s\n", infile);
   fprintf(stderr, "downsample factor = %d\n", down_sample);
-
-  fprintf(stderr, "Reading %s...", infile);
-  gettimeofday(&tv0, NULL);
-
-  data = satdata_dmsp_read_idx(infile, 0);
-  if (!data)
-    {
-      fprintf(stderr, "main: error reading %s\n", infile);
-      exit(1);
-    }
-
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
-          time_diff(tv0, tv1));
 
   print_data(down_sample, data);
 

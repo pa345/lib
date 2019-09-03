@@ -45,6 +45,7 @@
 #define MAGDATA_GLOBFLG_DMSP            (1 << 7)  /* dataset is from a DMSP satellite */
 #define MAGDATA_GLOBFLG_CHAMP           (1 << 8)  /* dataset is from CHAMP satellite */
 #define MAGDATA_GLOBFLG_SWARM           (1 << 9)  /* dataset is from a Swarm satellite */
+#define MAGDATA_GLOBFLG_CRYOSAT         (1 << 10) /* dataset is from Cryosat satellite */
 
 /* k_b * mu_0 in units of: nT^2 cm^3 / K */
 #define MAGDATA_KB_MU0                (1.73497445090703e-05)
@@ -313,6 +314,7 @@ int magdata_copy_station_means(const magdata_params *params, const obsdata_stati
 int magdata_copy_station(const magdata_params *params, const obsdata_station * station,
                          magdata *mdata, size_t ntype[6]);
 satdata_mag *magdata_mag2sat(const magdata *mdata);
+magdata * magdata_compact(const size_t discard_flags, const magdata *mdata);
 int magdata_replace_phi_LT(const double lt0, magdata *data);
 
 /* preproc.c */

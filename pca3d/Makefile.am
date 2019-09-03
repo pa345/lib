@@ -9,9 +9,11 @@ common_libs = -L/usr/lib64 -lsatdata -lindices ~/usr/lib/libgsl.a /home/palken/u
 bin_PROGRAMS = invert invert_preproc invert_write_tmode print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH print_magfield print_fillion print_fillion2 print_gary print_var3b
 
 invert_SOURCES = invert_main.c invert.c invert_data.c invert_residual.c invert_tmode.c invert_smode.c
-invert_CFLAGS = -fopenmp
+#invert_CFLAGS = -std=c11 -fopenmp -ffast-math
+invert_CFLAGS = -std=c11 -fopenmp
 invert_LDFLAGS = -fopenmp
-invert_LDADD = libpca3d.la ${top_builddir}/magdata/libmagdata.la ${top_builddir}/green/libgreen.la -lobsdata -ltrack -lmagcoord -lapex -lconfig -lcommon -lmagfield -lmsynth -lbspline2 -lpomme -lm -lgslspblas2 ~/usr/lib/libgsl.a -lspatwt ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+#invert_LDADD = libpca3d.la ${top_builddir}/magdata/libmagdata.la ${top_builddir}/green/libgreen.la -lobsdata -ltrack -lmagcoord -lapex -lconfig -lcommon -lmagfield -lmsynth -lbspline2 -lpomme -lm -lgslspblas2 ~/usr/lib/libgsl.a -lspatwt ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+invert_LDADD = libpca3d.la ${top_builddir}/magdata/libmagdata.la ${top_builddir}/green/libgreen.la -lobsdata -ltrack -lmagcoord -lapex -lconfig -lcommon -lmagfield -lmsynth -lbspline2 -lpomme -lm -lgslspblas2 ~/usr/lib/libgsl_prof.a -lspatwt ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 invert_preproc_SOURCES = invert_preproc.c
 invert_preproc_CFLAGS = -fopenmp

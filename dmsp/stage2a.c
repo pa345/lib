@@ -41,6 +41,7 @@
 #include "eph.h"
 #include "jump.h"
 #include "magcal.h"
+#include "euler.h"
 
 #include "stage2_align.c"
 #include "stage2_calibrate.c"
@@ -601,12 +602,14 @@ print_help(char *argv[])
           argv[0]);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "  -i dmsp_index_file     - Input DMSP index file\n");
+  fprintf(stderr, "  -c cryosat_index_file  - Input Cryosat index file\n");
   fprintf(stderr, "  -o output_file         - Output calibrated CDF file\n");
   fprintf(stderr, "  -p param_file          - Output ASCII file containing time series of calibration parameters\n");
   fprintf(stderr, "  -r residual_file       - Output ASCII file of residuals\n");
   fprintf(stderr, "  -d data_file           - Output ASCII file of data\n");
   fprintf(stderr, "  -t period              - Period in days of calibration parameter bins\n");
   fprintf(stderr, "  -h swarm_shc_file      - Replacement core field model in Swarm SHC format\n");
+  fprintf(stderr, "  -e euler_file          - Euler angle time series for VFM to NEC conversion\n");
 }
 
 int
@@ -625,6 +628,7 @@ main(int argc, char *argv[])
   char *param_file = NULL;
   char *res_file = NULL;
   char *data_file = NULL;
+  char *euler_file = NULL;
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   eph_data *eph = NULL;
@@ -649,10 +653,12 @@ main(int argc, char *argv[])
       int option_index = 0;
       static struct option long_options[] =
         {
+          { "euler_file", required_argument, NULL, 'e' },
+          { "cryosat_file", required_argument, NULL, 'c' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "d:h:i:o:b:p:r:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "c:d:e:h:i:o:b:p:r:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -667,12 +673,25 @@ main(int argc, char *argv[])
                     time_diff(tv0, tv1));
             break;
 
+          case 'c':
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_swarm_read_idx(optarg, 1);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
+                    time_diff(tv0, tv1));
+            break;
+
           case 'o':
             outfile = optarg;
             break;
 
           case 'd':
             data_file = optarg;
+            break;
+
+          case 'e':
+            euler_file = optarg;
             break;
 
           case 'b':
@@ -767,7 +786,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-#if 1
+#if 0
   fprintf(stderr, "main: precleaning data for jumps...");
   gettimeofday(&tv0, NULL);
   preclean_jumps(jump_file, data, track_p);
@@ -783,7 +802,7 @@ main(int argc, char *argv[])
           time_diff(tv0, tv1), spike_file);
 #endif
 
-#if 0
+#if 1
   /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
@@ -865,6 +884,21 @@ main(int argc, char *argv[])
   fprintf(stderr, "done\n");
 
 #endif
+
+  if (euler_file)
+    {
+      euler_workspace * euler_workspace_p;
+      
+      fprintf(stderr, "main: reading Euler angle file %s...", euler_file);
+      euler_workspace_p = euler_read(euler_file);
+      fprintf(stderr, "done (%zu data points read)\n", euler_workspace_p->n);
+
+      fprintf(stderr, "main: applying VFM->NEC rotation...");
+      euler_apply(data, euler_workspace_p);
+      fprintf(stderr, "done\n");
+
+      euler_free(euler_workspace_p);
+    }
 
   if (data_file)
     {

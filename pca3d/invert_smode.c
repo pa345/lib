@@ -2,6 +2,23 @@
  * invert_smode.c
  *
  * Routines related to spatial modes in the least squares inversion
+ *
+ * Memory management
+ * -----------------
+ *
+ * The loops and indexing are organized so the following code will execute
+ * without errors:
+ *
+ * idx = 0;
+ * for (i = 0; i < w->nfreq; ++i)
+ *   {
+ *     for (j = 0; j < w->nmodes[i]; ++j)
+ *       {
+ *         size_t sidx = smode_idx(i, j, w);
+ *         assert(idx == sidx);
+ *         ++idx;
+ *       }
+ *   }
  */
 
 #include <stdio.h>
@@ -49,12 +66,25 @@ Return: pointer to workspace
 invert_smode_workspace *
 invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
 {
+  /*
+   * For the PCA project, Gary provided temporal modes with the frequencies (in cpd):
+   * , 0.625, 1, 1.5, 2, 2.5, ..., 5.5, 6
+   *
+   * These frequency bands correspond to the following indices in the FFT output array, where
+   *
+   * Freq[idx] = idx * Fs / N
+   *
+   * where Fs = 24 samples/day is the sampling rate, and N = 192 samples/window (8 days) in the window size
+   */
+  const size_t indices[] = { 3, 5, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48 };
+
   invert_smode_workspace *w;
   magfield_params params;
   gsl_vector_complex * qtcoeff;
   gsl_vector_complex * qcoeff;
   gsl_vector_complex * pcoeff;
-  size_t N, i, j, k;
+  pca3d_fft_data fft_data;
+  size_t N, i, j;
 
   w = calloc(1, sizeof(invert_smode_workspace));
   if (!w)
@@ -63,8 +93,9 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
   w->nfreq = nfreq;
   w->max_threads = (size_t) omp_get_max_threads();
 
+  w->freqs = malloc(nfreq * sizeof(double));
   w->nmodes = malloc(nfreq * sizeof(size_t));
-  if (!w->nmodes)
+  if (!w->freqs || !w->nmodes)
     {
       invert_smode_free(w);
       return 0;
@@ -79,19 +110,21 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
 
   w->mode_idx = malloc(nfreq * sizeof(size_t));
 
+  fft_data = pca3d_read_fft_data2(PCA3D_STAGE2B_FFT_DATA_LIGHT);
+
   /* read spatial mode matrices and keep count of total modes */
   w->modes_tot = 0;
   for (i = 0; i < nfreq; ++i)
     {
       char buf[1024];
 
+      w->freqs[i] = indices[i] / (double) fft_data.window_size; /* cpd */
       w->nmodes[i] = nmodes[i];
 
       w->mode_idx[i] = w->modes_tot;
       w->modes_tot += nmodes[i];
 
-      /*XXX this is currently fixed for the 1cpd file */
-      sprintf(buf, "%s_%d", PCA3D_STAGE3B_U, 2);
+      sprintf(buf, "%s_%zu", PCA3D_STAGE3B_U, indices[i]);
       w->modes_U[i] = pca3d_read_matrix_complex(buf);
       if (!w->modes_U[i])
         {
@@ -103,7 +136,7 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
 
   /* allocate magfield_eval workspaces */
   params = pca3d_read_params(PCA3D_STAGE1B_DATA);
-  w->magfield_eval_p = malloc(w->modes_tot * w->max_threads * sizeof(magfield_eval_workspace *));
+  w->magfield_eval_p = malloc(w->modes_tot * sizeof(magfield_eval_workspace *));
 
   N = w->modes_U[0]->size1 / 3;
   qtcoeff = gsl_vector_complex_alloc(N);
@@ -120,12 +153,9 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
           /* separate U(:,j) into q~, q, p coefficients */
           smode_fill_arrays(&params, &v.vector, qtcoeff, qcoeff, pcoeff);
 
-          for (k = 0; k < w->max_threads; ++k)
-            {
-              size_t idx = CIDX2(sidx, w->modes_tot, k, w->max_threads);
-              w->magfield_eval_p[idx] = magfield_eval_alloc(&params);
-              magfield_eval_init(qtcoeff, qcoeff, pcoeff, w->magfield_eval_p[idx]);
-            }
+          /* initialize magfield_eval workspace for this mode U(:,j) */
+          w->magfield_eval_p[sidx] = magfield_eval_alloc(&params);
+          magfield_eval_init(qtcoeff, qcoeff, pcoeff, w->magfield_eval_p[sidx]);
         }
     }
 
@@ -134,13 +164,14 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
   gsl_vector_complex_free(pcoeff);
 
   w->plm_size = gsl_sf_legendre_array_n(params.lmax);
+  w->nlm = magfield_lmidx(params.lmax, params.mmax, params.mmax) + 1;
   w->mmax = params.mmax;
 
   w->Plm = malloc(w->plm_size * w->max_threads * sizeof(double));
   w->dPlm = malloc(w->plm_size * w->max_threads * sizeof(double));
-  w->qlmr = malloc(w->plm_size * w->modes_tot * w->max_threads * sizeof(complex double));
-  w->plmr = malloc(w->plm_size * w->modes_tot * w->max_threads * sizeof(complex double));
-  w->drplmr = malloc(w->plm_size * w->modes_tot * w->max_threads * sizeof(complex double));
+  w->qlmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
+  w->plmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
+  w->drplmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
   w->expmphi = malloc((w->mmax + 1) * w->max_threads * sizeof(complex double));
 
   w->acc = malloc(w->max_threads * sizeof(gsl_interp_accel *));
@@ -148,12 +179,19 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
   for (i = 0; i < w->max_threads; ++i)
     w->acc[i] = gsl_interp_accel_alloc();
 
+  free(fft_data.t);
+  free(fft_data.r);
+  gsl_vector_free(fft_data.window);
+
   return w;
 }
 
 void
 invert_smode_free(invert_smode_workspace *w)
 {
+  if (w->freqs)
+    free(w->freqs);
+
   if (w->nmodes)
     free(w->nmodes);
 
@@ -177,7 +215,7 @@ invert_smode_free(invert_smode_workspace *w)
     {
       size_t i;
 
-      for (i = 0; i < w->modes_tot * w->max_threads; ++i)
+      for (i = 0; i < w->modes_tot; ++i)
         {
           if (w->magfield_eval_p[i])
             magfield_eval_free(w->magfield_eval_p[i]);
@@ -227,32 +265,29 @@ initializing magfield arrays
 */
 
 int
-invert_smode_precompute(const double r, const double theta, const double phi, invert_smode_workspace * w)
+invert_smode_precompute(const int thread_id, const double r, const double theta, const double phi, invert_smode_workspace * w)
 {
   int status = 0;
-  int thread_id = omp_get_thread_num();
+  const size_t thread_offset = thread_id * w->nlm * w->modes_tot; /* offset for this thread in qlmr,plmr,drplmr arrays */
   double * Plm = w->Plm + thread_id * w->plm_size;
   double * dPlm = w->dPlm + thread_id * w->plm_size;
   complex double * expmphi = w->expmphi + thread_id * (w->mmax + 1);
-  size_t i, j;
+  size_t j;
 
-  status += magfield_eval_B_precompute_theta(theta, Plm, dPlm, w->magfield_eval_p[0]);
-  status += magfield_eval_B_precompute_phi(phi, expmphi, w->magfield_eval_p[0]);
+  status += magfield_eval_precompute_phi(phi, expmphi, w->magfield_eval_p[0]);
+  status += magfield_eval_precompute_theta(theta, Plm, dPlm, w->magfield_eval_p[0]);
 
-  for (i = 0; i < w->nfreq; ++i)
+  /* for each mode, initialize qlmr, plmr, drplmr arrays */
+  for (j = 0; j < w->modes_tot; ++j)
     {
-      for (j = 0; j < w->nmodes[i]; ++j)
-        {
-          size_t sidx = smode_idx(i, j, w);
-          size_t idx = CIDX2(sidx, w->modes_tot, thread_id, w->max_threads);
-          complex double * qlmr = w->qlmr + idx * w->plm_size;
-          complex double * plmr = w->plmr + idx * w->plm_size;
-          complex double * drplmr = w->drplmr + idx * w->plm_size;
+      size_t idx = thread_offset + j * w->nlm;
+      complex double * qlmr = w->qlmr + idx;
+      complex double * plmr = w->plmr + idx;
+      complex double * drplmr = w->drplmr + idx;
 
-          status = magfield_eval_B_precompute_r(r, qlmr, plmr, drplmr, w->acc[thread_id], w->magfield_eval_p[idx]);
-          if (status)
-            return status;
-        }
+      status = magfield_eval_B_precompute_r(r, qlmr, plmr, drplmr, w->acc[thread_id], w->magfield_eval_p[j]);
+      if (status)
+        return status;
     }
 
   return GSL_SUCCESS;
@@ -262,16 +297,17 @@ invert_smode_precompute(const double r, const double theta, const double phi, in
 invert_smode_get()
   Return value of spatial mode for a specified frequency band and mode number
 
-Inputs: r     - radius (km)
-        theta - colatitude (radians)
-        phi   - longitude (radians)
-        f     - frequency band, in [0,nfreq-1]
-        mode  - mode number in frequency band f, in [0,nmodes[f]-1]
-        Phi   - (output) Phi_{f,mode}(r,theta,phi)
-                Phi[0] = NEC X component
-                Phi[1] = NEC Y component
-                Phi[2] = NEC Z component
-        w     - workspace
+Inputs: thread_id - thread id
+        r         - radius (km)
+        theta     - colatitude (radians)
+        phi       - longitude (radians)
+        f         - frequency band, in [0,nfreq-1]
+        mode      - mode number in frequency band f, in [0,nmodes[f]-1]
+        Phi       - (output) Phi_{f,mode}(r,theta,phi)
+                    Phi[0] = NEC X component
+                    Phi[1] = NEC Y component
+                    Phi[2] = NEC Z component
+        w         - workspace
 
 Return: success/error
 
@@ -280,7 +316,7 @@ Notes:
 */
 
 int
-invert_smode_get(const double r, const double theta, const double phi, const size_t f, const size_t mode,
+invert_smode_get(const int thread_id, const double r, const double theta, const double phi, const size_t f, const size_t mode,
                  gsl_complex Phi[3], invert_smode_workspace * w)
 {
   (void) phi;
@@ -295,23 +331,19 @@ invert_smode_get(const double r, const double theta, const double phi, const siz
     }
   else
     {
-      int thread_id = omp_get_thread_num();
-      size_t sidx = smode_idx(f, mode, w);
-      size_t idx = CIDX2(sidx, w->modes_tot, thread_id, w->max_threads);
-      magfield_eval_workspace * magfield_eval_p = w->magfield_eval_p[idx];
-      double * Plm = w->Plm + thread_id * w->plm_size;
-      double * dPlm = w->dPlm + thread_id * w->plm_size;
-      complex double * expmphi = w->expmphi + thread_id * (w->mmax + 1);
-      complex double * qlmr = w->qlmr + idx * w->plm_size;
-      complex double * plmr = w->plmr + idx * w->plm_size;
-      complex double * drplmr = w->drplmr + idx * w->plm_size;
+      const size_t thread_offset = thread_id * w->nlm * w->modes_tot; /* offset for this thread in qlmr,plmr,drplmr arrays */
+      const size_t sidx = smode_idx(f, mode, w);
+      const size_t idx = thread_offset + sidx * w->nlm;
+      const magfield_eval_workspace * magfield_eval_p = w->magfield_eval_p[sidx];
+      const double * Plm = w->Plm + thread_id * w->plm_size;
+      const double * dPlm = w->dPlm + thread_id * w->plm_size;
+      const complex double * expmphi = w->expmphi + thread_id * (w->mmax + 1);
+      const complex double * qlmr = w->qlmr + idx;
+      const complex double * plmr = w->plmr + idx;
+      const complex double * drplmr = w->drplmr + idx;
       double B[4];
 
-#if 1
       magfield_eval_B_compute(r, theta, Plm, dPlm, expmphi, qlmr, plmr, drplmr, B, magfield_eval_p);
-#else
-      magfield_eval_B(r, theta, phi, B, magfield_eval_p);
-#endif
 
       Phi[0] = gsl_complex_rect(-B[1], 0.0);
       Phi[1] = gsl_complex_rect(B[2], 0.0);
@@ -325,16 +357,17 @@ invert_smode_get(const double r, const double theta, const double phi, const siz
 invert_smode_get_J()
   Return value of current density spatial mode for a specified frequency band and mode number
 
-Inputs: r     - radius (km)
-        theta - colatitude (radians)
-        phi   - longitude (radians)
-        f     - frequency band, in [0,nfreq-1]
-        mode  - mode number in frequency band f, in [0,nmodes[f]-1]
-        Phi   - (output) Phi_{f,mode}(r,theta,phi)
-                Phi[0] = NEC X component
-                Phi[1] = NEC Y component
-                Phi[2] = NEC Z component
-        w     - workspace
+Inputs: thread_id - thread id
+        r         - radius (km)
+        theta     - colatitude (radians)
+        phi       - longitude (radians)
+        f         - frequency band, in [0,nfreq-1]
+        mode      - mode number in frequency band f, in [0,nmodes[f]-1]
+        Phi       - (output) Phi_{f,mode}(r,theta,phi)
+                    Phi[0] = NEC X component
+                    Phi[1] = NEC Y component
+                    Phi[2] = NEC Z component
+        w         - workspace
 
 Return: success/error
 
@@ -343,7 +376,7 @@ Notes:
 */
 
 int
-invert_smode_get_J(const double r, const double theta, const double phi, const size_t f, const size_t mode,
+invert_smode_get_J(const int thread_id, const double r, const double theta, const double phi, const size_t f, const size_t mode,
                    gsl_complex Phi[3], invert_smode_workspace * w)
 {
   (void) phi;
@@ -358,16 +391,16 @@ invert_smode_get_J(const double r, const double theta, const double phi, const s
     }
   else
     {
-      int thread_id = omp_get_thread_num();
-      size_t sidx = smode_idx(f, mode, w);
-      size_t idx = CIDX2(sidx, w->modes_tot, thread_id, w->max_threads);
-      magfield_eval_workspace * magfield_eval_p = w->magfield_eval_p[idx];
+      const size_t thread_offset = thread_id * w->nlm * w->modes_tot; /* offset for this thread in qlmr,plmr,drplmr arrays */
+      const size_t sidx = smode_idx(f, mode, w);
+      const size_t idx = thread_offset + sidx * w->nlm;
+      magfield_eval_workspace * magfield_eval_p = w->magfield_eval_p[sidx];
       double * Plm = w->Plm + thread_id * w->plm_size;
       double * dPlm = w->dPlm + thread_id * w->plm_size;
       complex double * expmphi = w->expmphi + thread_id * (w->mmax + 1);
-      complex double * qlmr = w->qlmr + idx * w->plm_size;
-      complex double * plmr = w->plmr + idx * w->plm_size;
-      complex double * drplmr = w->drplmr + idx * w->plm_size;
+      complex double * qlmr = w->qlmr + idx;
+      complex double * plmr = w->plmr + idx;
+      complex double * drplmr = w->drplmr + idx;
       double J[3];
 
       magfield_eval_J(r, theta, phi, J, magfield_eval_p);
@@ -429,4 +462,71 @@ smode_fill_arrays(const magfield_params * params, const gsl_vector_complex * u,
     }
 
   return GSL_SUCCESS;
+}
+
+/*
+invert_smode_print()
+  Print spatial modes to output directory
+*/
+
+int
+invert_smode_print(const char * dir_prefix, invert_smode_workspace * w)
+{
+  int s = 0;
+  const double r = R_EARTH_KM + 450.0;
+  int thread_id = omp_get_thread_num();
+  char buf[2048];
+  size_t f;
+
+  for (f = 0; f < w->nfreq; ++f)
+    {
+      size_t mode;
+
+      for (mode = 0; mode < w->nmodes[f]; ++mode)
+        {
+          FILE *fp;
+          size_t i;
+          double lat, lon;
+
+          sprintf(buf, "%s/smode_%02zu_%02zu.txt", dir_prefix, f + 1, mode + 1);
+          fp = fopen(buf, "w");
+          if (!fp)
+            continue;
+
+          i = 1;
+          fprintf(fp, "# Frequency:   %f [cpd]\n", w->freqs[f]);
+          fprintf(fp, "# Mode number: %zu\n", mode);
+          fprintf(fp, "# Radius:      %.2f [km]\n", r);
+          fprintf(fp, "# Field %zu: Longitude (degrees)\n", i++);
+          fprintf(fp, "# Field %zu: Latitude (degrees)\n", i++);
+          fprintf(fp, "# Field %zu: X component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Y component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Z component of mode\n", i++);
+
+          for (lon = -180.0; lon <= 180.0; lon += 10.0)
+            {
+              double phi = lon * M_PI / 180.0;
+
+              for (lat = -89.9; lat <= 89.9; lat += 10.0)
+                {
+                  double theta = M_PI / 2.0 - lat * M_PI / 180.0;
+                  gsl_complex Phi[3];
+
+                  invert_smode_precompute(thread_id, r, theta, phi, w);
+                  invert_smode_get(thread_id, r, theta, phi, f, mode, Phi, w);
+
+                  fprintf(fp, "%f %f %f %f %f\n",
+                          lon,
+                          lat,
+                          GSL_REAL(Phi[0]),
+                          GSL_REAL(Phi[1]),
+                          GSL_REAL(Phi[2]));
+                }
+
+              fprintf(fp, "\n");
+            }
+        }
+    }
+
+  return s;
 }

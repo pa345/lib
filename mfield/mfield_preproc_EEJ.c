@@ -44,7 +44,7 @@
 
 #include "magdata.h"
 
-#define MAX_N 60000
+#define MAX_N 80000
 
 #define EEJ_FLG_KP          (1 << 0)
 #define EEJ_FLG_RC          (1 << 1)
@@ -159,6 +159,68 @@ eej_read(const char * filename, eej_data * data)
       if (++n >= MAX_N)
         {
           fprintf(stderr, "eej_read: MAX_N too small\n");
+          break;
+        }
+    }
+
+  data->r = R_EARTH_KM + 110.0;
+  data->n = n;
+
+  fclose(fp);
+
+  /* make sure timestamps are sorted ascending (in case of combined A/B datasets) */
+  s = eej_sort(data);
+
+  return s;
+}
+
+/* read a EEJ peak data file which was smoothed with a B-spline (fiteq) */
+static int
+eej_read_smooth(const char * filename, eej_data * data)
+{
+  int s = 0;
+  FILE *fp;
+  char buf[2048];
+  size_t n = 0;
+
+  fp = fopen(filename, "r");
+  if (!fp)
+    {
+      fprintf(stderr, "eej_read_smooth: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return -1;
+    }
+
+  while (fgets(buf, 2048, fp) != NULL)
+    {
+      int c;
+      time_t t;
+      double r, lon, lat, lat_model;
+
+      if (*buf == '#')
+        continue;
+
+      c = sscanf(buf, "%ld %lf %lf %lf %lf",
+                 &t,
+                 &r,
+                 &lon,
+                 &lat,
+                 &lat_model);
+      if (c < 5)
+        continue;
+
+      data->t[n] = t;
+      data->longitude[n] = lon;
+      data->latitude[n] = lat;
+      data->qdlat[n] = 0.0;
+      data->lt[n] = 12.0;
+      data->kp[n] = 0.0;
+      data->dRC[n] = 0.0;
+      data->flags[n] = 0;
+
+      if (++n >= MAX_N)
+        {
+          fprintf(stderr, "eej_read_smooth: MAX_N too small\n");
           break;
         }
     }
@@ -612,6 +674,7 @@ print_help(char *argv[])
   fprintf(stderr, "Usage: %s [options]\n", argv[0]);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "\t --eej_file file         | -i file          - EEJ magnetic equator data file from gradient search analysis\n");
+  fprintf(stderr, "\t --eej_smooth_file file  | -s file          - EEJ magnetic equator data file smoothed with periodic B-spline\n");
   fprintf(stderr, "\t --eej_wavelet_file file | -w file          - EEJ magnetic equator data file from wavelet analysis\n");
   fprintf(stderr, "\t --config_file           | -C config_file   - configuration file\n");
   fprintf(stderr, "\t --output_file           | -o output_file   - output file in magdata format\n");
@@ -622,7 +685,8 @@ main(int argc, char *argv[])
 {
   int status;
   char *config_file = "EEJ_preproc.cfg";
-  eej_data data_in, data_out;
+  eej_data * data_in = malloc(sizeof(eej_data));
+  eej_data * data_out = malloc(sizeof(eej_data));
   struct timeval tv0, tv1;
   preprocess_parameters params;
   size_t magdata_flags = 0;           /* MAGDATA_GLOBFLG_xxx */
@@ -633,8 +697,8 @@ main(int argc, char *argv[])
   params.max_kp = -1.0;
   params.max_dRC = -1.0;
 
-  data_in.n = 0;
-  data_out.n = 0;
+  data_in->n = 0;
+  data_out->n = 0;
 
   while (1)
     {
@@ -643,12 +707,13 @@ main(int argc, char *argv[])
       static struct option long_options[] =
         {
           { "eej_file", required_argument, NULL, 'i' },
+          { "eej_smooth_file", required_argument, NULL, 's' },
           { "config_file", required_argument, NULL, 'C' },
           { "output_file", required_argument, NULL, 'o' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "C:i:o:w:", long_options, &option_index);
+      c = getopt_long(argc, argv, "C:i:o:s:w:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -661,19 +726,28 @@ main(int argc, char *argv[])
           case 'i':
             fprintf(stderr, "main: reading %s...", optarg);
             gettimeofday(&tv0, NULL);
-            eej_read(optarg, &data_in);
+            eej_read(optarg, data_in);
             gettimeofday(&tv1, NULL);
             fprintf(stderr, "done (%g seconds, %zu data read)\n",
-                    time_diff(tv0, tv1), data_in.n);
+                    time_diff(tv0, tv1), data_in->n);
+            break;
+
+          case 's':
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            eej_read_smooth(optarg, data_in);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%g seconds, %zu data read)\n",
+                    time_diff(tv0, tv1), data_in->n);
             break;
 
           case 'w':
             fprintf(stderr, "main: reading %s...", optarg);
             gettimeofday(&tv0, NULL);
-            eej_read_wavelet(optarg, &data_in);
+            eej_read_wavelet(optarg, data_in);
             gettimeofday(&tv1, NULL);
             fprintf(stderr, "done (%g seconds, %zu data read)\n",
-                    time_diff(tv0, tv1), data_in.n);
+                    time_diff(tv0, tv1), data_in->n);
             break;
 
           case 'o':
@@ -693,22 +767,22 @@ main(int argc, char *argv[])
   if (status)
     exit(1);
 
-  if (data_in.n == 0)
+  if (data_in->n == 0)
     {
       print_help(argv);
       exit(1);
     }
 
   fprintf(stderr, "main: === PREPROCESSING EEJ DATA ===\n");
-  preprocess_data(&params, &data_in, &data_out);
+  preprocess_data(&params, data_in, data_out);
 
-  if (data_out.n == 0)
+  if (data_out->n == 0)
     {
       fprintf(stderr, "main: error: no data available\n");
       exit(1);
     }
 
-  mdata = copy_data(magdata_flags, &data_out);
+  mdata = copy_data(magdata_flags, data_out);
 
   if (output_file)
     {
@@ -718,6 +792,8 @@ main(int argc, char *argv[])
     }
 
   magdata_free(mdata);
+  free(data_in);
+  free(data_out);
 
   return 0;
 }

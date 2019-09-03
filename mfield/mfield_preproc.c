@@ -1141,6 +1141,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --swarm_file2     | -t swarm_index_file2      - Swarm index file 2 (for E/W gradients)\n");
   fprintf(stderr, "\t --swarm_asmv_file | -a swarm_asmv_index_file  - Swarm ASM-V index file\n");
   fprintf(stderr, "\t --dmsp_file       | -D dmsp_file              - DMSP index file (Swarm format)\n");
+  fprintf(stderr, "\t --cryosat_file    | -r cryosat_file           - Cryosat index file (Swarm format)\n");
   fprintf(stderr, "\t --obs_data_file   | -O obs_data_file          - Observatory data file (BGS format)\n");
   fprintf(stderr, "\t --downsample      | -d downsample             - downsampling factor\n");
   fprintf(stderr, "\t --gradient_ns     | -g num_samples            - number of samples between N/S gradient points\n");
@@ -1216,6 +1217,7 @@ main(int argc, char *argv[])
           { "swarm_asmv_file", required_argument, NULL, 'a' },
           { "champ_file", required_argument, NULL, 'c' },
           { "dmsp_file", required_argument, NULL, 'D' },
+          { "cryosat_file", required_argument, NULL, 'r' },
           { "obs_file", required_argument, NULL, 'O' },
           { "downsample", required_argument, NULL, 'd' },
           { "output_file", required_argument, NULL, 'o' },
@@ -1227,7 +1229,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:c:C:d:D:e:f:g:o:O:p:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:c:C:d:D:e:f:g:o:O:p:r:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -1252,6 +1254,13 @@ main(int argc, char *argv[])
           case 'D':
             data = read_swarm(optarg, 0);
             magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_DMSP;
+            magdata_euler_flags = EULER_FLG_ZYX;
+            break;
+
+          /* Cryosat data in Swarm format */
+          case 'r':
+            data = read_swarm(optarg, 0);
+            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_CRYOSAT;
             magdata_euler_flags = EULER_FLG_ZYX;
             break;
 

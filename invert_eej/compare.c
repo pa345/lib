@@ -34,7 +34,7 @@
 #include "jicmag.h"
 #include "julia.h"
 
-#include "curvefit.h"
+#include <curvefit/curvefit.h>
 #include "efi.h"
 
 /* allowed difference in measurement times (minutes) */
@@ -541,8 +541,8 @@ main(int argc, char *argv[])
       if (npairs > 0)
         {
           const gsl_multifit_robust_type *T = gsl_multifit_robust_bisquare;
-          curvefit_workspace *curve_p =
-            curvefit_alloc(T, curvefit_poly, npairs, 2);
+          curvefit_parameters params = curvefit_default_parameters();
+          curvefit_workspace *curve_p = curvefit_alloc(&params, T, curvefit_poly, npairs, 2);
 
           if (data_julia)
             {

@@ -14,6 +14,13 @@ AC_PROG_LIBTOOL
 
 AM_PROG_CC_C_O
 
+AC_C_INLINE
+
+if test "$ac_cv_c_inline"; then
+  AC_DEFINE(HAVE_INLINE, 1)
+  AC_SUBST(HAVE_INLINE)
+fi
+
 AC_SUBST(DATAHOME)
 
 AC_CONFIG_FILES([            \
@@ -21,7 +28,6 @@ AC_CONFIG_FILES([            \
   backus/Makefile            \
   champ/Makefile             \
   cond/Makefile              \
-  curvefit/Makefile          \
   dmsp/Makefile              \
   efi/Makefile               \
   emm/Makefile               \

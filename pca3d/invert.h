@@ -6,6 +6,7 @@
 #define INCLUDED_invert_h
 
 #include <stdarg.h>
+#include <complex.h>
 #include <satdata/satdata.h>
 
 #include <gsl/gsl_math.h>
@@ -16,6 +17,7 @@
 #include <gsl/gsl_multilarge_nlinear.h>
 #include <gsl/gsl_histogram.h>
 #include <gsl/gsl_spmatrix.h>
+#include <gsl/gsl_complex.h>
 
 #include <spatwt/spatwt.h>
 #include <track/track_weight.h>
@@ -24,6 +26,9 @@
 #include "invert_data.h"
 #include "invert_tmode.h"
 #include "invert_smode.h"
+
+/* cast gsl_complex to complex double */
+#define CastComplex(x) ((complex double) CMPLX(x.dat[0], x.dat[1]))
 
 #define INVERT_MAX_BUFFER          2048
 
@@ -65,7 +70,7 @@ typedef struct
   double R;                             /* reference radius (km) */
   size_t nmax;                          /* total nmax including core and crustal field */
   size_t nsat;                          /* number of satellites */
-  size_t nspatmodes;                    /* number of spatial modes in each frequency bin */
+  size_t nfreq;                         /* number of frequency bands */
   char tmode_file[INVERT_MAX_BUFFER];   /* temporal mode file */
 
   size_t max_iter;                      /* number of robust iterations */
@@ -97,13 +102,18 @@ typedef struct
 
 typedef struct
 {
-  size_t nsat;       /* number of different satellites */
-  size_t nspatmodes; /* number of spatial modes in each frequency bin */
+  size_t nsat;        /* number of different satellites */
+  size_t nfreq;       /* number of frequency bins */
 
   invert_parameters params;
 
-  size_t *tmode_idx; /* length nfreq; tmode_idx[i] = index of start of frequency band i */
-  size_t ntmodes;    /* number of temporal modes for all frequency bands */
+  size_t *smode_idx;  /* length nfreq; smode_idx[i] = index of start of frequency band i */
+  size_t nsmodes;     /* total number of spatial modes in all frequency bands */
+
+  size_t *tmode_idx;  /* length nfreq; tmode_idx[i] = index of start of frequency band i */
+  size_t ntmodes;     /* number of temporal modes for all frequency bands */
+
+  size_t *mode_idx;  /* length nfreq; mode_idx[i] = index of start of frequency band i */
 
   size_t p;          /* number of real model coefficients */
   size_t p_complex;  /* number of complex model coefficients (p/2) */

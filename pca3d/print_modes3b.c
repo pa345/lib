@@ -18,6 +18,7 @@
 #include <getopt.h>
 #include <assert.h>
 #include <errno.h>
+#include <complex.h>
 
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
@@ -114,9 +115,12 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fprintf(fp, "# Frequency: %g [cpd]\n", freq);
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
-      fprintf(fp, "# Field %zu: J_r\n", i++);
-      fprintf(fp, "# Field %zu: J_t\n", i++);
-      fprintf(fp, "# Field %zu: J_p\n", i++);
+      fprintf(fp, "# Field %zu: Re J_r\n", i++);
+      fprintf(fp, "# Field %zu: Im J_r\n", i++);
+      fprintf(fp, "# Field %zu: Re J_t\n", i++);
+      fprintf(fp, "# Field %zu: Im J_t\n", i++);
+      fprintf(fp, "# Field %zu: Re J_p\n", i++);
+      fprintf(fp, "# Field %zu: Im J_p\n", i++);
 
       /* prepare magfield_eval workspace for this singular vector */
       fill_magfield(&v.vector, w);
@@ -128,16 +132,31 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
           for (lat = -89.9; lat <= 89.9; lat += 1.0)
             {
               double theta = M_PI / 2.0 - lat * M_PI / 180.0;
-              double J[3];
+              complex double J[3];
+              double B[4];
 
-              magfield_eval_J(r, theta, phi, J, w);
+#if 0
+              magfield_eval_J_complex(r, theta, phi, J, w);
+
+              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+                      lon,
+                      lat,
+                      creal(J[0]),
+                      cimag(J[0]),
+                      creal(J[1]),
+                      cimag(J[1]),
+                      creal(J[2]),
+                      cimag(J[2]));
+#else
+              magfield_eval_B(r, theta, phi, B, w);
 
               fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e\n",
                       lon,
                       lat,
-                      J[0],
-                      J[1],
-                      J[2]);
+                      B[0],
+                      B[1],
+                      B[2]);
+#endif
             }
 
           fprintf(fp, "\n");

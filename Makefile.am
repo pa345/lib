@@ -2,7 +2,6 @@
 # directories need to be built before others
 SUBDIRS =         \
   backus          \
-  curvefit        \
   efi             \
   ephemeris       \
   green           \

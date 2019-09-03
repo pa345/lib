@@ -41,4 +41,4 @@ done
 # cleanup
 rm -f ${coefdir}/*.eps ${coefdir}/*.ps
 
-#ffmpeg -framerate 4 -i map.%03d.png -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf fps=25 ${outfile}
+#ffmpeg -framerate 4 -pattern_type glob -i '*.png' -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf fps=25 ${outfile}

@@ -28,6 +28,7 @@ invert_tmode_alloc()
   Allocate invert_tmode_workspace
 
 Inputs: nfreq  - number of frequency bands
+        freqs  - frequences in cpd, length nfreq (can be NULL to be filled in later)
         nmodes - number of modes per frequency band, length nfreq
         N      - length of time series for each mode
 
@@ -35,7 +36,7 @@ Return: pointer to workspace
 */
 
 invert_tmode_workspace *
-invert_tmode_alloc(const size_t nfreq, const size_t nmodes[], const size_t N)
+invert_tmode_alloc(const size_t nfreq, const double freqs[], const size_t nmodes[], const size_t N)
 {
   invert_tmode_workspace *w;
   size_t i;
@@ -47,8 +48,9 @@ invert_tmode_alloc(const size_t nfreq, const size_t nmodes[], const size_t N)
   w->nfreq = nfreq;
   w->N = N;
 
+  w->freqs = malloc(nfreq * sizeof(double));
   w->nmodes = malloc(nfreq * sizeof(size_t));
-  if (!w->nmodes)
+  if (!w->freqs || !w->nmodes)
     {
       invert_tmode_free(w);
       return 0;
@@ -63,7 +65,11 @@ invert_tmode_alloc(const size_t nfreq, const size_t nmodes[], const size_t N)
 
   for (i = 0; i < nfreq; ++i)
     {
+      if (freqs != NULL)
+        w->freqs[i] = freqs[i];
+
       w->nmodes[i] = nmodes[i];
+
       w->modes[i] = gsl_matrix_complex_alloc(N, nmodes[i]);
       if (!w->modes[i])
         {
@@ -81,6 +87,9 @@ invert_tmode_alloc(const size_t nfreq, const size_t nmodes[], const size_t N)
 void
 invert_tmode_free(invert_tmode_workspace *w)
 {
+  if (w->freqs)
+    free(w->freqs);
+
   if (w->nmodes)
     free(w->nmodes);
 
@@ -108,7 +117,7 @@ invert_tmode_get()
   Return value of temporal mode for a specified frequency band and mode number
 
 Inputs: t    - timestamp (CDF_EPOCH)
-        f    - frequency band, in [0,nfreq-1]
+        f    - frequency band in [0,nfreq-1]
         mode - mode number in frequency band f, in [0,nmodes[f]-1]
         w    - workspace
 
@@ -138,7 +147,7 @@ invert_tmode_get(const double t, const size_t f, const size_t mode, const invert
     }
   else
     {
-      size_t idx = gsl_interp_bsearch(w->t, t, 0, w->N - 1);
+      const size_t idx = gsl_interp_bsearch(w->t, t, 0, w->N - 1);
       gsl_complex z1 = gsl_matrix_complex_get(w->modes[f], idx, mode);
       gsl_complex z2 = gsl_matrix_complex_get(w->modes[f], idx + 1, mode);
       gsl_complex z;
@@ -156,27 +165,29 @@ invert_tmode_read_ascii()
   Read ASCII file of temporal mode data
 
 Inputs: filename - filename to read
-        freq     - frequency band, in [0,nfreq-1]
+        ifreq    - frequency band, in [0,nfreq-1]
         mode     - mode number, in [0,nmodes[freq]-1]
+        freq     - (output) frequency of mode in cpd
         w        - workspace
 */
 
 int
-invert_tmode_read_ascii(const char * filename, const size_t freq, const size_t mode, invert_tmode_workspace * w)
+invert_tmode_read_ascii(const char * filename, const size_t ifreq, const size_t mode, double * freq, invert_tmode_workspace * w)
 {
-  if (freq >= w->nfreq)
+  if (ifreq >= w->nfreq)
     {
       GSL_ERROR ("invalid frequency band", GSL_EBADLEN);
     }
-  else if (mode >= w->nmodes[freq])
+  else if (mode >= w->nmodes[ifreq])
     {
       GSL_ERROR ("invalid mode number", GSL_EBADLEN);
     }
   else
     {
       FILE *fp;
-      gsl_vector_complex_view v = gsl_matrix_complex_column(w->modes[freq], mode);
+      gsl_vector_complex_view v = gsl_matrix_complex_column(w->modes[ifreq], mode);
       char buffer[2048];
+      int read_freq = 0;
       size_t n = 0;
 
       fp = fopen(filename, "r");
@@ -193,12 +204,30 @@ invert_tmode_read_ascii(const char * filename, const size_t freq, const size_t m
           time_t t;
           double re, im;
 
+          if (!read_freq)
+            {
+              if (*buffer == '#')
+                {
+                  c = sscanf(buffer, "# Frequency: %lf", freq);
+                  if (c == 1)
+                    read_freq = 1;
+                }
+
+              continue;
+            }
+
           c = sscanf(buffer, "%ld %lf %lf", &t, &re, &im);
           if (c != 3)
             continue;
 
           w->t[n] = satdata_timet2epoch(t);
-          gsl_vector_complex_set(&v.vector, n++, gsl_complex_rect(re, im));
+          gsl_vector_complex_set(&v.vector, n, gsl_complex_rect(re, im));
+
+          if (n++ >= w->modes[ifreq]->size1)
+            {
+              fprintf(stderr, "invert_tmode_read_ascii: mode matrix size1 too small [%zu]\n", n);
+              return -1;
+            }
         }
 
       if (n != w->N)
@@ -227,6 +256,7 @@ invert_tmode_write_binary(const char * filename, invert_tmode_workspace * w)
     }
 
   fwrite(&(w->nfreq), sizeof(size_t), 1, fp);
+  fwrite(w->freqs, sizeof(double), w->nfreq, fp);
   fwrite(w->nmodes, sizeof(size_t), w->nfreq, fp);
   fwrite(&(w->N), sizeof(size_t), 1, fp);
   fwrite(w->t, sizeof(double), w->N, fp);
@@ -247,6 +277,7 @@ invert_tmode_read_binary(const char * filename)
   invert_tmode_workspace * w;
   size_t nfreq, N;
   size_t * nmodes;
+  double * freqs;
 
   fp = fopen(filename, "r");
   if (!fp)
@@ -258,12 +289,15 @@ invert_tmode_read_binary(const char * filename)
 
   fread(&nfreq, sizeof(size_t), 1, fp);
 
+  freqs = malloc(nfreq * sizeof(double));
+  fread(freqs, sizeof(double), nfreq, fp);
+
   nmodes = malloc(nfreq * sizeof(size_t));
   fread(nmodes, sizeof(size_t), nfreq, fp);
 
   fread(&N, sizeof(size_t), 1, fp);
 
-  w = invert_tmode_alloc(nfreq, nmodes, N);
+  w = invert_tmode_alloc(nfreq, freqs, nmodes, N);
 
   fread(w->t, sizeof(double), N, fp);
 
@@ -273,4 +307,54 @@ invert_tmode_read_binary(const char * filename)
   fclose(fp);
 
   return w;
+}
+
+/*
+invert_tmode_print()
+  Print temporal modes to output directory
+*/
+
+int
+invert_tmode_print(const char * dir_prefix, const invert_tmode_workspace * w)
+{
+  int s = 0;
+  const double t0 = w->t[0] + 0.5*3.6e6;
+  const double t1 = w->t[w->N - 1];
+  const double dt = 1.0 * 3.6e6; /* time step in ms */
+  char buf[2048];
+  size_t f;
+  
+  for (f = 0; f < w->nfreq; ++f)
+    {
+      size_t mode;
+
+      for (mode = 0; mode < w->nmodes[f]; ++mode)
+        {
+          double t;
+          FILE *fp;
+          size_t i;
+
+          sprintf(buf, "%s/tmode_%02zu_%02zu.txt", dir_prefix, f + 1, mode + 1);
+          fp = fopen(buf, "w");
+          if (!fp)
+            continue;
+
+          i = 1;
+          fprintf(fp, "# Frequency:   %f [cpd]\n", w->freqs[f]);
+          fprintf(fp, "# Mode number: %zu\n", mode);
+          fprintf(fp, "# Field %zu: timestamp (UT seconds since 1970-01-01 00:00:00 UTC)\n", i++);
+          fprintf(fp, "# Field %zu: real part of temporal mode\n", i++);
+          fprintf(fp, "# Field %zu: imag part of temporal mode\n", i++);
+
+          for (t = t0; t <= t1; t += dt)
+            {
+              gsl_complex z = invert_tmode_get(t, f, mode, w);
+              fprintf(fp, "%ld %.12e %.12e\n", epoch2timet(t), GSL_REAL(z), GSL_IMAG(z));
+            }
+
+          fclose(fp);
+        }
+    }
+
+  return s;
 }

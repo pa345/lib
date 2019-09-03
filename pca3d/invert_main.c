@@ -121,8 +121,8 @@ parse_config_file(const char *filename, invert_parameters *invert_params,
     invert_params->epoch = fval;
   if (config_lookup_float(&cfg, "R", &fval))
     invert_params->R = fval;
-  if (config_lookup_int(&cfg, "num_spatial_modes", &ival))
-    invert_params->nspatmodes = (size_t) ival;
+  if (config_lookup_int(&cfg, "nfreq", &ival))
+    invert_params->nfreq = (size_t) ival;
 
   if (config_lookup_string(&cfg, "tmode_file", &sval))
     strcpy(invert_params->tmode_file, sval);
@@ -228,6 +228,15 @@ print_J_grid(const char * filename, const double t, invert_workspace * w)
   FILE *fp = fopen(filename, "w");
   const double r = R_EARTH_KM + 110.0;
   double lon, lat;
+  size_t i;
+
+  i = 1;
+  fprintf(fp, "# Radius: %.4f [km]\n", r);
+  fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: J_X (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_Y (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_Z (A/m^2)\n", i++);
 
   for (lon = -180.0; lon <= 180.0; lon += 5.0)
     {
@@ -392,7 +401,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: epoch             = %.2f\n", invert_params.epoch);
   fprintf(stderr, "main: radius            = %g [km]\n", invert_params.R);
-  fprintf(stderr, "main: num_spatial_modes = %zu\n", invert_params.nspatmodes);
+  fprintf(stderr, "main: nfreq             = %zu\n", invert_params.nfreq);
 
   fprintf(stderr, "main: tmin = %g\n", tmin);
   fprintf(stderr, "main: tmax = %g\n", tmax);
@@ -449,6 +458,10 @@ main(int argc, char *argv[])
     fprintf(stderr, "main: flagging sparse observatory data...");
     nflag = invert_data_filter_observatory(invert_data_p);
     fprintf(stderr, "done (%zu observatories flagged)\n", nflag);
+
+    fprintf(stderr, "main: compacting data...");
+    invert_data_compact(invert_data_p);
+    fprintf(stderr, "done\n");
   }
 
   fprintf(stderr, "main: data epoch = %.2f\n", invert_data_epoch(invert_data_p));
@@ -495,6 +508,14 @@ main(int argc, char *argv[])
       /* print data used for MF modeling for each satellite */
       fprintf(stderr, "main: printing data for MF modeling to %s...", data_prefix);
       invert_data_print(data_prefix, invert_workspace_p->wts_spatial, invert_data_p);
+      fprintf(stderr, "done\n");
+
+      fprintf(stderr, "main: printing temporal modes to %s...", data_prefix);
+      invert_tmode_print(data_prefix, invert_workspace_p->tmode_workspace_p);
+      fprintf(stderr, "done\n");
+
+      fprintf(stderr, "main: printing spatial modes to %s...", data_prefix);
+      invert_smode_print(data_prefix, invert_workspace_p->smode_workspace_p);
       fprintf(stderr, "done\n");
     }
 

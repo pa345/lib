@@ -4,6 +4,7 @@
  * Contains routines for fitting magnetic field module using gsl_multifit_nlinear framework
  */
 
+#include <complex.h>
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_complex.h>
@@ -18,13 +19,13 @@ static int invert_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J);
 static int invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr,
                                   const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w);
-static int invert_jacobian_vector(const double t, const double r, const double theta, const double phi,
+static int invert_jacobian_vector(const int thread_id, const double t, const double r, const double theta, const double phi,
                                   gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
                                   const invert_workspace *w);
 static int invert_nonlinear_model_J(const int res_flag, const gsl_vector * x, const double t, const double r,
                                     const double theta, const double phi,
                                     const int thread_id, double J_model[3], invert_workspace *w);
-static int invert_jacobian_vector_J(const double t, const double r, const double theta, const double phi,
+static int invert_jacobian_vector_J(const int thread_id, const double t, const double r, const double theta, const double phi,
                                     gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
                                     const invert_workspace *w);
 
@@ -197,6 +198,8 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
   const invert_parameters *mparams = &(w->params);
   size_t i, j;
   struct timeval tv0, tv1;
+  double xnorm = gsl_blas_dnrm2(x);
+  int xzero = xnorm == 0.0 ? 1 : 0;
 
   invert_debug("invert_calc_f: entering function...\n");
   gettimeofday(&tv0, NULL);
@@ -219,14 +222,11 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           double dBdt_obs[3];           /* SV observation vector (NEC frame) */
           double F_obs;                 /* scalar field measurement */
 
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
-          if (!MAGDATA_FitMF(mptr->flags[j]))
-            continue;
-
           /* compute vector model for this residual */
-          invert_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
+          if (xzero)
+            B_model[0] = B_model[1] = B_model[2] = 0.0;
+          else
+            invert_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
 
           /* compute vector SV model for this residual */
           if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
@@ -478,17 +478,8 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
           double theta = mptr->theta[j];
           double phi = mptr->phi[j];
           size_t ridx = mptr->index[j]; /* residual index for this data point */
-          size_t k;
           gsl_vector_view vx, vy, vz;
-          gsl_vector *VX, *VY, *VZ;
-
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
-          if (!MAGDATA_FitMF(mptr->flags[j]))
-            continue;
-
-          VX = VY = VZ = NULL;
+          gsl_vector *VX = NULL, *VY = NULL, *VZ = NULL;
 
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
@@ -510,7 +501,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
           if (mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z))
             {
-              invert_jacobian_vector(mptr->t[j], r, theta, phi, VX, VY, VZ, w);
+              invert_jacobian_vector(thread_id, mptr->t[j], r, theta, phi, VX, VY, VZ, w);
             }
 
           if (MAGDATA_ExistScalar(mptr->flags[j]) &&
@@ -587,6 +578,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
     }
 
 #if 0
+  printv_octave(x, "x");
   print_octave(J, "J");
   exit(1);
 #elif 0
@@ -637,7 +629,7 @@ invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
   gsl_vector_view out = gsl_vector_view_array(B_model, 3);
 
   /* compute 3 rows of Jacobian corresponding to X,Y,Z residuals */
-  s = invert_jacobian_vector(mptr->t[data_idx], mptr->r[data_idx], mptr->theta[data_idx], mptr->phi[data_idx],
+  s = invert_jacobian_vector(thread_id, mptr->t[data_idx], mptr->r[data_idx], mptr->theta[data_idx], mptr->phi[data_idx],
                              &X.vector, &Y.vector, &Z.vector, w);
   if (s)
     return s;
@@ -652,67 +644,110 @@ invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
 invert_jacobian_vector()
   Construct a block of 3 rows of the Jacobian corresponding to vector residuals
 
-Inputs: t     - timestamp (CDF_EPOCH)
-        r     - radius (km)
-        theta - colatitude (radians)
-        phi   - longitude (radians)
-        X     - (output) X row of Jacobian, length p
-        Y     - (output) X row of Jacobian, length p
-        Z     - (output) X row of Jacobian, length p
-        w     - workspace
+Inputs: thread_id - thread id
+        t         - timestamp (CDF_EPOCH)
+        r         - radius (km)
+        theta     - colatitude (radians)
+        phi       - longitude (radians)
+        X         - (output) X row of Jacobian, length p
+        Y         - (output) X row of Jacobian, length p
+        Z         - (output) X row of Jacobian, length p
+        w         - workspace
 */
 
 static int
-invert_jacobian_vector(const double t, const double r, const double theta, const double phi,
+invert_jacobian_vector(const int thread_id, const double t, const double r, const double theta, const double phi,
                        gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
                        const invert_workspace *w)
 {
   int s = 0;
   invert_tmode_workspace * tmode_p = w->tmode_workspace_p;
   invert_smode_workspace * smode_p = w->smode_workspace_p;
-  const size_t nfreq = tmode_p->nfreq;
+  const size_t nfreq = w->nfreq;
   size_t i, j, k, l;
 
   /* precompute magfield arrays for this (r,theta,phi) */
-  invert_smode_precompute(r, theta, phi, smode_p);
+  invert_smode_precompute(thread_id, r, theta, phi, smode_p);
 
+#if 0
   for (i = 0; i < nfreq; ++i)
     {
-      for (j = 0; j < tmode_p->nmodes[i]; ++j)
+      for (j = 0; j < smode_p->nmodes[i]; ++j)
         {
-          /* compute temporal mode j of band i for this timestamp */
-          gsl_complex alpha_ij = invert_tmode_get(t, i, j, tmode_p);
+          gsl_complex phi_ij[3] = { GSL_COMPLEX_ONE, GSL_COMPLEX_ONE, GSL_COMPLEX_ONE };/*XXX*/
 
-          for (k = 0; k < w->nspatmodes; ++k)
+          /*invert_smode_get(r, theta, phi, i, j, phi_ij, smode_p);*/
+
+          for (k = 0; k < tmode_p->nmodes[i]; ++k)
             {
-              size_t idx = invert_coeff_idx(i, j, k, w);
-              gsl_complex phi_ik[3];
-
-              invert_smode_get(r, theta, phi, i, k, phi_ik, smode_p);
+              /* compute temporal mode k of band i for this timestamp */
+              complex double alpha_ik = CastComplex(invert_tmode_get(t, i, k, tmode_p));
+              size_t idx = invert_coeff_idx(i, k, j, w);
+              complex double z;
 
               if (X)
                 {
-                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[0]);
+                  z = alpha_ik * CastComplex(phi_ij[0]);
+                  gsl_vector_set(X, idx, creal(z));
+                  gsl_vector_set(X, w->p_complex + idx, -cimag(z));
+                }
+
+              if (Y)
+                {
+                  z = alpha_ik * CastComplex(phi_ij[1]);
+                  gsl_vector_set(Y, idx, creal(z));
+                  gsl_vector_set(Y, w->p_complex + idx, -cimag(z));
+                }
+
+              if (Z)
+                {
+                  z = alpha_ik * CastComplex(phi_ij[2]);
+                  gsl_vector_set(Z, idx, creal(z));
+                  gsl_vector_set(Z, w->p_complex + idx, -cimag(z));
+                }
+            }
+        }
+    }
+#elif 1
+
+  for (i = 0; i < nfreq; ++i)
+    {
+      for (j = 0; j < smode_p->nmodes[i]; ++j)
+        {
+          gsl_complex phi_ij[3] = { GSL_COMPLEX_ONE, GSL_COMPLEX_ONE, GSL_COMPLEX_ONE };/*XXX*/
+
+          invert_smode_get(thread_id, r, theta, phi, i, j, phi_ij, smode_p);
+
+          for (k = 0; k < tmode_p->nmodes[i]; ++k)
+            {
+              /* compute temporal mode k of band i for this timestamp */
+              gsl_complex alpha_ik = invert_tmode_get(t, i, k, tmode_p);
+              size_t idx = invert_coeff_idx(i, k, j, w);
+
+              if (X)
+                {
+                  gsl_complex z = gsl_complex_mul(alpha_ik, phi_ij[0]);
                   gsl_vector_set(X, idx, GSL_REAL(z));
                   gsl_vector_set(X, w->p_complex + idx, -GSL_IMAG(z));
                 }
 
               if (Y)
                 {
-                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[1]);
+                  gsl_complex z = gsl_complex_mul(alpha_ik, phi_ij[1]);
                   gsl_vector_set(Y, idx, GSL_REAL(z));
                   gsl_vector_set(Y, w->p_complex + idx, -GSL_IMAG(z));
                 }
 
               if (Z)
                 {
-                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[2]);
+                  gsl_complex z = gsl_complex_mul(alpha_ik, phi_ij[2]);
                   gsl_vector_set(Z, idx, GSL_REAL(z));
                   gsl_vector_set(Z, w->p_complex + idx, -GSL_IMAG(z));
                 }
             }
         }
     }
+#endif
 
   return s;
 }
@@ -746,11 +781,11 @@ invert_nonlinear_model_J(const int res_flag, const gsl_vector * x, const double 
   gsl_vector_view out = gsl_vector_view_array(J_model, 3);
 
   /* compute 3 rows of Jacobian corresponding to X,Y,Z residuals */
-  s = invert_jacobian_vector_J(t, r, theta, phi, &X.vector, &Y.vector, &Z.vector, w);
+  s = invert_jacobian_vector_J(thread_id, t, r, theta, phi, &X.vector, &Y.vector, &Z.vector, w);
   if (s)
     return s;
 
-  /* B_model = JB * x */
+  /* J_model = JB * x */
   gsl_blas_dgemv(CblasNoTrans, 1.0, JB, x, 0.0, &out.vector);
 
   return s;
@@ -761,61 +796,62 @@ invert_jacobian_vector_J()
   Construct a block of 3 rows of the Jacobian corresponding to vector residuals
 for the current density
 
-Inputs: t     - timestamp (CDF_EPOCH)
-        r     - radius (km)
-        theta - colatitude (radians)
-        phi   - longitude (radians)
-        X     - (output) X row of Jacobian, length p
-        Y     - (output) X row of Jacobian, length p
-        Z     - (output) X row of Jacobian, length p
-        w     - workspace
+Inputs: thread_id - thread id
+        t         - timestamp (CDF_EPOCH)
+        r         - radius (km)
+        theta     - colatitude (radians)
+        phi       - longitude (radians)
+        X         - (output) X row of Jacobian, length p
+        Y         - (output) X row of Jacobian, length p
+        Z         - (output) X row of Jacobian, length p
+        w         - workspace
 */
 
 static int
-invert_jacobian_vector_J(const double t, const double r, const double theta, const double phi,
+invert_jacobian_vector_J(const int thread_id, const double t, const double r, const double theta, const double phi,
                          gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
                          const invert_workspace *w)
 {
   int s = 0;
   invert_tmode_workspace * tmode_p = w->tmode_workspace_p;
   invert_smode_workspace * smode_p = w->smode_workspace_p;
-  const size_t nfreq = tmode_p->nfreq;
-  size_t i, j, k, l;
+  const size_t nfreq = w->nfreq;
+  size_t i, j, k;
 
   /* precompute magfield arrays for this (r,theta,phi) */
-  invert_smode_precompute(r, theta, phi, smode_p);
+  invert_smode_precompute(thread_id, r, theta, phi, smode_p);
 
   for (i = 0; i < nfreq; ++i)
     {
-      for (j = 0; j < tmode_p->nmodes[i]; ++j)
+      for (j = 0; j < smode_p->nmodes[i]; ++j)
         {
-          /* compute temporal mode j of band i for this timestamp */
-          gsl_complex alpha_ij = invert_tmode_get(t, i, j, tmode_p);
+          gsl_complex phi_ij[3];
 
-          for (k = 0; k < w->nspatmodes; ++k)
+          invert_smode_get_J(thread_id, r, theta, phi, i, j, phi_ij, smode_p);
+
+          for (k = 0; k < tmode_p->nmodes[i]; ++k)
             {
-              size_t idx = invert_coeff_idx(i, j, k, w);
-              gsl_complex phi_ik[3];
-
-              invert_smode_get_J(r, theta, phi, i, k, phi_ik, smode_p);
+              /* compute temporal mode j of band i for this timestamp */
+              gsl_complex alpha_ik = invert_tmode_get(t, i, k, tmode_p);
+              size_t idx = invert_coeff_idx(i, k, j, w);
 
               if (X)
                 {
-                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[0]);
+                  gsl_complex z = gsl_complex_mul(alpha_ik, phi_ij[0]);
                   gsl_vector_set(X, idx, GSL_REAL(z));
                   gsl_vector_set(X, w->p_complex + idx, -GSL_IMAG(z));
                 }
 
               if (Y)
                 {
-                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[1]);
+                  gsl_complex z = gsl_complex_mul(alpha_ik, phi_ij[1]);
                   gsl_vector_set(Y, idx, GSL_REAL(z));
                   gsl_vector_set(Y, w->p_complex + idx, -GSL_IMAG(z));
                 }
 
               if (Z)
                 {
-                  gsl_complex z = gsl_complex_mul(alpha_ij, phi_ik[2]);
+                  gsl_complex z = gsl_complex_mul(alpha_ik, phi_ij[2]);
                   gsl_vector_set(Z, idx, GSL_REAL(z));
                   gsl_vector_set(Z, w->p_complex + idx, -GSL_IMAG(z));
                 }

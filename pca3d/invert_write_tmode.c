@@ -34,11 +34,12 @@ int
 main(int argc, char *argv[])
 {
   const size_t nfreq_max = 20;
-  const size_t N = 184080; /* length of time series for each mode */
+  const size_t N = 192672; /* length of time series for each mode */
   size_t * nmodes;
   size_t nfreq;
   char *mode_dir = "/data/palken/Gary_Project/Temporal_Modes";
   char *output_file = NULL;
+  double freq; /* frequency of mode in cpd */
   invert_tmode_workspace * w;
   char buf[512];
 
@@ -104,7 +105,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "number of frequency bands = %zu\n", nfreq);
   
-  w = invert_tmode_alloc(nfreq, nmodes, N);
+  w = invert_tmode_alloc(nfreq, NULL, nmodes, N);
 
   /* now read all ASCII files and store in w */
   {
@@ -112,14 +113,18 @@ main(int argc, char *argv[])
 
     for (i = 0; i < nfreq; ++i)
       {
+        double freq;
+
         for (j = 0; j < nmodes[i]; ++j)
           {
             sprintf(buf, "%s/mode_%02zu_%02zu.txt", mode_dir, i + 1, j + 1);
 
             fprintf(stderr, "main: processing %s...", buf);
-            invert_tmode_read_ascii(buf, i, j, w);
-            fprintf(stderr, "done\n");
+            invert_tmode_read_ascii(buf, i, j, &freq, w);
+            fprintf(stderr, "(%f [cpd]) done\n", freq);
           }
+
+        w->freqs[i] = freq;
       }
   }
 
