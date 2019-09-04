@@ -11,7 +11,7 @@
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_multifit_nlinear.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
 
 /* number of fit parameters */
 #define FLUXCAL_P              9

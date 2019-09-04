@@ -218,7 +218,7 @@ mfield_data_filter_comp(mfield_data_workspace *w)
         {
           double qdlat = mptr->qdlat[j];
 
-#if 1
+#if 0
           /*XXX fit Swarm scalar data and observatory vector data */
           if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
             mptr->flags[j] &= ~(MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z);

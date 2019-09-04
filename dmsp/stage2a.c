@@ -603,6 +603,7 @@ print_help(char *argv[])
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "  -i dmsp_index_file     - Input DMSP index file\n");
   fprintf(stderr, "  -c cryosat_index_file  - Input Cryosat index file\n");
+  fprintf(stderr, "  -s swarm_index_file    - Input Swarm index file\n");
   fprintf(stderr, "  -o output_file         - Output calibrated CDF file\n");
   fprintf(stderr, "  -p param_file          - Output ASCII file containing time series of calibration parameters\n");
   fprintf(stderr, "  -r residual_file       - Output ASCII file of residuals\n");
@@ -660,7 +661,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "c:d:e:h:i:o:b:p:r:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "c:d:e:h:i:o:b:p:r:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -686,6 +687,15 @@ main(int argc, char *argv[])
             thresh[3] = 300.0;
             downsample = 5;
 
+            break;
+
+          case 's':
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_swarm_read_idx(optarg, 1);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
+                    time_diff(tv0, tv1));
             break;
 
           case 'o':

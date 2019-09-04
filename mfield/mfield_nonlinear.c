@@ -4,7 +4,7 @@
  * FDF_SOLVER = 1   GSL multilarge solver / LM
  * FDF_SOLVER = 2   GSL multilarge solver / Gauss-Newton
  */
-#define FDF_SOLVER     0
+#define FDF_SOLVER     1
 
 #include <gsl/gsl_integration.h>
 #include <mainlib/ml_spatwt.h>
@@ -459,6 +459,8 @@ mfield_init_nonlinear(mfield_workspace *w)
         /* down-weight DMSP data relative to CHAMP/Swarm; this should be a cfg file parameter */
         if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
           global_weight = 0.01;
+        else if (mptr->global_flags & MAGDATA_GLOBFLG_CRYOSAT)
+          global_weight = 0.1;
         else if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
           global_weight = 10.0;
         else if (mptr->global_flags & MAGDATA_GLOBFLG_EEJ_MAGEQ)
