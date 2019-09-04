@@ -17,12 +17,11 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 
-#include <satdata/satdata.h>
-
-#include <msynth/msynth.h>
-#include <common/common.h>
-#include <common/solarpos.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_solarpos.h>
+#include <mainlib/ml_track.h>
 
 #define SUBTRACT_MF7              1
 #define DOWNSAMPLE                20

@@ -21,12 +21,11 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-
-#include <common/common.h>
-#include <common/ellipsoid.h>
-#include <common/quat.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_ellipsoid.h>
+#include <mainlib/ml_quat.h>
 
 /*
 print_data()

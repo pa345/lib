@@ -31,19 +31,18 @@
 #include <gsl/gsl_multiroots.h>
 #include <gsl/gsl_test.h>
 
-#include <indices/indices.h>
-#include <satdata/satdata.h>
-#include <att/att.h>
-#include <common/common.h>
-#include <common/ellipsoid.h>
-#include <common/eci.h>
-#include <common/julian.h>
-#include <sofa/sofa.h>
-#include <spice/spice.h>
-
-#include "eph.h"
-#include "eph_data.h"
-#include "hermite.h"
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_att.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_ellipsoid.h>
+#include <mainlib/ml_eci.h>
+#include <mainlib/ml_julian.h>
+#include <mainlib/ml_sofa.h>
+#include <mainlib/ml_spice.h>
+#include <mainlib/ml_eph.h>
+#include <mainlib/ml_eph_data.h>
+#include <mainlib/ml_hermite.h>
 
 /*
  * 0 = old/original Greenwich only transformation

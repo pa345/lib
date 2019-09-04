@@ -7,7 +7,7 @@
 #include <math.h>
 #include <getopt.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
 
 #include "swarmeef.h"
 

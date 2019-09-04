@@ -22,8 +22,6 @@
 #include <errno.h>
 #include <assert.h>
 
-#include <satdata/satdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_vector.h>
@@ -33,10 +31,11 @@
 #include <gsl/gsl_multifit.h>
 #include <gsl/gsl_blas.h>
 
-#include <common/common.h>
-#include <common/interp.h>
-#include <msynth/msynth.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_track.h>
 
 #include "green.h"
 

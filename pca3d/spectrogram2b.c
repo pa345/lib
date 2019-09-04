@@ -26,8 +26,8 @@
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_complex_math.h>
 
-#include <common/bsearch.h>
-#include <common/common.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_common.h>
 
 #include "io.h"
 #include "pca3d.h"

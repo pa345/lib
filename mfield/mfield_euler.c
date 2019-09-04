@@ -16,7 +16,7 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_errno.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
 #include <bspline2/gsl_bspline2.h>
 
 #include "mfield_euler.h"

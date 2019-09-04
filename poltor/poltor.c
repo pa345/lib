@@ -36,14 +36,14 @@
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_complex_math.h>
 
-#include <common/common.h>
-#include <common/oct.h>
-#include <indices/indices.h>
-#include <track/track_weight.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_track_weight.h>
+#include <mainlib/ml_magdata_list.h>
 
 #include "green.h"
 #include "lls.h"
-#include "magdata_list.h"
 #include "poltor.h"
 
 static int poltor_row(const double r, const double theta, const double phi,

@@ -25,10 +25,6 @@
 #include <omp.h>
 #include <libconfig.h>
 
-#include <apex/apex.h>
-#include <indices/indices.h>
-#include <satdata/satdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_filter.h>
@@ -39,10 +35,12 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rstat.h>
 
-#include <common/common.h>
-#include <common/bsearch.h>
-
-#include "magdata.h"
+#include <mainlib/ml_apex.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_magdata.h>
 
 #define MAX_N 80000
 

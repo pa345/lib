@@ -19,11 +19,11 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
-#include <common/common.h>
-#include <common/interp.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
+#include <mainlib/ml_coord.h>
 
 #include "mag.h"
-#include "coord.h"
 
 #include "Gdef.h"
 

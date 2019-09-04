@@ -13,12 +13,11 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_rstat.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_magdata.h>
 
-#include "magdata.h"
 #include "invert.h"
 #include "invert_residual.h"
-
 #include "invert_multifit.c"
 
 static int invert_residual_print_stat(const char *component_str, const gsl_rstat_workspace *rstat_p);

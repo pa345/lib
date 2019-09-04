@@ -9,7 +9,7 @@
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_matrix.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
 
 #include "mfield.h"
 

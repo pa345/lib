@@ -28,8 +28,8 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_spline.h>
 
-#include <indices/indices.h>
-#include <common/common.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
 
 #include "inverteef.h"
 

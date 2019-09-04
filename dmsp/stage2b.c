@@ -26,12 +26,11 @@
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_blas.h>
 
-#include <satdata/satdata.h>
-
-#include <common/common.h>
-#include <common/bsearch.h>
-#include <common/interp.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_interp.h>
+#include <mainlib/ml_track.h>
 
 #include "magcal.h"
 

@@ -31,16 +31,14 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rstat.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_magdata.h>
 
-#include <common/common.h>
-#include <common/oct.h>
-#include <msynth/msynth.h>
-#include <track/track.h>
-
-#include "magdata.h"
 #include "invert.h"
-
 #include "invert_multifit.c"
 
 #define MAX_BUFFER           2048

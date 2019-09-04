@@ -5,8 +5,6 @@
 #ifndef INCLUDED_mfield_h
 #define INCLUDED_mfield_h
 
-#include <satdata/satdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_matrix.h>
@@ -17,8 +15,9 @@
 #include <gsl/gsl_eigen.h>
 #include <gsl/gsl_spmatrix.h>
 
-#include <spatwt/spatwt.h>
-#include <track/track_weight.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_spatwt.h>
+#include <mainlib/ml_track_weight.h>
 #include <bspline2/gsl_bspline2.h>
 
 #include "mfield_data.h"

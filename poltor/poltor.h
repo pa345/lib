@@ -12,13 +12,13 @@
 #include <gsl/gsl_integration.h>
 #include <gsl/gsl_multilarge_nlinear.h>
 
-#include <common/bin2d.h>
-#include <indices/indices.h>
-#include <track/track_weight.h>
+#include <mainlib/ml_bin2d.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_track_weight.h>
+#include <mainlib/ml_magdata_list.h>
 
 #include "green_complex.h"
 #include "lls.h"
-#include "magdata_list.h"
 
 /* use synthetic data for testing */
 #define POLTOR_SYNTH_DATA            0

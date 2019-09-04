@@ -25,9 +25,9 @@
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_rstat.h>
 
-#include <common/common.h>
-#include <common/bsearch.h>
-#include <common/interp.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_interp.h>
 
 #include <magfield/magfield.h>
 

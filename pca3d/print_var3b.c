@@ -23,7 +23,7 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
 
 #include "io.h"
 #include "pca3d.h"

@@ -33,8 +33,8 @@
 #include <gsl/gsl_multifit_nlin.h>
 #include <gsl/gsl_blas.h>
 
-#include "ellipsoid.h"
-#include "euler.h"
+#include <mainlib/ml_ellipsoid.h>
+#include <mainlib/ml_euler.h>
 
 static int eulersat_proc(const size_t flags, gsl_vector *m, const satdata_mag *data);
 static int eulersat_nonlinear_driver (gsl_multifit_fdfsolver * s,

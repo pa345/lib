@@ -19,10 +19,9 @@
 
 #include <gsl/gsl_math.h>
 
-#include <common/common.h>
-#include <common/geo.h>
-
-#include "magdata.h"
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_geo.h>
+#include <mainlib/ml_magdata.h>
 
 /* from: zcat EMAG2_V2.xyz.gz | wc -l */
 #define EMAG_N           52601353

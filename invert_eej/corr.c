@@ -22,12 +22,11 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 
-#include <indices/indices.h>
-#include <satdata/eef.h>
-#include <satdata/satdata.h>
-
-#include <common/bin2d.h>
-#include <common/common.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_eef.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_bin2d.h>
+#include <mainlib/ml_common.h>
 
 static satdata_eef *
 profile_read(const char *filename)

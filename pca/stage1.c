@@ -32,16 +32,15 @@
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_blas.h>
 
-#include <common/bsearch.h>
-#include <common/common.h>
-#include <common/geo.h>
-#include <common/oct.h>
-
-#include <apex/apex.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_geo.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_apex.h>
+#include <mainlib/ml_magdata.h>
 
 #include "green.h"
 #include "lapack_wrapper.h"
-#include "magdata.h"
 #include "poltor.h"
 
 #include "io.h"

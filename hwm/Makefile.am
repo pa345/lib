@@ -2,7 +2,7 @@ lib_LTLIBRARIES = libhwm.la
 
 libhwm_la_SOURCES = hwm.c hwm14.f90
 
-AM_CPPFLAGS = -I$(top_builddir)/mageq
+AM_CPPFLAGS =
 
 FC = gfortran
 

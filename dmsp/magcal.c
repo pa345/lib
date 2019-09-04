@@ -18,8 +18,8 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_errno.h>
 
-#include <satdata/satdata.h>
-#include <common/oct.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_oct.h>
 
 #include "magcal.h"
 

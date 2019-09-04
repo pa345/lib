@@ -13,9 +13,6 @@
 #include <errno.h>
 #include <assert.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_vector.h>
@@ -23,10 +20,12 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rstat.h>
 
-#include <common/bin2d.h>
-#include <common/common.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_bin2d.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_magdata.h>
 
-#include "magdata.h"
 #include "magfit.h"
 
 int

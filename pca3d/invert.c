@@ -30,8 +30,6 @@
 
 #include <omp.h>
 
-#include <satdata/satdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_matrix.h>
@@ -53,9 +51,10 @@
 #include <spblas2/gsl_spblas2.h>
 #include <spblas2/gsl_spcblas.h>
 
-#include <common/common.h>
-#include <common/oct.h>
-#include <track/track_weight.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_track_weight.h>
 #include <bspline2/gsl_bspline2.h>
 
 #include "lls.h"

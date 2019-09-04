@@ -28,12 +28,7 @@
 #include <omp.h>
 #include <libconfig.h>
 
-#include <apex/apex.h>
-#include <satdata/satdata.h>
 #include <flow/flow.h>
-#include <indices/indices.h>
-#include <obsdata/obsdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_vector.h>
@@ -41,12 +36,15 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rng.h>
 
-#include <common/common.h>
-#include <common/solarpos.h>
-#include <msynth/msynth.h>
-#include <track/track.h>
-
-#include "magdata.h"
+#include <mainlib/ml_apex.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_obsdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_solarpos.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_magdata.h>
 
 #if 0
 #include "mfield.h"

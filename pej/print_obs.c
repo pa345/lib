@@ -18,14 +18,13 @@
 #include <assert.h>
 #include <errno.h>
 
-#include <common/common.h>
-#include <common/bin2d.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_sort.h>
 
-#include "magdata.h"
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bin2d.h>
+#include <mainlib/ml_magdata.h>
 
 int
 my_bin2d_print(const char *filename, const bin2d_workspace *w)

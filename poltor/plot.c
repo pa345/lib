@@ -12,15 +12,15 @@
 #include <string.h>
 #include <errno.h>
 
-#include <satdata/satdata.h>
 #include <flow/flow.h>
-#include <indices/indices.h>
 
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_vector.h>
 
-#include <common/common.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
 
 #include "poltor.h"
 

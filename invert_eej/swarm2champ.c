@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
 
 int
 main()

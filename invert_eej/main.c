@@ -9,9 +9,9 @@
 #include <time.h>
 #include <libconfig.h>
 
-#include <satdata/satdata.h>
-#include <common/common.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_track.h>
 
 #include "cfg.h"
 #include "mag.h"
@@ -174,6 +174,7 @@ main(int argc, char *argv[])
   params.kp_file = KP_IDX_FILE;
   params.f107_file = F107_IDX_FILE;
   params.dst_file = DST_IDX_FILE;
+  params.estist_file = ESTIST_IDX_FILE;
 
   params.calc_field_models = 0;
   params.core_file = NULL;

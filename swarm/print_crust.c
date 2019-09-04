@@ -21,11 +21,10 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-
-#include <common/common.h>
-#include "euler.h"
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_euler.h>
 
 #define CALC_VFM2NEC    0
 

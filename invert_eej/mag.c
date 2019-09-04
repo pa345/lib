@@ -14,10 +14,9 @@
 
 #include <gsl/gsl_math.h>
 
-#include <satdata/satdata.h>
-
-#include <common/common.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_track.h>
 
 #include "green.h"
 #include "inverteef.h"
@@ -129,7 +128,7 @@ mag_alloc(mag_params *params)
     pomme_parameters pomme_params;
 
     pomme_params.r_earth = params->r_earth;
-    pomme_params.dst_file = params->dst_file;
+    pomme_params.estist_file = params->estist_file;
     pomme_params.f107_file = params->f107_file;
     pomme_params.ace_file = NULL;
     pomme_params.ndeg = 15;

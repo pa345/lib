@@ -9,8 +9,8 @@
 #include <time.h>
 #include <assert.h>
 
-#include "solarpos.h"
-#include "track.h"
+#include <mainlib/ml_solarpos.h>
+#include <mainlib/ml_track.h>
 
 #define MAX_LATITUDE     (60.0)
 #define MAX_ZENITH       (100.0)

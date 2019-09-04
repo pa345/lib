@@ -23,11 +23,10 @@
 
 #include <gsl/gsl_math.h>
 
-#include <satdata/satdata.h>
-
-#include <common/common.h>
-#include <msynth/msynth.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_track.h>
 
 /* find track closest in time to t */
 size_t

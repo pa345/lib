@@ -17,8 +17,8 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_test.h>
 
-#include "common.h"
-#include "msynth.h"
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_msynth.h>
 
 /*
 taper_gnm()

@@ -16,10 +16,9 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
-#include <common/common.h>
-#include <msynth/msynth.h>
-
-#include "euler.h"
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_euler.h>
 
 #include "mfield.h"
 #include "mfield_fluxcal.h"

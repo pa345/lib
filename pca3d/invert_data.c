@@ -9,15 +9,14 @@
 #include <string.h>
 #include <assert.h>
 
-#include <satdata/satdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rstat.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
-#include <common/common.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
 
 #include "invert_data.h"
 

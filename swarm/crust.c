@@ -23,14 +23,13 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_statistics.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-
-#include "common.h"
-#include "euler.h"
-#include "msynth.h"
-#include "pomme.h"
-#include "track.h"
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_euler.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_pomme.h>
+#include <mainlib/ml_track.h>
 
 #if 0
 /* Bangui ranges */

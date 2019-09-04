@@ -15,9 +15,7 @@
 #include <assert.h>
 #include <libconfig.h>
 
-#include <satdata/satdata.h>
 #include <flow/flow.h>
-#include <indices/indices.h>
 
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
@@ -29,13 +27,15 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rstat.h>
 
-#include <common/common.h>
-#include <common/oct.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_magdata_list.h>
 
 #include "green.h"
 #include "lapack_wrapper.h"
-#include "magdata_list.h"
 
 #include "poltor.h"
 

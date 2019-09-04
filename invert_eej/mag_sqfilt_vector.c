@@ -17,9 +17,9 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_test.h>
 
-#include <common/coord.h>
-#include <common/common.h>
-#include <common/interp.h>
+#include <mainlib/ml_coord.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
 
 #include "mag.h"
 

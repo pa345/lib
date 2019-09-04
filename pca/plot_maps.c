@@ -16,7 +16,7 @@
 
 #include <gsl/gsl_math.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
 
 #include "pca.h"
 

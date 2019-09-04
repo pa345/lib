@@ -22,7 +22,7 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_eigen.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
 
 #include "green.h"
 #include "lapack_wrapper.h"

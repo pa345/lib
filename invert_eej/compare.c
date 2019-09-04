@@ -24,17 +24,17 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 
-#include <indices/indices.h>
-#include <satdata/eef.h>
-#include <satdata/satdata.h>
-#include <common/common.h>
-#include <common/interp.h>
-#include <msynth/msynth.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_eef.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_curvefit.h>
 
 #include "jicmag.h"
 #include "julia.h"
 
-#include <curvefit/curvefit.h>
 #include "efi.h"
 
 /* allowed difference in measurement times (minutes) */

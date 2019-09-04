@@ -38,9 +38,10 @@
 #include <gsl/gsl_interp.h>
 #include <gsl/gsl_sf_legendre.h>
 
-#include <common/common.h>
-#include <common/interp.h>
-#include <satdata/satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
+#include <mainlib/ml_satdata.h>
+
 #include <magfield/magfield.h>
 #include <magfield/magfield_eval.h>
 

@@ -29,17 +29,16 @@
 #include <gsl/gsl_rstat.h>
 #include <gsl/gsl_statistics.h>
 
-#include <att/att_calc.h>
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-#include <common/common.h>
-#include <common/quat.h>
-#include <msynth/msynth.h>
-#include <track/track.h>
-
-#include "euler.h"
-#include "euler_calc.h"
-#include "eph.h"
+#include <mainlib/ml_att_calc.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_quat.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_euler.h>
+#include <mainlib/ml_euler_calc.h>
+#include <mainlib/ml_eph.h>
 
 int
 proc_att(satdata_mag * data, att_calc_workspace * w, gsl_vector * attitude)

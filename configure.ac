@@ -31,9 +31,7 @@ AC_CONFIG_FILES([            \
   dmsp/Makefile              \
   efi/Makefile               \
   emm/Makefile               \
-  ephemeris/Makefile         \
   estist/Makefile            \
-  euler/Makefile             \
   gd/Makefile                \
   green/Makefile             \
   grid/Makefile              \
@@ -46,16 +44,12 @@ AC_CONFIG_FILES([            \
   lapack_wrapper/Makefile    \
   lis/Makefile               \
   lls/Makefile               \
-  magdata/Makefile           \
-  mageq/Makefile             \
   magfit/Makefile            \
   mfield/Makefile            \
   mserv/Makefile             \
   msis/Makefile              \
-  peak/Makefile              \
   pej/Makefile               \
   poltor/Makefile            \
-  pomme/Makefile             \
   superlu/Makefile           \
   swarm/Makefile             \
   pca/Makefile               \

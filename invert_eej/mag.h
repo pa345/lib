@@ -6,22 +6,22 @@
 #define INCLUDED_mag_h
 
 #include <stdio.h>
-#include <satdata/satdata.h>
-#include <indices/indices.h>
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_multifit.h>
 
-#include <msynth/msynth.h>
-#include <apex/apex.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_apex.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_pomme.h>
+#include <mainlib/ml_mageq.h>
 
-#include "pomme.h"
 #include "estist_calc.h"
 #include "green.h"
 #include "log.h"
 #include "inverteef.h"
-#include "mageq.h"
 #include "magfit.h"
 #include "pde.h"
 
@@ -65,6 +65,7 @@ typedef struct
   char *kp_file;                  /* KP data file */
   char *f107_file;                /* F10.7 data file */
   char *dst_file;                 /* DST data file */
+  char *estist_file;              /* Est/Ist data file */
 
   char *core_file;                /* Core field file */
   char *lith_file;                /* lithospheric field file */

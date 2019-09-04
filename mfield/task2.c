@@ -9,7 +9,7 @@
 #include <gsl/gsl_randist.h>
 
 #include <bspline2/gsl_bspline2.h>
-#include <msynth/msynth.h>
+#include <mainlib/ml_msynth.h>
 
 /* subtract 3 years from timestamps, so that range (2014.5, 2017.5) becomes (2011.5, 2014.5), similar to WMM modeling timeframe */
 static int

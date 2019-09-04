@@ -7,7 +7,7 @@
 #define FDF_SOLVER     0
 
 #include <gsl/gsl_integration.h>
-#include <spatwt/spatwt.h>
+#include <mainlib/ml_spatwt.h>
 
 static int mfield_init_nonlinear(mfield_workspace *w);
 static int mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector *u,

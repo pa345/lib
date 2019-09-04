@@ -21,12 +21,11 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_interp.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-
-#include <common/common.h>
-#include <msynth/msynth.h>
-#include <pomme/pomme.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_pomme.h>
 
 typedef struct
 {

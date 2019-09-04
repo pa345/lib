@@ -19,14 +19,13 @@
 #include <gsl/gsl_movstat.h>
 #include <gsl/gsl_statistics.h>
 
-#include <satdata/satdata.h>
-#include <common/common.h>
-#include <common/quat.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_quat.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_peak.h>
 
 #include "jump.h"
-#include "peak.h"
-
 #include "yuen.c"
 
 #define JUMP_DEBUG 0

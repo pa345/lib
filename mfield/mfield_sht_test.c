@@ -15,7 +15,8 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_rng.h>
 
-#include "common.h"
+#include <mainlib/ml_common.h>
+
 #include "mfield_eval.h"
 #include "mfield_sht.h"
 

@@ -20,10 +20,10 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_permutation.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_mageq.h>
 
 #include "cond.h"
-#include "mageq.h"
 
 #include "sigma.h"
 

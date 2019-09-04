@@ -8,7 +8,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_rstat.h>
 
-#include "magdata.h"
+#include <mainlib/ml_magdata.h>
 
 typedef struct
 {

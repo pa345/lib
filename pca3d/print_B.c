@@ -20,8 +20,8 @@
 
 #include <gsl/gsl_math.h>
 
-#include <common/common.h>
-#include <common/bsearch.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
 
 #include "tiegcm3d.h"
 

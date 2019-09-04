@@ -10,9 +10,9 @@
 
 #include <gsl/gsl_math.h>
 
-#include <common/common.h>
-#include <msynth/msynth.h>
-#include <pomme/pomme.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_pomme.h>
 
 int
 compare_pomme(msynth_workspace *msynth_p)

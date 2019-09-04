@@ -12,9 +12,9 @@
 
 #include <gsl/gsl_math.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
 
-#include "common.h"
 #include "mfield.h"
 
 int

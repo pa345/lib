@@ -15,7 +15,7 @@
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_errno.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
 
 #include "green.h"
 

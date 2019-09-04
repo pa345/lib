@@ -10,8 +10,9 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_matrix.h>
 
+#include <mainlib/ml_mageq.h>
+
 #include "cond.h"
-#include "mageq.h"
 
 /* force latitude-symmetric conductivities */
 #define SIGMA_SYMMETRIC

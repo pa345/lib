@@ -26,8 +26,8 @@
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_complex_math.h>
 
-#include <common/common.h>
-#include <common/bsearch.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
 
 #include <magfield/magfield.h>
 #include <magfield/magfield_eval.h>

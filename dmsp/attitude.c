@@ -18,10 +18,10 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_multifit_nlinear.h>
 
-#include <satdata/satdata.h>
-#include <common/common.h>
-#include <common/quat.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_quat.h>
+#include <mainlib/ml_track.h>
 
 static double attitude_calc_delta(const double A[3], const double B[3]);
 static int attitude_model_calc(const track_data * tptr, const satdata_mag * data, double c[3]);

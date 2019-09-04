@@ -27,14 +27,14 @@
 #include <gsl/gsl_spblas.h>
 #include <gsl/gsl_splinalg.h>
 
-#include <common/common.h>
-#include <common/bsearch.h>
-#include <common/interp.h>
-#include <common/oct.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_interp.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_mageq.h>
 
 #include <magfield/magfield.h>
 
-#include "mageq.h"
 #include "superlu.h"
 
 #include "pde.h"

@@ -24,8 +24,8 @@
 #include <fftw3.h>
 #include <lapacke/lapacke.h>
 
-#include <common/common.h>
-#include <common/oct.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
 
 #include "green.h"
 #include "lapack_wrapper.h"

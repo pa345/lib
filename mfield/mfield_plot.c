@@ -10,8 +10,8 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_vector.h>
 
-#include <common/common.h>
-#include <msynth/msynth.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_msynth.h>
 
 #include "mfield.h"
 

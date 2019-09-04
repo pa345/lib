@@ -20,11 +20,10 @@
 
 #include <gsl/gsl_math.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-
-#include <apex/apex.h>
-#include <common/common.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_apex.h>
+#include <mainlib/ml_common.h>
 
 typedef struct
 {

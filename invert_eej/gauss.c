@@ -13,8 +13,6 @@
 #include <errno.h>
 #include <assert.h>
 
-#include <satdata/satdata.h>
-
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_sf_legendre.h>
 #include <gsl/gsl_vector.h>
@@ -25,9 +23,10 @@
 #include <gsl/gsl_multilarge.h>
 #include <gsl/gsl_blas.h>
 
-#include <common/common.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_coord.h>
 
-#include "coord.h"
 #include "green.h"
 
 #include "Gdef.h"

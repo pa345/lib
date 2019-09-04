@@ -12,11 +12,12 @@
 #include <gsl/gsl_multifit.h>
 #include <gsl/gsl_spmatrix.h>
 
-#include <msynth/msynth.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_mageq.h>
+
 #include <pde/gsl_pde2d.h>
 
 #include "hwm.h"
-#include "mageq.h"
 
 #include "sigma.h"
 #include "superlu.h"

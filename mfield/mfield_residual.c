@@ -12,10 +12,10 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_rstat.h>
 
-#include <common/common.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_euler.h>
+#include <mainlib/ml_magdata.h>
 
-#include "euler.h"
-#include "magdata.h"
 #include "mfield.h"
 #include "mfield_euler.h"
 #include "mfield_fluxcal.h"

@@ -21,13 +21,12 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_vector.h>
 
-#include <satdata/satdata.h>
-
-#include "common.h"
-#include "eci.h"
-#include "euler.h"
-#include "oct.h"
-#include "track.h"
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_eci.h>
+#include <mainlib/ml_euler.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_track.h>
 
 #include "eulersat.c"
 #include "filter.c"

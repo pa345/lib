@@ -2,12 +2,14 @@ lib_LTLIBRARIES = libmagfit.la
 
 libmagfit_la_SOURCES = gauss.c gaussint.c magfit.c secs1d.c secs2d.c pca.c rc.c sheet.c
 
-AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/lapack_wrapper -I$(top_builddir)/mageq -I$(top_builddir)/grobs -I$(top_builddir)/pca
+AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/lapack_wrapper -I$(top_builddir)/grobs -I$(top_builddir)/pca
 
 check_PROGRAMS = compare main
 
+common_libs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig -lptcblas -lptf77blas -latlas -lpthread
+
 compare_SOURCES = compare.c
-compare_LDADD = libmagfit.la $(top_builddir)/grobs/libgrobs.la -lcommon -lm -lindices ~/usr/lib/libgsl.a -lgslcblas
+compare_LDADD = libmagfit.la $(top_builddir)/grobs/libgrobs.la ${common_libs}
 
 main_SOURCES = main.c
-main_LDADD = libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la  $(top_builddir)/mageq/libmageq.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -ltrack -lcommon -lmsynth -lm -lcdf -lsatdata -lindices ~/usr/lib/libgsl.a -llapacke -llapack -lptcblas -lptf77blas -latlas -lpthread -lgfortran
+main_LDADD = libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -llapacke -llapack ${common_libs}

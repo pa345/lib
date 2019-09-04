@@ -30,18 +30,18 @@
 #include <gsl/gsl_rstat.h>
 #include <gsl/gsl_statistics.h>
 
-#include <satdata/satdata.h>
-#include <indices/indices.h>
-#include <common/common.h>
-#include <common/quat.h>
-#include <msynth/msynth.h>
-#include <track/track.h>
-#include <att/att_calc.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_quat.h>
+#include <mainlib/ml_msynth.h>
+#include <mainlib/ml_track.h>
+#include <mainlib/ml_att_calc.h>
+#include <mainlib/ml_euler.h>
+#include <mainlib/ml_eph.h>
 
-#include "eph.h"
 #include "jump.h"
 #include "magcal.h"
-#include "euler.h"
 
 #include "stage2_align.c"
 #include "stage2_calibrate.c"
@@ -632,6 +632,8 @@ main(int argc, char *argv[])
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   eph_data *eph = NULL;
+  size_t downsample = 20;
+  double thresh[4] = { -1.0, -1.0, -1.0, 50.0 };
   double rms0, rms1;    /* initial and final scalar rms for whole dataset (at low-latitudes) */
   double period = -1.0; /* period in days for fitting scalar calibration parameters */
   double period_ms = -1.0; /* period in ms for fitting scalar calibration parameters */
@@ -680,6 +682,10 @@ main(int argc, char *argv[])
             gettimeofday(&tv1, NULL);
             fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
                     time_diff(tv0, tv1));
+
+            thresh[3] = 300.0;
+            downsample = 5;
+
             break;
 
           case 'o':
@@ -806,7 +812,7 @@ main(int argc, char *argv[])
   /* discard bad tracks according to rms test */
   fprintf(stderr, "main: filtering tracks with rms test...");
   gettimeofday(&tv0, NULL);
-  stage2_filter(track_p, data);
+  stage2_filter(downsample, thresh, track_p, data);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 

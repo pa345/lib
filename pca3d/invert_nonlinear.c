@@ -7,7 +7,7 @@
 #define FDF_SOLVER     0
 
 #include <gsl/gsl_integration.h>
-#include <spatwt/spatwt.h>
+#include <mainlib/ml_spatwt.h>
 
 static int invert_init_nonlinear(invert_workspace *w);
 static int invert_nonlinear_regularize_init(invert_workspace *w);

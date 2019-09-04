@@ -3,7 +3,6 @@
 SUBDIRS =         \
   backus          \
   efi             \
-  ephemeris       \
   green           \
   grid            \
   grobs           \
@@ -13,15 +12,10 @@ SUBDIRS =         \
   lis             \
   lls             \
   msis            \
-  mageq           \
   magfit          \
-  peak            \
   superlu         \
   hwm             \
   cond            \
-  pomme           \
-  magdata         \
-  euler           \
 	emm             \
   estist          \
   champ           \

@@ -11,11 +11,11 @@
 
 #include <gsl/gsl_math.h>
 
-#include <satdata/satdata.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_interp.h>
 
-#include "bsearch.h"
 #include "ccorr.h"
-#include "interp.h"
 #include "poltor.h"
 
 int

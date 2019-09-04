@@ -24,10 +24,9 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_statistics.h>
 
-#include <indices/indices.h>
-
-#include <common/common.h>
-#include <common/interp.h>
+#include <mainlib/ml_indices.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
 
 #include "grobs.h"
 

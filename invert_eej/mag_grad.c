@@ -14,11 +14,10 @@
 
 #include <gsl/gsl_math.h>
 
-#include <satdata/satdata.h>
-
-#include <common/bsearch.h>
-#include <common/common.h>
-#include <track/track.h>
+#include <mainlib/ml_satdata.h>
+#include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_track.h>
 
 #include "green.h"
 #include "inverteef.h"
