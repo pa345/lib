@@ -15,11 +15,10 @@
 #include <gsl/gsl_eigen.h>
 #include <gsl/gsl_linalg.h>
 
-#include <common/common.h>
-#include <common/oct.h>
-
-#include "green.h"
-#include "lapack_wrapper.h"
+#include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
+#include <mainlib/ml_green.h>
+#include <mainlib/ml_lapack_wrapper.h>
 
 /* generate random vector with elements in [-1,1] */
 static void

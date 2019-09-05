@@ -2,7 +2,7 @@ lib_LTLIBRARIES = libpca3d.la
 
 libpca3d_la_SOURCES = io.c tiegcm3d_alloc.c tiegcm3d_print.c tiegcm3d_read.c window.c
 
-AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/poltor -I$(top_builddir)/lls -I$(top_builddir)/lapack_wrapper -I$(top_builddir)/magfit
+AM_CPPFLAGS = -I$(top_builddir)/poltor -I$(top_builddir)/magfit
 
 common_libs = -L/usr/lib64 -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf
 
@@ -12,7 +12,7 @@ invert_SOURCES = invert_main.c invert.c invert_data.c invert_residual.c invert_t
 #invert_CFLAGS = -std=c11 -fopenmp -ffast-math
 invert_CFLAGS = -std=c11 -fopenmp
 invert_LDFLAGS = -fopenmp
-invert_LDADD = libpca3d.la ${top_builddir}/green/libgreen.la -lmagfield -lbspline2 -lgslspblas2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+invert_LDADD = libpca3d.la -lmagfield -lbspline2 -lgslspblas2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 invert_preproc_SOURCES = invert_preproc.c
 invert_preproc_CFLAGS = -fopenmp
@@ -31,22 +31,22 @@ print_B_LDADD = libpca3d.la -lmagfield ${common_libs} -lshtns_omp -lfftw3 -lfftw
 print_magfield_SOURCES = print_magfield.c
 print_magfield_CFLAGS = -fopenmp
 print_magfield_LDFLAGS = -fopenmp
-print_magfield_LDADD = libpca3d.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/green/libgreen.la  $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+print_magfield_LDADD = libpca3d.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 print_gary_SOURCES = print_gary.c
 print_gary_CFLAGS = -fopenmp
 print_gary_LDFLAGS = -fopenmp
-print_gary_LDADD = libpca3d.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+print_gary_LDADD = libpca3d.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 print_fillion_SOURCES = print_fillion.c
 print_fillion_CFLAGS = -fopenmp
 print_fillion_LDFLAGS = -fopenmp
-print_fillion_LDADD = libpca3d.la $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+print_fillion_LDADD = libpca3d.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 print_fillion2_SOURCES = print_fillion2.c
 print_fillion2_CFLAGS = -fopenmp
 print_fillion2_LDFLAGS = -fopenmp
-print_fillion2_LDADD = libpca3d.la $(top_builddir)/green/libgreen.la  $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+print_fillion2_LDADD = libpca3d.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 print_fft_SOURCES = print_fft.c
 print_fft_CFLAGS = -fopenmp
@@ -89,7 +89,7 @@ stage2a_LDADD = libpca3d.la -lmagfield -lshtns_omp -lfftw3 -lfftw3_omp ${common_
 stage3a_SOURCES = stage3a.c
 stage3a_CFLAGS = -fopenmp
 stage3a_LDFLAGS = -fopenmp
-stage3a_LDADD = libpca3d.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lmagfield -lshtns_omp -lfftw3 -lfftw3_omp ${common_libs}
+stage3a_LDADD = libpca3d.la -lmagfield -lshtns_omp -lfftw3 -lfftw3_omp ${common_libs}
 
 stage1b_SOURCES = stage1b.c
 stage1b_CFLAGS = -fopenmp
@@ -104,7 +104,7 @@ stage2b_LDADD = libpca3d.la -lmagfield ${common_libs} -lshtns_omp -lfftw3 -lfftw
 stage3b_SOURCES = stage3b.c
 stage3b_CFLAGS = -fopenmp
 stage3b_LDFLAGS = -fopenmp
-stage3b_LDADD = libpca3d.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lmagfield -lshtns_omp -lfftw3 -lfftw3_omp ${common_libs}
+stage3b_LDADD = libpca3d.la -lmagfield -lshtns_omp -lfftw3 -lfftw3_omp ${common_libs}
 
 #stage1c_SOURCES = stage1c.c
 #stage1c_CFLAGS = -fopenmp

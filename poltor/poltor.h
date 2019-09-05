@@ -16,9 +16,8 @@
 #include <mainlib/ml_indices.h>
 #include <mainlib/ml_track_weight.h>
 #include <mainlib/ml_magdata_list.h>
-
-#include "green_complex.h"
-#include "lls.h"
+#include <mainlib/ml_green_complex.h>
+#include <mainlib/ml_lls.h>
 
 /* use synthetic data for testing */
 #define POLTOR_SYNTH_DATA            0

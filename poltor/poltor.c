@@ -41,9 +41,9 @@
 #include <mainlib/ml_indices.h>
 #include <mainlib/ml_track_weight.h>
 #include <mainlib/ml_magdata_list.h>
+#include <mainlib/ml_green.h>
+#include <mainlib/ml_lls.h>
 
-#include "green.h"
-#include "lls.h"
 #include "poltor.h"
 
 static int poltor_row(const double r, const double theta, const double phi,

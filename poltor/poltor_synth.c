@@ -16,8 +16,8 @@
 #include <gsl/gsl_complex_math.h>
 
 #include <mainlib/ml_magdata.h>
+#include <mainlib/ml_green.h>
 
-#include "green.h"
 #include "poltor.h"
 
 static int

@@ -28,8 +28,7 @@
 #include <mainlib/ml_interp.h>
 #include <mainlib/ml_oct.h>
 #include <mainlib/ml_track.h>
-
-#include "green.h"
+#include <mainlib/ml_green.h>
 
 #include "magfit.h"
 

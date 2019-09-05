@@ -3,14 +3,11 @@
 SUBDIRS =         \
   backus          \
   efi             \
-  green           \
   grid            \
   grobs           \
   iri             \
   julia           \
-  lapack_wrapper  \
   lis             \
-  lls             \
   msis            \
   magfit          \
   superlu         \

@@ -27,8 +27,7 @@
 
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_bsearch.h>
-
-#include "lapack_wrapper.h"
+#include <mainlib/ml_lapack_wrapper.h>
 
 #include "io.h"
 #include "pca3d.h"

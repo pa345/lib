@@ -33,9 +33,8 @@
 #include <mainlib/ml_oct.h>
 #include <mainlib/ml_track.h>
 #include <mainlib/ml_magdata_list.h>
-
-#include "green.h"
-#include "lapack_wrapper.h"
+#include <mainlib/ml_green.h>
+#include <mainlib/ml_lapack_wrapper.h>
 
 #include "poltor.h"
 

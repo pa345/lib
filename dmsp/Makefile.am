@@ -1,6 +1,6 @@
 bin_PROGRAMS = print print_LTAN stage0 stage2a stage2b atest
 
-commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lgslcblas -lm -lcdf -lgfortran -lfftw3 -lz -lconfig
+commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lgslcblas -lm -lcdf -lgfortran -lfftw3 -lz -lconfig ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a -lf77blas -latlas
 
 AM_CPPFLAGS =
 

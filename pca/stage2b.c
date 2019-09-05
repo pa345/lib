@@ -26,9 +26,8 @@
 
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_oct.h>
-
-#include "green.h"
-#include "lapack_wrapper.h"
+#include <mainlib/ml_green.h>
+#include <mainlib/ml_lapack_wrapper.h>
 
 #include "io.h"
 #include "pca.h"

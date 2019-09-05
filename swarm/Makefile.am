@@ -1,6 +1,6 @@
 bin_PROGRAMS = print print_all print_efi print_lp print_lt print_crust print_alt print_tracks residuals plotsep swarmcdf2fday
 
-commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libcblas.a ~/usr/lib/libatlas.a
+commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libcblas.a ~/usr/lib/libatlas.a
 
 plotsep_SOURCES = plotsep.c
 plotsep_LDADD = ${commonlibs}
@@ -36,4 +36,4 @@ residuals_LDADD = ${commonlibs}
 swarmcdf2fday_SOURCES = swarmcdf2fday.c
 swarmcdf2fday_LDADD = ${commonlibs}
 
-AM_CPPFLAGS = -I$(top_builddir)/pca -I$(top_builddir)/green
+AM_CPPFLAGS = -I$(top_builddir)/pca

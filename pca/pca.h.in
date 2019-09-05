@@ -10,7 +10,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_matrix.h>
 
-#include "green.h"
+#include <mainlib/ml_green.h>
 
 /* Stage1: knm matrix file, nnm-by-nt */
 #define PCA_STAGE1_KNM         "@abs_top_builddir@/pca/data/stage1_knm.dat"

@@ -17,9 +17,9 @@
 #include <mainlib/ml_track.h>
 #include <mainlib/ml_pomme.h>
 #include <mainlib/ml_mageq.h>
+#include <mainlib/ml_green.h>
 
 #include "estist_calc.h"
-#include "green.h"
 #include "log.h"
 #include "inverteef.h"
 #include "magfit.h"

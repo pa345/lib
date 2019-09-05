@@ -16,8 +16,7 @@
 #include <gsl/gsl_errno.h>
 
 #include <mainlib/ml_common.h>
-
-#include "green.h"
+#include <mainlib/ml_green.h>
 
 #include "io.h"
 #include "pca.h"

@@ -33,7 +33,6 @@ AC_CONFIG_FILES([            \
   emm/Makefile               \
   estist/Makefile            \
   gd/Makefile                \
-  green/Makefile             \
   grid/Makefile              \
   grobs/Makefile             \
   hwm/Makefile               \
@@ -41,9 +40,7 @@ AC_CONFIG_FILES([            \
   iri/Makefile               \
   julia/Makefile             \
   julia/julia.h              \
-  lapack_wrapper/Makefile    \
   lis/Makefile               \
-  lls/Makefile               \
   magfit/Makefile            \
   mfield/Makefile            \
   mserv/Makefile             \

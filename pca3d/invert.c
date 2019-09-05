@@ -55,10 +55,9 @@
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_oct.h>
 #include <mainlib/ml_track_weight.h>
+#include <mainlib/ml_lapack_wrapper.h>
 #include <bspline2/gsl_bspline2.h>
 
-#include "lls.h"
-#include "lapack_wrapper.h"
 #include "invert.h"
 #include "invert_tmode.h"
 

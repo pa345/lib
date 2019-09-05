@@ -18,9 +18,9 @@
 
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_oct.h>
+#include <mainlib/ml_green.h>
+#include <mainlib/ml_lapack_wrapper.h>
 
-#include "green.h"
-#include "lapack_wrapper.h"
 #include "poltor.h"
 
 static int poltor_nonlinear_jac(const gsl_vector_complex *x, const gsl_vector *weights, poltor_workspace *w);

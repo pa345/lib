@@ -4,7 +4,7 @@ libpej_la_SOURCES = pej.c
 
 bin_PROGRAMS = stage1 stage1_obs stage2 print_obs
 
-commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos -lm -lcdf -lgfortran -lfftw3 -lz -lconfig $(top_builddir)/magfit/libmagfit.la $(top_builddir)/green/libgreen.la $(top_builddir)/pca/libpca.la  $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lnetcdf ~/usr/lib/libgsl.a /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread
+commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos -lm -lcdf -lgfortran -lfftw3 -lz -lconfig $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la -lnetcdf ~/usr/lib/libgsl.a /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread
 
 stage1_SOURCES = stage1.c
 stage1_CFLAGS = -fopenmp

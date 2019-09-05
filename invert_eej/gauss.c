@@ -26,8 +26,7 @@
 #include <mainlib/ml_satdata.h>
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_coord.h>
-
-#include "green.h"
+#include <mainlib/ml_green.h>
 
 #include "Gdef.h"
 

@@ -54,10 +54,9 @@
 #include <mainlib/ml_oct.h>
 #include <mainlib/ml_track_weight.h>
 #include <mainlib/ml_euler.h>
+#include <mainlib/ml_lapack_wrapper.h>
 #include <bspline2/gsl_bspline2.h>
 
-#include "lls.h"
-#include "lapack_wrapper.h"
 #include "mfield.h"
 #include "mfield_euler.h"
 #include "mfield_fluxcal.h"

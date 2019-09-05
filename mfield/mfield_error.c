@@ -13,10 +13,10 @@
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_rstat.h>
 
+#include <mainlib/ml_lapack_wrapper.h>
+
 #include "mfield.h"
 #include "mfield_error.h"
-
-#include "lapack_wrapper.h"
 
 /*
 mfield_calc_uncertainties()

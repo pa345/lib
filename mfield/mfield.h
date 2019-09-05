@@ -18,11 +18,10 @@
 #include <mainlib/ml_satdata.h>
 #include <mainlib/ml_spatwt.h>
 #include <mainlib/ml_track_weight.h>
+#include <mainlib/ml_green.h>
 #include <bspline2/gsl_bspline2.h>
 
 #include "mfield_data.h"
-
-#include "green.h"
 
 #define MFIELD_SYNTH_HIGH_LAT_ONLY 0
 

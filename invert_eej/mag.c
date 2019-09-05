@@ -17,8 +17,8 @@
 #include <mainlib/ml_satdata.h>
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_track.h>
+#include <mainlib/ml_green.h>
 
-#include "green.h"
 #include "inverteef.h"
 #include "log.h"
 #include "mag.h"

@@ -1,6 +1,6 @@
 check_PROGRAMS = main
 
-main_SOURCES = main.c
-main_LDADD = $(top_builddir)/green/libgreen.la $(top_builddir)/lapack_wrapper/liblapack_wrapper.la -lm -lcommon /home/palken/usr/lib/libgsl.a /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lgfortran -lpthread
+common_libs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lgfortran -lpthread
 
-AM_CPPFLAGS = -I$(top_builddir)/green -I$(top_builddir)/lapack_wrapper
+main_SOURCES = main.c
+main_LDADD = ${common_libs}
