@@ -15,6 +15,7 @@
 #include <gsl/gsl_eigen.h>
 #include <gsl/gsl_spmatrix.h>
 
+#include <mainlib/ml_att.h>
 #include <mainlib/ml_satdata.h>
 #include <mainlib/ml_spatwt.h>
 #include <mainlib/ml_track_weight.h>
@@ -66,14 +67,14 @@ typedef struct
   size_t nmax_sa;                       /* SA nmax */
   size_t nsat;                          /* number of satellites */
   double gauss_period;                  /* knot spacing for Gauss coefficient splines (decimal years) */
-  double euler_period;                  /* time period for Euler angles (decimal days) */
+  double align_period;                  /* time period for alignment parameters (decimal days) */
   double fluxcal_period;                /* knot spacing for fluxgate calibration parameters (decimal days) */
 
   size_t max_iter;                      /* number of robust iterations */
   int fit_mf;                           /* fit MF coefficients */
   int fit_sv;                           /* fit SV coefficients */
   int fit_sa;                           /* fit SA coefficients */
-  int fit_euler;                        /* fit Euler angles */
+  int fit_align;                        /* fit alignment parameters */
   int fit_ext;                          /* fit external field correction */
   int fit_fluxcal;                      /* fit VFM calibration parameters */
   int fit_cbias;                        /* fit crustal biases to observatories */
@@ -109,7 +110,7 @@ typedef struct
   size_t synth_nmin;                    /* minimum spherical harmonic degree for synthetic model */
 
   size_t gauss_spline_order;            /* order of spline for Gauss coefficients */
-  size_t euler_spline_order;            /* order of spline for Euler angles */
+  size_t align_spline_order;            /* order of spline for alignment parameters */
   size_t fluxcal_spline_order;          /* order of spline for fluxgate calibration parameters */
 
   mfield_data_workspace *mfield_data_p; /* satellite data */
@@ -137,7 +138,7 @@ typedef struct
 
   size_t nnm_max;   /* total nnm for internal field (main + crust) */
 
-  size_t *offset_euler;   /* start index of each satellite's Euler angles in coefficient vector */
+  size_t *offset_align;   /* start index of each satellite's alignment parameters in coefficient vector */
   size_t *offset_fluxcal; /* start index of each satellite's fluxgate calibration parameters in coefficient vector */
   size_t *bias_idx;       /* indices of observatory biases in coefficient vector */
 
@@ -147,8 +148,8 @@ typedef struct
   size_t p_core;    /* number of model coefficients for internal field represented by B-splines */
   size_t p_crust;   /* number of model coefficients for internal crustal field */
   size_t p_int;     /* number of model coefficients for internal field only (p_core + p_crust) */
-  size_t p_sparse;  /* number of model coefficients for sparse part of Jacobian (p_euler + p_fluxcal + p_ext + p_bias) */
-  size_t p_euler;   /* number of Euler angles parameters in model */
+  size_t p_sparse;  /* number of model coefficients for sparse part of Jacobian (p_align + p_fluxcal + p_ext + p_bias) */
+  size_t p_align;   /* number of alignment parameters in model */
   size_t p_fluxcal; /* number of VFM calibration parameters */
   size_t p_ext;     /* number of external parameters in model */
   size_t p_bias;    /* number of crustal bias parameters in model */
@@ -188,7 +189,7 @@ typedef struct
 
   size_t sv_offset;    /* offset of SV coefficients in 'c' */
   size_t sa_offset;    /* offset of SA coefficients in 'c' */
-  size_t euler_offset; /* offset of Euler angles in 'c' */
+  size_t align_offset; /* offset of alignment parameters in 'c' */
   size_t ext_offset;   /* offset of external coefficients in 'c' */
   size_t fluxcal_offset; /* offset of fluxcal coefficients in 'c' */
   size_t bias_offset;  /* offset of crustal bias coefficients in 'c' */
@@ -224,15 +225,15 @@ typedef struct
   /*
    * The Jacobian is organized as follows:
    *
-   * J = [ J_mf    | J_sv    | J_sa    | J_euler(x) | J_ext(x) ] vector
+   * J = [ J_mf    | J_sv    | J_sa    | J_align(x) | J_ext(x) ] vector
    *     [ J_mf(x) | J_sv(x) | J_sa(x) |     0      | J_ext(x) ] scalar
    *
    * J_mf, J_sv, and J_sa are constant for vector
    * residuals, and depend on the model parameters x
-   * for scalar residuals. J_euler is 0 for scalar
+   * for scalar residuals. J_align is 0 for scalar
    * residuals and depends on x for vector.
    * J_ext depends on x for both vector and scalar residuals.
-   * J_euler and J_ext have significant sparse structure.
+   * J_align and J_ext have significant sparse structure.
    *
    * For each iteration, we need to compute J^T J. This is
    * organized as:
@@ -246,7 +247,7 @@ typedef struct
    */
   gsl_matrix *JTJ_vec;     /* J_mf^T J_mf for vector measurements, p_int-by-p_int */
   gsl_matrix *choleskyL;   /* Cholesky factor for JTJ_vec if using linear system, p_int-by-p_int */
-  gsl_spmatrix *J2;        /* Jacobian matrix for euler, fluxcal and external parameters (sparse), nres-by-(p_euler+p_fluxcal+p_ext) */
+  gsl_spmatrix *J2;        /* Jacobian matrix for alignment, fluxcal and external parameters (sparse), nres-by-(p_align + p_fluxcal + p_ext) */
   gsl_spmatrix *J2_csr;    /* J2 matrix in CSR format */
 
   size_t max_threads;      /* maximum number of threads/processors available */
@@ -277,8 +278,11 @@ typedef struct
   spatwt_workspace *spatwtSV_workspace_p; /* spatial weights for observatory SV measurements */
   gsl_eigen_symm_workspace *eigen_workspace_p;
 
+  att_workspace * att_quat_p;
+  att_workspace ** att_workspace_p;
+
   gsl_bspline2_workspace **gauss_spline_workspace_p;
-  gsl_bspline2_workspace **euler_spline_workspace_p;
+  gsl_bspline2_workspace **align_spline_workspace_p;
   gsl_bspline2_workspace **fluxcal_spline_workspace_p;
 } mfield_workspace;
 
@@ -331,9 +335,6 @@ extern inline int mfield_set_mf(gsl_vector *c, const size_t idx, const double x,
 extern inline int mfield_set_sv(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 extern inline int mfield_set_sa(gsl_vector *c, const size_t idx, const double x, const mfield_workspace *w);
 int mfield_fill_g(gsl_vector * g, msynth_workspace * core_p, msynth_workspace * crust_p, mfield_workspace * w);
-
-/* mfield_euler.c */
-int mfield_euler_print(const char *filename, const size_t sat_idx, const mfield_workspace *w);
 
 /* mfield_fill.c */
 int mfield_fill(const char *coeffile, satdata_mag *data);

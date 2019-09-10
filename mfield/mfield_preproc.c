@@ -38,6 +38,7 @@
 #include <gsl/gsl_rng.h>
 
 #include <mainlib/ml_apex.h>
+#include <mainlib/ml_att.h>
 #include <mainlib/ml_satdata.h>
 #include <mainlib/ml_indices.h>
 #include <mainlib/ml_obsdata.h>
@@ -56,8 +57,8 @@ typedef struct
   size_t downsample;      /* downsampling factor */
   double min_LT;          /* minimum local time for field modeling */
   double max_LT;          /* maximum local time for field modeling */
-  double euler_min_LT;    /* minimum local time for Euler angles */
-  double euler_max_LT;    /* maximum local time for Euler angles */
+  double align_min_LT;    /* minimum local time for Euler angles */
+  double align_max_LT;    /* maximum local time for Euler angles */
   double rms_thresh[4];   /* rms thresholds (X,Y,Z,F) (nT) */
   double qdlat_preproc_cutoff; /* QD latitude cutoff for high-latitudes */
   double min_zenith;      /* minimum zenith angle for high-latitude data selection */
@@ -141,15 +142,15 @@ check_parameters(preprocess_parameters * params)
       ++s;
     }
 
-  if (params->euler_min_LT < 0.0)
+  if (params->align_min_LT < 0.0)
     {
-      fprintf(stderr, "check_parameters: euler_min_LT must be > 0\n");
+      fprintf(stderr, "check_parameters: align_min_LT must be > 0\n");
       ++s;
     }
 
-  if (params->euler_max_LT < 0.0)
+  if (params->align_max_LT < 0.0)
     {
-      fprintf(stderr, "check_parameters: euler_max_LT must be > 0\n");
+      fprintf(stderr, "check_parameters: align_max_LT must be > 0\n");
       ++s;
     }
 
@@ -331,14 +332,14 @@ copy_data(const size_t magdata_flags, const satdata_mag *data, const track_works
 
           double LT = mdata->lt_eq[i];
           int fit_MF = mfield_check_LT(LT, preproc_params->min_LT, preproc_params->max_LT);
-          int fit_euler = mfield_check_LT(LT, preproc_params->euler_min_LT, preproc_params->euler_max_LT) &&
-                          (mdata->global_flags & MAGDATA_GLOBFLG_EULER);
+          int fit_align = mfield_check_LT(LT, preproc_params->align_min_LT, preproc_params->align_max_LT) &&
+                          (mdata->global_flags & MAGDATA_GLOBFLG_ALIGN);
 
           if (fit_MF)
             fitting_flags |= MAGDATA_FLG_FIT_MF;
 
-          if (fit_euler)
-            fitting_flags |= MAGDATA_FLG_FIT_EULER;
+          if (fit_align)
+            fitting_flags |= MAGDATA_FLG_FIT_ALIGN;
         }
       else
         {
@@ -569,7 +570,7 @@ model_flags(const size_t magdata_flags, const double t,
   /* check if we should fit Euler angles to this data point */
   status = mfield_check_LT(lt, MFIELD_EULER_LT_MIN, MFIELD_EULER_LT_MAX);
   if ((status == 1) &&
-      (magdata_flags & MAGDATA_GLOBFLG_EULER) &&
+      (magdata_flags & MAGDATA_GLOBFLG_ALIGN) &&
       (fabs(qdlat) <= MFIELD_EULER_QDLAT))
     {
       flags |= MAGDATA_FLG_FIT_EULER;
@@ -1073,10 +1074,10 @@ parse_config_file(const char *filename, preprocess_parameters *params)
     params->min_LT = fval;
   if (config_lookup_float(&cfg, "max_LT", &fval))
     params->max_LT = fval;
-  if (config_lookup_float(&cfg, "euler_min_LT", &fval))
-    params->euler_min_LT = fval;
-  if (config_lookup_float(&cfg, "euler_max_LT", &fval))
-    params->euler_max_LT = fval;
+  if (config_lookup_float(&cfg, "align_min_LT", &fval))
+    params->align_min_LT = fval;
+  if (config_lookup_float(&cfg, "align_max_LT", &fval))
+    params->align_max_LT = fval;
   if (config_lookup_float(&cfg, "qdlat_preproc_cutoff", &fval))
     params->qdlat_preproc_cutoff = fval;
   if (config_lookup_float(&cfg, "min_zenith", &fval))
@@ -1174,6 +1175,7 @@ main(int argc, char *argv[])
   size_t magdata_flags = 0;       /* MAGDATA_GLOBFLG_xxx */
   size_t magdata_flags2 = 0;
   size_t magdata_euler_flags = 0; /* EULER_FLG_xxx */
+  size_t magdata_align_flags = 0; /* ATT_TYPE_xxx */
   double polar_gap = -1.0;
   int flag_vec_rms = 1;
 
@@ -1183,8 +1185,8 @@ main(int argc, char *argv[])
   params.max_dRC = -1.0;
   params.min_LT = -1.0;
   params.max_LT = -1.0;
-  params.euler_min_LT = -1.0;
-  params.euler_max_LT = -1.0;
+  params.align_min_LT = -1.0;
+  params.align_max_LT = -1.0;
   params.qdlat_preproc_cutoff = -1.0;
   params.min_zenith = -1.0;
   params.rms_thresh[0] = -1.0;
@@ -1237,7 +1239,7 @@ main(int argc, char *argv[])
           /* Swarm ASM-V */
           case 'a':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_SWARM;
+            magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_SWARM;
             magdata_euler_flags = EULER_FLG_ZYZ | EULER_FLG_RINV;
             flag_vec_rms = 0; /* no NEC data for rms flagging */
             break;
@@ -1245,28 +1247,31 @@ main(int argc, char *argv[])
           /* Swarm official */
           case 's':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_SWARM;
+            magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_SWARM;
             magdata_euler_flags = EULER_FLG_ZYX;
+            magdata_align_flags = ATT_TYPE_EULER_ZYX;
             break;
 
           /* DMSP data in Swarm format */
           case 'D':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_DMSP;
+            magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_DMSP;
             magdata_euler_flags = EULER_FLG_ZYX;
+            magdata_align_flags = ATT_TYPE_MRP;
             break;
 
           /* Cryosat data in Swarm format */
           case 'r':
             data = read_swarm(optarg, 0);
-            magdata_flags = MAGDATA_GLOBFLG_EULER | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_CRYOSAT;
+            magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_CRYOSAT;
             magdata_euler_flags = EULER_FLG_ZYX;
+            magdata_align_flags = ATT_TYPE_MRP;
             break;
 
           /* For E/W gradients */
           case 't':
             data2 = read_swarm(optarg, 0);
-            magdata_flags2 = MAGDATA_GLOBFLG_EULER;
+            magdata_flags2 = MAGDATA_GLOBFLG_ALIGN;
             break;
 
           case 'c':
@@ -1368,16 +1373,16 @@ main(int argc, char *argv[])
 
   solarpos_workspace_p = solarpos_alloc();
 
-  fprintf(stderr, "main: downsample       = %zu\n", params.downsample);
-  fprintf(stderr, "main: gradient_ns      = %zu [s]\n", params.gradient_ns);
-  fprintf(stderr, "main: rms X threshold  = %.1f [nT]\n", params.rms_thresh[0]);
-  fprintf(stderr, "main: rms Y threshold  = %.1f [nT]\n", params.rms_thresh[1]);
-  fprintf(stderr, "main: rms Z threshold  = %.1f [nT]\n", params.rms_thresh[2]);
-  fprintf(stderr, "main: rms F threshold  = %.1f [nT]\n", params.rms_thresh[3]);
-  fprintf(stderr, "main: LT minimum       = %.1f\n", params.min_LT);
-  fprintf(stderr, "main: LT maximum       = %.1f\n", params.max_LT);
-  fprintf(stderr, "main: Euler LT minimum = %.1f\n", params.euler_min_LT);
-  fprintf(stderr, "main: Euler LT maximum = %.1f\n", params.euler_max_LT);
+  fprintf(stderr, "main: downsample           = %zu\n", params.downsample);
+  fprintf(stderr, "main: gradient_ns          = %zu [s]\n", params.gradient_ns);
+  fprintf(stderr, "main: rms X threshold      = %.1f [nT]\n", params.rms_thresh[0]);
+  fprintf(stderr, "main: rms Y threshold      = %.1f [nT]\n", params.rms_thresh[1]);
+  fprintf(stderr, "main: rms Z threshold      = %.1f [nT]\n", params.rms_thresh[2]);
+  fprintf(stderr, "main: rms F threshold      = %.1f [nT]\n", params.rms_thresh[3]);
+  fprintf(stderr, "main: LT minimum           = %.1f\n", params.min_LT);
+  fprintf(stderr, "main: LT maximum           = %.1f\n", params.max_LT);
+  fprintf(stderr, "main: alignment LT minimum = %.1f\n", params.align_min_LT);
+  fprintf(stderr, "main: alignment LT maximum = %.1f\n", params.align_max_LT);
 
   if (euler_p)
     {
@@ -1445,8 +1450,9 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  /* set Euler convention flags */
+  /* set alignment flags */
   magdata_set_euler(magdata_euler_flags, mdata);
+  magdata_set_align(magdata_align_flags, mdata);
 
 #if 0
   fprintf(stderr, "main: writing data to %s...", data_file);

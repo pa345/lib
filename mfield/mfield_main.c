@@ -8,7 +8,7 @@
  *   -c coef_output_file
  *   -n max_iterations
  *   -e epoch_decimal_year
- *   -p euler_period_days
+ *   -p align_period_days
  *   -r residual_file
  *   -l Lcurve_data_file
  *
@@ -42,18 +42,14 @@
 #include <mainlib/ml_oct.h>
 #include <mainlib/ml_msynth.h>
 #include <mainlib/ml_track.h>
-#include <mainlib/ml_euler.h>
 #include <mainlib/ml_magdata.h>
 
 #include "mfield.h"
-#include "mfield_euler.h"
+#include "mfield_align.h"
 #include "mfield_fluxcal.h"
 #include "mfield_error.h"
 #include "mfield_residual.h"
 #include "mfield_synth.h"
-
-/*XXX*/
-#include "task2.c"
 
 #define MAX_BUFFER           2048
 
@@ -217,23 +213,23 @@ print_gnm(const char *prefix, const size_t iter, mfield_workspace *w)
 }
 
 int
-print_euler(const char *prefix, const size_t iter, mfield_workspace *w)
+print_align(const char *prefix, const size_t iter, mfield_workspace *w)
 {
   int s = 0;
   char filename[2048];
   size_t n;
 
-  if (!w->params.fit_euler)
+  if (!w->params.fit_align)
     return 0;
 
   for (n = 0; n < w->nsat; ++n)
     {
       magdata *mptr = mfield_data_ptr(n, w->data_workspace_p);
 
-      if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
+      if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
         {
-          sprintf(filename, "%s/euler.%zu.iter%zu.txt", prefix, n, iter);
-          mfield_euler_print(filename, n, w);
+          sprintf(filename, "%s/align.%zu.iter%zu.txt", prefix, n, iter);
+          mfield_align_print(filename, n, w);
         }
     }
 
@@ -294,23 +290,23 @@ check_parameters(const mfield_parameters * mfield_params,
       ++s;
     }
 
-  if (mfield_params->fit_euler)
+  if (mfield_params->fit_align)
     {
       if (!data_params->fit_X)
         {
-          fprintf(stderr, "check_parameters: fitting Euler angles but not fitting X component\n");
+          fprintf(stderr, "check_parameters: fitting alignment parameters but not fitting X component\n");
           ++s;
         }
 
       if (!data_params->fit_Y)
         {
-          fprintf(stderr, "check_parameters: fitting Euler angles but not fitting Y component\n");
+          fprintf(stderr, "check_parameters: fitting alignment parameters but not fitting Y component\n");
           ++s;
         }
 
       if (!data_params->fit_Z)
         {
-          fprintf(stderr, "check_parameters: fitting Euler angles but not fitting Z component\n");
+          fprintf(stderr, "check_parameters: fitting alignment parameters but not fitting Z component\n");
           ++s;
         }
     }
@@ -357,8 +353,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->R = fval;
   if (config_lookup_float(&cfg, "gauss_period", &fval))
     mfield_params->gauss_period = fval;
-  if (config_lookup_float(&cfg, "euler_period", &fval))
-    mfield_params->euler_period = fval;
+  if (config_lookup_float(&cfg, "align_period", &fval))
+    mfield_params->align_period = fval;
   if (config_lookup_float(&cfg, "fluxcal_period", &fval))
     mfield_params->fluxcal_period = fval;
 
@@ -375,8 +371,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->fit_sv = ival;
   if (config_lookup_int(&cfg, "fit_sa", &ival))
     mfield_params->fit_sa = ival;
-  if (config_lookup_int(&cfg, "fit_euler", &ival))
-    mfield_params->fit_euler = ival;
+  if (config_lookup_int(&cfg, "fit_align", &ival))
+    mfield_params->fit_align = ival;
   if (config_lookup_int(&cfg, "fit_ext", &ival))
     mfield_params->fit_ext = ival;
   if (config_lookup_int(&cfg, "fit_fluxcal", &ival))
@@ -386,8 +382,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
 
   if (config_lookup_int(&cfg, "gauss_spline_order", &ival))
     mfield_params->gauss_spline_order = ival;
-  if (config_lookup_int(&cfg, "euler_spline_order", &ival))
-    mfield_params->euler_spline_order = ival;
+  if (config_lookup_int(&cfg, "align_spline_order", &ival))
+    mfield_params->align_spline_order = ival;
   if (config_lookup_int(&cfg, "fluxcal_spline_order", &ival))
     mfield_params->fluxcal_spline_order = ival;
 
@@ -504,7 +500,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --maxit | -n num_iterations     - number of robust iterations\n");
   fprintf(stderr, "\t --output_file | -o file         - coefficient output file (ASCII)\n");
   fprintf(stderr, "\t --epoch | -e epoch              - model epoch in decimal years\n");
-  fprintf(stderr, "\t --euler | -p period             - Euler bin size in days\n");
+  fprintf(stderr, "\t --align | -p period             - alignment parameter bin size in days\n");
   fprintf(stderr, "\t --print_residuals | -r          - write residuals at each iteration\n");
   fprintf(stderr, "\t --lcurve_file | -l file         - L-curve data file\n");
   fprintf(stderr, "\t --tmin | -b min_time            - minimum data period time in decimal years\n");
@@ -540,7 +536,7 @@ main(int argc, char *argv[])
   size_t iter = 0;
   size_t maxit = 0;
   double epoch = -1.0;        /* model epoch */
-  double euler_period = -1.0; /* set to 0 for single set of angles */
+  double align_period = -1.0; /* set to 0 for single set of parameters */
   double tmin = -1.0;         /* minimum time for data in years */
   double tmax = -1.0;         /* maximum time for data in years */
   int nsource = 0;            /* number of data sources (satellites/observatories) */
@@ -554,7 +550,6 @@ main(int argc, char *argv[])
   double lambda_s = -1.0;     /* scale factor damping parameter */
   double lambda_o = -1.0;     /* offset factor damping parameter */
   double lambda_u = -1.0;     /* non-orthogonality factor damping parameter */
-  double sigma = -1.0;        /* sigma for artificial noise */
   struct timeval tv0, tv1;
   char buf[MAX_BUFFER];
 
@@ -575,7 +570,7 @@ main(int argc, char *argv[])
           { "maxit", required_argument, NULL, 'n' },
           { "tmin", required_argument, NULL, 'b' },
           { "tmax", required_argument, NULL, 'c' },
-          { "euler", required_argument, NULL, 'p' },
+          { "align", required_argument, NULL, 'p' },
           { "print_data", required_argument, NULL, 'd' },
           { "print_map", required_argument, NULL, 'm' },
           { "config_file", required_argument, NULL, 'C' },
@@ -586,11 +581,10 @@ main(int argc, char *argv[])
           { "lambda_s", required_argument, NULL, 'N' },
           { "lambda_o", required_argument, NULL, 'O' },
           { "lambda_u", required_argument, NULL, 'P' },
-          { "sigma", required_argument, NULL, 'S' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:n:o:p:rS:", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:n:o:p:r", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -657,7 +651,7 @@ main(int argc, char *argv[])
             break;
 
           case 'p':
-            euler_period = atof(optarg);
+            align_period = atof(optarg);
             break;
 
           case 'r':
@@ -666,10 +660,6 @@ main(int argc, char *argv[])
 
           case 'l':
             Lfile = optarg;
-            break;
-
-          case 'S':
-            sigma = atof(optarg);
             break;
 
           default:
@@ -696,8 +686,8 @@ main(int argc, char *argv[])
   /* check if any command-line arguments should override config file values */
   if (epoch > 0.0)
     mfield_params.epoch = epoch;
-  if (euler_period >= 0.0)
-    mfield_params.euler_period = euler_period;
+  if (align_period >= 0.0)
+    mfield_params.align_period = align_period;
   if (maxit > 0)
     mfield_params.max_iter = maxit;
   if (lambda_0 >= 0.0)
@@ -762,9 +752,9 @@ main(int argc, char *argv[])
       fprintf(stderr, "main: non-orthogonality damping = %g\n", mfield_params.lambda_u);
     }
 
-  fprintf(stderr, "main: Gauss period   = %g [days]\n", mfield_params.gauss_period);
-  fprintf(stderr, "main: euler period   = %g [days]\n", mfield_params.euler_period);
-  fprintf(stderr, "main: fluxcal period = %g [days]\n", mfield_params.fluxcal_period);
+  fprintf(stderr, "main: Gauss period     = %g [days]\n", mfield_params.gauss_period);
+  fprintf(stderr, "main: alignment period = %g [days]\n", mfield_params.align_period);
+  fprintf(stderr, "main: fluxcal period   = %g [days]\n", mfield_params.fluxcal_period);
   fprintf(stderr, "main: tmin = %g\n", tmin);
   fprintf(stderr, "main: tmax = %g\n", tmax);
   fprintf(stderr, "main: number of robust iterations = %zu\n", mfield_params.max_iter);
@@ -815,11 +805,17 @@ main(int argc, char *argv[])
     nflag = mfield_data_filter_time(tmin, tmax, mfield_data_p);
     fprintf(stderr, "done (%zu data flagged)\n", nflag);
 
-    if (!mfield_params.fit_euler)
+    if (!mfield_params.fit_align)
       {
-        fprintf(stderr, "main: flagging Euler-only data points...");
-        nflag = mfield_data_filter_euler(mfield_data_p);
+        fprintf(stderr, "main: flagging alignment-only data points...");
+        nflag = mfield_data_filter_align(mfield_data_p);
         fprintf(stderr, "done (%zu data flagged)\n", nflag);
+      }
+    else
+      {
+        fprintf(stderr, "main: initializing alignment parameters...");
+        mfield_data_init_align(mfield_data_p);
+        fprintf(stderr, "done\n");
       }
 
     fprintf(stderr, "main: flagging non-fitted components...");
@@ -829,16 +825,11 @@ main(int argc, char *argv[])
     fprintf(stderr, "main: flagging sparse observatory data...");
     nflag = mfield_data_filter_observatory(mfield_data_p);
     fprintf(stderr, "done (%zu observatories flagged)\n", nflag);
-  }
 
-#if 0
-  /*XXX*/
-  {
-    fprintf(stderr, "main: TASK2 adding noise (sigma = %.1f [nT])...", sigma);
-    task2_add_noise(sigma, mfield_data_p);
+    fprintf(stderr, "main: compacting data...");
+    mfield_data_compact(mfield_data_p);
     fprintf(stderr, "done\n");
   }
-#endif
 
   fprintf(stderr, "main: data epoch = %.2f\n", mfield_data_epoch(mfield_data_p));
   fprintf(stderr, "main: data tmin  = %.2f\n", satdata_epoch2year(mfield_data_p->t0_data));
@@ -863,7 +854,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: number of core field spline parameters:    %zu\n", mfield_workspace_p->p_core);
   fprintf(stderr, "main: number of crustal field parameters:        %zu\n", mfield_workspace_p->p_crust);
-  fprintf(stderr, "main: number of Euler angle parameters:          %zu\n", mfield_workspace_p->p_euler);
+  fprintf(stderr, "main: number of alignment parameters:            %zu\n", mfield_workspace_p->p_align);
   fprintf(stderr, "main: number of fluxgate calibration parameters: %zu\n", mfield_workspace_p->p_fluxcal);
   fprintf(stderr, "main: number of external field parameters:       %zu\n", mfield_workspace_p->p_ext);
   fprintf(stderr, "main: number of crustal bias parameters:         %zu\n", mfield_workspace_p->p_bias);
@@ -934,8 +925,8 @@ main(int argc, char *argv[])
       /* output Gauss coefficient time series for this iteration */
       print_gnm("output/gnm", iter, mfield_workspace_p);
 
-      /* output Euler angle time series for this iteration */
-      print_euler("output", iter, mfield_workspace_p);
+      /* output alignment parameter time series for this iteration */
+      print_align("output", iter, mfield_workspace_p);
 
       /* output fluxgate calibration time series for this iteration */
       print_fluxcal("output", iter, mfield_workspace_p);
@@ -1070,39 +1061,40 @@ main(int argc, char *argv[])
     fclose(fp);
 #endif
 
-    /* print Euler angles */
-    if (mfield_params.fit_euler)
+    /* print alignment parameters */
+    if (mfield_params.fit_align)
       {
         for (n = 0; n < mfield_workspace_p->nsat; ++n)
           {
-            magdata *mptr = mfield_data_ptr(n, mfield_workspace_p->data_workspace_p);
+            const magdata *mptr = mfield_data_ptr(n, mfield_workspace_p->data_workspace_p);
+            const double *t_year = mfield_workspace_p->data_workspace_p->t_year[n];
 
-            if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
+            if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
               {
-                double t0 = mptr->t[0];
-                double t1 = mptr->t[mptr->n - 1];
-                gsl_bspline2_workspace *euler_spline_p = mfield_workspace_p->euler_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
-                size_t ncontrol = gsl_bspline2_ncontrol(euler_spline_p);
-                size_t euler_idx = mfield_workspace_p->euler_offset + mfield_workspace_p->offset_euler[n];
-                double euler_data[EULER_P];
-                gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
+                double t0 = t_year[0];
+                double t1 = t_year[mptr->n - 1];
+                gsl_bspline2_workspace *align_spline_p = mfield_workspace_p->align_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
+                size_t ncontrol = gsl_bspline2_ncontrol(align_spline_p);
+                size_t align_idx = mfield_workspace_p->align_offset + mfield_workspace_p->offset_align[n];
+                double align_data[ALIGN_P];
+                gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
                 char filename[2048];
 
                 /* Euler angle control points for this dataset */
-                gsl_vector_const_view tmp = gsl_vector_const_subvector(coeffs, euler_idx, EULER_P * ncontrol);
-                gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, EULER_P, ncontrol);
+                gsl_vector_const_view tmp = gsl_vector_const_subvector(coeffs, align_idx, ALIGN_P * ncontrol);
+                gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, ALIGN_P, ncontrol);
 
-                gsl_bspline2_vector_eval(0.5*(t0+t1), &control_pts.matrix, &euler_params.vector, euler_spline_p);
+                gsl_bspline2_vector_eval(0.5*(t0 + t1), &control_pts.matrix, &align_params.vector, align_spline_p);
 
-                fprintf(stderr, "main: satellite %zu: alpha = %f beta = %f gamma = %f [deg]\n",
+                fprintf(stderr, "main: satellite %zu: p1 = %f p2 = %f p3 = %f [deg]\n",
                         n,
-                        wrap180(euler_data[0] * 180.0 / M_PI),
-                        wrap180(euler_data[1] * 180.0 / M_PI),
-                        wrap180(euler_data[2] * 180.0 / M_PI));
+                        wrap180(align_data[0] * 180.0 / M_PI),
+                        wrap180(align_data[1] * 180.0 / M_PI),
+                        wrap180(align_data[2] * 180.0 / M_PI));
 
-                sprintf(filename, "euler.%zu", n);
+                sprintf(filename, "align.%zu", n);
                 fprintf(stderr, "main: satellite %zu: printing Euler angles to %s...", n, filename);
-                mfield_euler_print(filename, n, mfield_workspace_p);
+                mfield_align_print(filename, n, mfield_workspace_p);
                 fprintf(stderr, "done\n");
               }
           }
@@ -1113,12 +1105,13 @@ main(int argc, char *argv[])
       {
         for (n = 0; n < mfield_workspace_p->nsat; ++n)
           {
-            magdata *mptr = mfield_data_ptr(n, mfield_workspace_p->data_workspace_p);
+            const magdata *mptr = mfield_data_ptr(n, mfield_workspace_p->data_workspace_p);
+            const double *t_year = mfield_workspace_p->data_workspace_p->t_year[n];
 
             if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
               {
-                double t0 = mfield_workspace_p->data_workspace_p->t0[n];
-                double t1 = mfield_workspace_p->data_workspace_p->t1[n];
+                double t0 = t_year[0];
+                double t1 = t_year[mptr->n - 1];
                 gsl_bspline2_workspace *fluxcal_spline_p = mfield_workspace_p->fluxcal_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
                 size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
                 size_t fluxcal_idx = mfield_workspace_p->fluxcal_offset + mfield_workspace_p->offset_fluxcal[n];
@@ -1130,7 +1123,7 @@ main(int argc, char *argv[])
                 gsl_vector_const_view tmp = gsl_vector_const_subvector(coeffs, fluxcal_idx, FLUXCAL_P * ncontrol);
                 gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
 
-                gsl_bspline2_vector_eval(0.5*(t0+t1), &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+                gsl_bspline2_vector_eval(0.5*(t0 + t1), &control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
                 fprintf(stderr, "main: satellite %zu: S = %e %e %e\n",
                         n,

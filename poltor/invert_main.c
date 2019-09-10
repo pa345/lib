@@ -1610,7 +1610,7 @@ main(int argc, char *argv[])
       fprintf(stderr, "done\n");
 
       fprintf(stderr, "main: writing data map to %s...", output_prefix);
-      magdata_list_map(output_prefix, mlist);
+      magdata_list_map(output_prefix, MAGDATA_FLG_FIT_MF, mlist);
       fprintf(stderr, "done\n");
     }
 

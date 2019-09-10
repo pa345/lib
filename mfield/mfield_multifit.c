@@ -54,11 +54,12 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      const double *t_year = w->data_workspace_p->t_year[i];
 
-      /* Euler angles */
-      int fit_euler = mparams->fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
-      size_t euler_ncontrol = fit_euler ? gsl_bspline2_ncontrol(w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]) : 0;
-      size_t euler_idx = w->euler_offset + w->offset_euler[i];
+      /* alignment parameters */
+      int fit_align = mparams->fit_align && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
+      size_t align_ncontrol = fit_align ? gsl_bspline2_ncontrol(w->align_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]) : 0;
+      size_t align_idx = w->align_offset + w->offset_align[i];
 
       /* fluxgate calibration */
       int fit_fluxcal = mparams->fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
@@ -77,14 +78,11 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           double dBdt_model[3];         /* dB/dt (SV of internal model) */
           double dBdt_obs[3];           /* SV observation vector (NEC frame) */
           double F_obs;                 /* scalar field measurement */
-          double tyr;                   /* timestamp in decimal years */
-          gsl_bspline2_workspace *euler_spline_p = fit_euler ? w->euler_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
+          gsl_bspline2_workspace *align_spline_p = fit_align ? w->align_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
           gsl_bspline2_workspace *fluxcal_spline_p = fit_fluxcal ? w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
-
-          tyr = epoch2year(mptr->t[j]);
 
           /* compute vector model for this residual */
           mfield_nonlinear_model(0, x, mptr, i, j, thread_id, B_model, w);
@@ -103,24 +101,24 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                                 MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
             mfield_nonlinear_model(1, x, mptr, i, j, thread_id, B_model_ns, w);
 
-          if (fit_euler)
+          if (fit_align)
             {
               /*
-               * get the Euler angles for this satellite and time period,
+               * get the alignment parameters for this satellite and time period,
                * and apply rotation
                */
-              double euler_data[EULER_P];
-              gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
+              double align_data[ALIGN_P];
+              gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
 
-              /* Euler angle control points for this dataset */
-              gsl_vector_const_view v1 = gsl_vector_const_subvector(x, euler_idx, EULER_P * euler_ncontrol);
-              gsl_matrix_const_view euler_control_pts = gsl_matrix_const_view_vector(&v1.vector, EULER_P, euler_ncontrol);
+              /* alignment control points for this dataset */
+              gsl_vector_const_view v1 = gsl_vector_const_subvector(x, align_idx, ALIGN_P * align_ncontrol);
+              gsl_matrix_const_view align_control_pts = gsl_matrix_const_view_vector(&v1.vector, ALIGN_P, align_ncontrol);
 
               double *q = &(mptr->q[4*j]);
               double B_vfm[4];
 
-              /* compute Euler angles for this timestamp */
-              gsl_bspline2_vector_eval(mptr->t[j], &euler_control_pts.matrix, &euler_params.vector, euler_spline_p);
+              /* compute alignment parameters for this timestamp */
+              gsl_bspline2_vector_eval(t_year[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
 
               B_vfm[0] = mptr->Bx_vfm[j];
               B_vfm[1] = mptr->By_vfm[j];
@@ -135,12 +133,12 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                   gsl_vector_const_view v2 = gsl_vector_const_subvector(x, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
-                  gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+                  gsl_bspline2_vector_eval(t_year[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
                   mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
                 }
 
               /* rotate VFM vector to NEC, B_obs = R_q R_3(alpha) B_VFM(c) */
-              euler_vfm2nec(mptr->euler_flags, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_obs);
+              mfield_align_vfm2nec(&align_params.vector, q, B_vfm, B_obs, w->att_workspace_p[i], w);
 
               if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
                                     MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
@@ -152,7 +150,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                   B_vfm_ns[1] = mptr->By_vfm_ns[j];
                   B_vfm_ns[2] = mptr->Bz_vfm_ns[j];
 
-                  euler_vfm2nec(mptr->euler_flags, euler_data[0], euler_data[1], euler_data[2], q_ns, B_vfm_ns, B_obs_ns);
+                  mfield_align_vfm2nec(&align_params.vector, q_ns, B_vfm_ns, B_obs_ns, w->att_workspace_p[i], w);
                 }
             }
           else
@@ -173,7 +171,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                 }
             }
 
-          if (fit_euler && fit_fluxcal && (mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
+          if (fit_align && fit_fluxcal && (mptr->flags[j] & (MAGDATA_FLG_X | MAGDATA_FLG_Y | MAGDATA_FLG_Z)))
             {
               /* F_obs = || R_q R_3(alpha) B_vfm(c) || */
               F_obs = gsl_hypot3(B_obs[0], B_obs[1], B_obs[2]);
@@ -346,7 +344,7 @@ mfield_calc_fvv(const gsl_vector *x, const gsl_vector * v, void *params, gsl_vec
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-      int fit_euler = mparams->fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
+      int fit_euler = mparams->fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
 
 #pragma omp parallel for private(j)
       for (j = 0; j < mptr->n; ++j)
@@ -598,11 +596,12 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      const double *t_year = w->data_workspace_p->t_year[i];
 
       /* Euler angles */
-      int fit_euler = w->params.fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
-      size_t euler_ncontrol = fit_euler ? gsl_bspline2_ncontrol(w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]) : 0;
-      size_t euler_idx = w->euler_offset - w->p_int + w->offset_euler[i];
+      int fit_align = w->params.fit_align && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
+      size_t align_ncontrol = fit_align ? gsl_bspline2_ncontrol(w->align_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)]) : 0;
+      size_t align_idx = w->align_offset - w->p_int + w->offset_align[i];
 
       /* fluxgate calibration */
       int fit_fluxcal = w->params.fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
@@ -614,15 +613,14 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
         {
           int thread_id = omp_get_thread_num();
           size_t ridx = mptr->index[j]; /* residual index for this data point */
-          double tyr;                   /* timestamp in decimal years */
           size_t k;
 
           /* Euler angle parameters */
-          gsl_bspline2_workspace *euler_spline_p = fit_euler ? w->euler_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
-          double euler_data[EULER_P];
-          gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
-          gsl_vector *N_euler = fit_euler ? euler_spline_p->B : NULL;
-          size_t istart_euler;
+          gsl_bspline2_workspace *align_spline_p = fit_align ? w->align_spline_workspace_p[CIDX2(i, w->nsat, thread_id, w->max_threads)] : NULL;
+          double align_data[ALIGN_P];
+          gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
+          gsl_vector *N_align = fit_align ? align_spline_p->B : NULL;
+          size_t istart_align;
           double B_vfm[4], B_nec_alpha[3], B_nec_beta[3], B_nec_gamma[3];
           double B_nec_alpha_ns[3], B_nec_beta_ns[3], B_nec_gamma_ns[3];
 
@@ -632,28 +630,26 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
           gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
           double jac_fluxcal_data[3 * FLUXCAL_P];
           gsl_matrix_view jac_fluxcal = gsl_matrix_view_array(jac_fluxcal_data, 3, FLUXCAL_P);
-          double jac_fluxcal_euler_data[3 * FLUXCAL_P];
-          gsl_matrix_view jac_fluxcal_euler = gsl_matrix_view_array(jac_fluxcal_euler_data, 3, FLUXCAL_P);
+          double jac_fluxcal_align_data[3 * FLUXCAL_P];
+          gsl_matrix_view jac_fluxcal_align = gsl_matrix_view_array(jac_fluxcal_align_data, 3, FLUXCAL_P);
           gsl_vector *N_fluxcal = fit_fluxcal ? fluxcal_spline_p->B : NULL;
           size_t istart_fluxcal;
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
 
-          tyr = epoch2year(mptr->t[j]);
-
-          /* compute Euler angle derivatives of residual vector */
-          if (fit_euler)
+          /* compute alignment parameter derivatives of residual vector */
+          if (fit_align)
             {
               double *q = &(mptr->q[4*j]);
-              gsl_vector_const_view v1 = gsl_vector_const_subvector(&y.vector, euler_idx, EULER_P * euler_ncontrol);
-              gsl_matrix_const_view euler_control_pts = gsl_matrix_const_view_vector(&v1.vector, EULER_P, euler_ncontrol);
+              gsl_vector_const_view v1 = gsl_vector_const_subvector(&y.vector, align_idx, ALIGN_P * align_ncontrol);
+              gsl_matrix_const_view align_control_pts = gsl_matrix_const_view_vector(&v1.vector, ALIGN_P, align_ncontrol);
 
               /* compute Euler angles for this timestamp */
-              gsl_bspline2_vector_eval(mptr->t[j], &euler_control_pts.matrix, &euler_params.vector, euler_spline_p);
+              gsl_bspline2_vector_eval(t_year[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
 
               /* evaluate non-zero basis splines for time t */
-              gsl_bspline2_eval_basis_nonzero(mptr->t[j], N_euler, &istart_euler, euler_spline_p);
+              gsl_bspline2_eval_basis_nonzero(t_year[j], N_align, &istart_align, align_spline_p);
 
               /* get vector in VFM frame */
               B_vfm[0] = mptr->Bx_vfm[j];
@@ -666,29 +662,30 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                   gsl_vector_const_view v2 = gsl_vector_const_subvector(&y.vector, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
-                  gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
+                  gsl_bspline2_vector_eval(t_year[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
                   /* compute jac_fluxcal := d/dm B_vfm(m) */
                   mfield_fluxcal_jac(&cal_params.vector, B_vfm, &jac_fluxcal.matrix);
 
-                 /* apply R_q * R_3(alpha) to d/dm B_vfm(m) vectors */
-                  euler_matrix_vfm2nec(mptr->euler_flags, euler_data[0], euler_data[1], euler_data[2], q, &jac_fluxcal.matrix, &jac_fluxcal_euler.matrix);
+                  /* apply R_q * R_3(alpha) to d/dm B_vfm(m) vectors */
+                  mfield_align_matrix_vfm2nec(&align_params.vector, q, &jac_fluxcal.matrix, &jac_fluxcal_align.matrix,
+                                              w->att_workspace_p[i], w);
 
                   /* compute B_vfm := P^{-1} S (B_vfm - O) */
                   mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
 
                   /* evaluate non-zero basis splines for time t */
-                  gsl_bspline2_eval_basis_nonzero(mptr->t[j], N_fluxcal, &istart_fluxcal, fluxcal_spline_p);
+                  gsl_bspline2_eval_basis_nonzero(t_year[j], N_fluxcal, &istart_fluxcal, fluxcal_spline_p);
                 }
 
               /* compute alpha derivative of: R_q R_3 B_vfm */
-              euler_vfm2nec(mptr->euler_flags | EULER_FLG_DERIV_ALPHA, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec_alpha);
+              mfield_align_deriv_vfm2nec(0, &align_params.vector, q, B_vfm, B_nec_alpha, w->att_workspace_p[i], w);
 
               /* compute beta derivative of: R_q R_3 B_vfm */
-              euler_vfm2nec(mptr->euler_flags | EULER_FLG_DERIV_BETA, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec_beta);
+              mfield_align_deriv_vfm2nec(1, &align_params.vector, q, B_vfm, B_nec_beta, w->att_workspace_p[i], w);
 
               /* compute gamma derivative of: R_q R_3 B_vfm */
-              euler_vfm2nec(mptr->euler_flags | EULER_FLG_DERIV_GAMMA, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec_gamma);
+              mfield_align_deriv_vfm2nec(2, &align_params.vector, q, B_vfm, B_nec_gamma, w->att_workspace_p[i], w);
 
               if (mptr->flags[j] & (MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS | MAGDATA_FLG_DZ_NS |
                                     MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW | MAGDATA_FLG_DZ_EW))
@@ -701,28 +698,28 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                   B_vfm[2] = mptr->Bz_vfm_ns[j];
 
                   /* compute alpha derivative of: R_q R_3 B_vfm_ns */
-                  euler_vfm2nec(mptr->euler_flags | EULER_FLG_DERIV_ALPHA, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec_alpha_ns);
+                  mfield_align_deriv_vfm2nec(0, &align_params.vector, q, B_vfm, B_nec_alpha_ns, w->att_workspace_p[i], w);
 
                   /* compute beta derivative of: R_q R_3 B_vfm_ns */
-                  euler_vfm2nec(mptr->euler_flags | EULER_FLG_DERIV_BETA, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec_beta_ns);
+                  mfield_align_deriv_vfm2nec(1, &align_params.vector, q, B_vfm, B_nec_beta_ns, w->att_workspace_p[i], w);
 
                   /* compute gamma derivative of: R_q R_3 B_vfm_ns */
-                  euler_vfm2nec(mptr->euler_flags | EULER_FLG_DERIV_GAMMA, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec_gamma_ns);
+                  mfield_align_deriv_vfm2nec(2, &align_params.vector, q, B_vfm, B_nec_gamma_ns, w->att_workspace_p[i], w);
                 }
             }
 
           if (mptr->flags[j] & MAGDATA_FLG_X)
             {
-              /* check if fitting Euler angles to this data point */
-              if (fit_euler && MAGDATA_FitEuler(mptr->flags[j]))
+              /* check if fitting alignment parameters to this data point */
+              if (fit_align && MAGDATA_FitAlign(mptr->flags[j]))
                 {
-                  for (k = 0; k < euler_spline_p->spline_order; ++k)
+                  for (k = 0; k < align_spline_p->spline_order; ++k)
                     {
-                      double Nk = gsl_vector_get(N_euler, k);
+                      double Nk = gsl_vector_get(N_align, k);
 
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(0, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_alpha[0]);
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(1, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_beta[0]);
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(2, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_gamma[0]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(0, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_alpha[0]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(1, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_beta[0]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(2, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_gamma[0]);
                     }
 
                   if (fit_fluxcal)
@@ -736,7 +733,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                           for (idx = 0; idx < FLUXCAL_P; ++idx)
                             {
                               gsl_spmatrix_set(J, ridx, fluxcal_idx + CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, fluxcal_ncontrol),
-                                               Nk * gsl_matrix_get(&jac_fluxcal_euler.matrix, 0, idx));
+                                               Nk * gsl_matrix_get(&jac_fluxcal_align.matrix, 0, idx));
                             }
                         }
                     }
@@ -748,15 +745,15 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
           if (mptr->flags[j] & MAGDATA_FLG_Y)
             {
               /* check if fitting Euler angles to this data point */
-              if (fit_euler && MAGDATA_FitEuler(mptr->flags[j]))
+              if (fit_align && MAGDATA_FitAlign(mptr->flags[j]))
                 {
-                  for (k = 0; k < euler_spline_p->spline_order; ++k)
+                  for (k = 0; k < align_spline_p->spline_order; ++k)
                     {
-                      double Nk = gsl_vector_get(N_euler, k);
+                      double Nk = gsl_vector_get(N_align, k);
 
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(0, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_alpha[1]);
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(1, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_beta[1]);
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(2, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_gamma[1]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(0, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_alpha[1]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(1, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_beta[1]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(2, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_gamma[1]);
                     }
 
                   if (fit_fluxcal)
@@ -770,7 +767,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                           for (idx = 0; idx < FLUXCAL_P; ++idx)
                             {
                               gsl_spmatrix_set(J, ridx, fluxcal_idx + CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, fluxcal_ncontrol),
-                                               Nk * gsl_matrix_get(&jac_fluxcal_euler.matrix, 1, idx));
+                                               Nk * gsl_matrix_get(&jac_fluxcal_align.matrix, 1, idx));
                             }
                         }
                     }
@@ -782,15 +779,15 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
           if (mptr->flags[j] & MAGDATA_FLG_Z)
             {
               /* check if fitting Euler angles to this data point */
-              if (fit_euler && MAGDATA_FitEuler(mptr->flags[j]))
+              if (fit_align && MAGDATA_FitAlign(mptr->flags[j]))
                 {
-                  for (k = 0; k < euler_spline_p->spline_order; ++k)
+                  for (k = 0; k < align_spline_p->spline_order; ++k)
                     {
-                      double Nk = gsl_vector_get(N_euler, k);
+                      double Nk = gsl_vector_get(N_align, k);
 
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(0, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_alpha[2]);
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(1, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_beta[2]);
-                      gsl_spmatrix_set(J, ridx, euler_idx + CIDX2(2, EULER_P, istart_euler + k, euler_ncontrol), Nk * B_nec_gamma[2]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(0, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_alpha[2]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(1, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_beta[2]);
+                      gsl_spmatrix_set(J, ridx, align_idx + CIDX2(2, ALIGN_P, istart_align + k, align_ncontrol), Nk * B_nec_gamma[2]);
                     }
 
                   if (fit_fluxcal)
@@ -804,7 +801,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                           for (idx = 0; idx < FLUXCAL_P; ++idx)
                             {
                               gsl_spmatrix_set(J, ridx, fluxcal_idx + CIDX2(idx, FLUXCAL_P, istart_fluxcal + k, fluxcal_ncontrol),
-                                               Nk * gsl_matrix_get(&jac_fluxcal_euler.matrix, 2, idx));
+                                               Nk * gsl_matrix_get(&jac_fluxcal_align.matrix, 2, idx));
                             }
                         }
                     }
@@ -818,7 +815,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
             {
               double F;
 
-              if (fit_euler && fit_fluxcal)
+              if (fit_align && fit_fluxcal)
                 {
                   gsl_vector_view vB_vfm = gsl_vector_view_array(B_vfm, 3);
                   size_t idx;
@@ -896,6 +893,11 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
         gsl_matrix_set(J, w->J2->i[i], w->J2->p[i] + w->p_int, w->J2->data[i]);
 
       mfield_debug("done\n");
+
+#if 0
+      printsp_octave(w->J2, "J2");
+      exit(1);
+#endif
     }
 
   mfield_debug("mfield_calc_df: building dense part of Jacobian...");
@@ -903,6 +905,7 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      double * t_year = w->data_workspace_p->t_year[i];
       int fit_bias = w->params.fit_cbias && (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY);
 
 #pragma omp parallel for private(j)
@@ -948,13 +951,12 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
               /* calculate non-zero B-splines (and possibly first derivatives) for the Gauss coefficients for this timestamp */
               if (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT))
                 {
-                  gsl_bspline2_eval_deriv_basis_nonzero(epoch2year(mptr->t[j]), 1, w->gauss_spline_workspace_p[thread_id]->dB,
+                  gsl_bspline2_eval_deriv_basis_nonzero(t_year[j], 1, w->gauss_spline_workspace_p[thread_id]->dB,
                                                         &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
                 }
               else
                 {
-                  gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), &N_gauss.vector,
-                                                  &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
+                  gsl_bspline2_eval_basis_nonzero(t_year[j], &N_gauss.vector, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
                 }
             }
 
@@ -1138,11 +1140,11 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
 #if OLD_EULER
               /* check if fitting Euler angles to this data point */
-              if (fit_euler && MAGDATA_FitEuler(mptr->flags[j]))
+              if (fit_align && MAGDATA_FitAlign(mptr->flags[j]))
                 {
-                  gsl_matrix_set(J, ridx, euler_idx, B_nec_alpha[0] - B_nec_alpha_ns[0]);
-                  gsl_matrix_set(J, ridx, euler_idx + 1, B_nec_beta[0] - B_nec_beta_ns[0]);
-                  gsl_matrix_set(J, ridx, euler_idx + 2, B_nec_gamma[0] - B_nec_gamma_ns[0]);
+                  gsl_matrix_set(J, ridx, align_idx, B_nec_alpha[0] - B_nec_alpha_ns[0]);
+                  gsl_matrix_set(J, ridx, align_idx + 1, B_nec_beta[0] - B_nec_beta_ns[0]);
+                  gsl_matrix_set(J, ridx, align_idx + 2, B_nec_gamma[0] - B_nec_gamma_ns[0]);
                 }
 #endif
 
@@ -1160,11 +1162,11 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
 #if OLD_EULER
               /* check if fitting Euler angles to this data point */
-              if (fit_euler && MAGDATA_FitEuler(mptr->flags[j]))
+              if (fit_align && MAGDATA_FitAlign(mptr->flags[j]))
                 {
-                  gsl_matrix_set(J, ridx, euler_idx, B_nec_alpha[1] - B_nec_alpha_ns[1]);
-                  gsl_matrix_set(J, ridx, euler_idx + 1, B_nec_beta[1] - B_nec_beta_ns[1]);
-                  gsl_matrix_set(J, ridx, euler_idx + 2, B_nec_gamma[1] - B_nec_gamma_ns[1]);
+                  gsl_matrix_set(J, ridx, align_idx, B_nec_alpha[1] - B_nec_alpha_ns[1]);
+                  gsl_matrix_set(J, ridx, align_idx + 1, B_nec_beta[1] - B_nec_beta_ns[1]);
+                  gsl_matrix_set(J, ridx, align_idx + 2, B_nec_gamma[1] - B_nec_gamma_ns[1]);
                 }
 #endif
 
@@ -1182,11 +1184,11 @@ mfield_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 
 #if OLD_EULER
               /* check if fitting Euler angles to this data point */
-              if (fit_euler && MAGDATA_FitEuler(mptr->flags[j]))
+              if (fit_align && MAGDATA_FitAlign(mptr->flags[j]))
                 {
-                  gsl_matrix_set(J, ridx, euler_idx, B_nec_alpha[2] - B_nec_alpha_ns[2]);
-                  gsl_matrix_set(J, ridx, euler_idx + 1, B_nec_beta[2] - B_nec_beta_ns[2]);
-                  gsl_matrix_set(J, ridx, euler_idx + 2, B_nec_gamma[2] - B_nec_gamma_ns[2]);
+                  gsl_matrix_set(J, ridx, align_idx, B_nec_alpha[2] - B_nec_alpha_ns[2]);
+                  gsl_matrix_set(J, ridx, align_idx + 1, B_nec_beta[2] - B_nec_beta_ns[2]);
+                  gsl_matrix_set(J, ridx, align_idx + 2, B_nec_gamma[2] - B_nec_gamma_ns[2]);
                 }
 #endif
 
@@ -1261,6 +1263,7 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
                        const size_t data_idx, const size_t thread_id, double B_model[3], mfield_workspace *w)
 {
   int s = 0;
+  const double * t_year = w->data_workspace_p->t_year[src_idx];
   double t, r, theta, phi;
   gsl_vector_view vx = gsl_matrix_row(w->omp_dX, thread_id);
   gsl_vector_view vy = gsl_matrix_row(w->omp_dY, thread_id);
@@ -1272,7 +1275,7 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
   if (res_flag == 0)
     {
       /* residual is for this data point specified by 'data_idx' */
-      t = mptr->t[data_idx];
+      t = t_year[data_idx];
       r = mptr->r[data_idx];
       theta = mptr->theta[data_idx];
       phi = mptr->phi[data_idx];
@@ -1285,7 +1288,7 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
   else if (res_flag == 1)
     {
       /* residual is for gradient (N/S or E/W) */
-      t = mptr->t_ns[data_idx];
+      t = epoch2year(mptr->t_ns[data_idx]);
       r = mptr->r_ns[data_idx];
       theta = mptr->theta_ns[data_idx];
       phi = mptr->phi_ns[data_idx];
@@ -1300,7 +1303,7 @@ mfield_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata *
                   w->green_array_p[thread_id]);
 
   /* compute internal field model */
-  gsl_bspline2_eval_basis_nonzero(epoch2year(t), N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
+  gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
   B_int[0] = mfield_nonlinear_model_int(N_gauss, istart, &vx.vector, x, w);
   B_int[1] = mfield_nonlinear_model_int(N_gauss, istart, &vy.vector, x, w);
   B_int[2] = mfield_nonlinear_model_int(N_gauss, istart, &vz.vector, x, w);

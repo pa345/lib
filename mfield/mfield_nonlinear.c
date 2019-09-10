@@ -359,7 +359,7 @@ mfield_init_nonlinear(mfield_workspace *w)
 
   /* check if we can use a linear least squares approach */
   if ((nres_B[3] + nres_dB_ns[3] + nres_dB_ew[3] + nres_dBdt[3]) == 0 &&
-      params->fit_euler == 0)
+      params->fit_align == 0)
     {
       w->lls_solution = 1;
     }
@@ -404,7 +404,8 @@ mfield_init_nonlinear(mfield_workspace *w)
       gsl_multifit_nlinear_default_parameters();
 
     fdf_params.solver = gsl_multifit_nlinear_solver_cholesky;
-    fdf_params.scale = gsl_multifit_nlinear_scale_levenberg;
+    /*XXXfdf_params.scale = gsl_multifit_nlinear_scale_levenberg;*/
+    fdf_params.scale = gsl_multifit_nlinear_scale_more;
     fdf_params.trs = gsl_multifit_nlinear_trs_lm;
     fdf_params.fdtype = GSL_MULTIFIT_NLINEAR_CTRDIFF;
     w->multifit_nlinear_p = gsl_multifit_nlinear_alloc(T, &fdf_params, w->nres_tot, p);
@@ -594,7 +595,7 @@ mfield_calc_df2(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-      int fit_euler = w->params.fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
+      int fit_euler = w->params.fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
 
       /* loop over data for individual satellite */
 #pragma omp parallel for private(j)
@@ -1005,7 +1006,7 @@ Inputs: t           - scaled timestamp
         extidx      - index of external field coefficient in [0,p_ext-1]
         dB_ext      - external field Green's function corresponding
                       to desired vector component
-        euler_idx   - index of Euler angles
+        align_idx   - index of alignment parameters
         B_nec_alpha - Green's function for alpha Euler angle
         B_nec_beta  - Green's function for beta Euler angle
         B_nec_gamma - Green's function for gamma Euler angle
@@ -1016,7 +1017,7 @@ Inputs: t           - scaled timestamp
 static inline int
 mfield_jacobian_JTu(const double t, const size_t flags, const double weight,
                     const gsl_vector * u, const size_t ridx, const gsl_vector * dB_int, const size_t extidx,
-                    const double dB_ext, const size_t euler_idx, const double B_nec_alpha,
+                    const double dB_ext, const size_t align_idx, const double B_nec_alpha,
                     const double B_nec_beta, const double B_nec_gamma,
                     gsl_vector *JTu, const mfield_workspace *w)
 {
@@ -1724,10 +1725,10 @@ mfield_nonlinear_model_ext(const double r, const double theta,
 mfield_nonlinear_regularize_init()
   Construct the p-by-p regularization matrix Lambda.
 
-                    p_core           p_crust         p_euler          p_fluxcal
+                    p_core           p_crust         p_align          p_fluxcal
 Lambda = p_core    [ G^{(n)} x C  |              |               |                ]
          p_crust   [              |      0       |               |                ]
-         p_euler   [              |              | G^{(2)} x I_3 |                ]
+         p_align   [              |              | G^{(2)} x I_3 |                ]
          p_fluxcal [              |              |               | G^{(2)} x I_9  ]
 
 Here, "x" denotes Kronecker product.
@@ -2582,7 +2583,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
               dh11);
     }
 
-  if (w->params.fit_euler)
+  if (w->params.fit_align)
     {
       size_t i;
 
@@ -2593,33 +2594,29 @@ mfield_nonlinear_callback(const size_t iter, void *params,
           if (mptr->n == 0)
             continue;
 
-          if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
+          if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
             {
-              double t0 = w->data_workspace_p->t0[i];
-              gsl_bspline2_workspace *euler_spline_p = w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
-              size_t euler_idx = w->euler_offset + w->offset_euler[i];
-              size_t ncontrol = gsl_bspline2_ncontrol(euler_spline_p);
-              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, euler_idx, EULER_P * ncontrol);
-              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, EULER_P, ncontrol);
-              double euler_data[EULER_P];
-              gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
-              char buf[32];
+              double t0 = epoch2year(w->data_workspace_p->t0[i]);
+              gsl_bspline2_workspace *align_spline_p = w->align_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
+              size_t align_idx = w->align_offset + w->offset_align[i];
+              size_t ncontrol = gsl_bspline2_ncontrol(align_spline_p);
+              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, align_idx, ALIGN_P * ncontrol);
+              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, ALIGN_P, ncontrol);
+              double align_data[ALIGN_P];
+              gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
+              double fac = 180.0 / M_PI;
 
-              if (mptr->euler_flags & EULER_FLG_ZYX)
-                sprintf(buf, "ZYX");
-              else if (mptr->euler_flags & EULER_FLG_ZYZ)
-                sprintf(buf, "ZYZ");
-              else
-                *buf = '\0';
+              if (w->att_workspace_p[i]->type == att_mrp)
+                fac = 1.0;
 
-              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &euler_params.vector, euler_spline_p);
+              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &align_params.vector, align_spline_p);
 
-              fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg] [%s]\n",
+              fprintf(stderr, "\t align %zu: %12.4f %12.4f %12.4f [%s]\n",
                       i,
-                      euler_data[0] * 180.0 / M_PI,
-                      euler_data[1] * 180.0 / M_PI,
-                      euler_data[2] * 180.0 / M_PI,
-                      buf);
+                      align_data[0] * fac,
+                      align_data[1] * fac,
+                      align_data[2] * fac,
+                      att_name(w->att_workspace_p[i]));
             }
         }
     }
@@ -2637,7 +2634,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
-              double t0 = w->data_workspace_p->t0[i];
+              double t0 = epoch2year(w->data_workspace_p->t0[i]);
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);
@@ -2741,7 +2738,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
               dh11);
     }
 
-  if (w->params.fit_euler)
+  if (w->params.fit_align)
     {
       size_t i;
 
@@ -2752,33 +2749,29 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
           if (mptr->n == 0)
             continue;
 
-          if (mptr->global_flags & MAGDATA_GLOBFLG_EULER)
+          if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
             {
-              double t0 = w->data_workspace_p->t0[i];
-              gsl_bspline2_workspace *euler_spline_p = w->euler_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
-              size_t euler_idx = w->euler_offset + w->offset_euler[i];
-              size_t ncontrol = gsl_bspline2_ncontrol(euler_spline_p);
-              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, euler_idx, EULER_P * ncontrol);
-              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, EULER_P, ncontrol);
-              double euler_data[EULER_P];
-              gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
-              char buf[32];
+              double t0 = epoch2year(w->data_workspace_p->t0[i]);
+              gsl_bspline2_workspace *align_spline_p = w->align_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
+              size_t align_idx = w->align_offset + w->offset_align[i];
+              size_t ncontrol = gsl_bspline2_ncontrol(align_spline_p);
+              gsl_vector_const_view tmp = gsl_vector_const_subvector(x, align_idx, ALIGN_P * ncontrol);
+              gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, ALIGN_P, ncontrol);
+              double align_data[ALIGN_P];
+              gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
+              double fac = 180.0 / M_PI;
 
-              if (mptr->euler_flags & EULER_FLG_ZYX)
-                sprintf(buf, "ZYX");
-              else if (mptr->euler_flags & EULER_FLG_ZYZ)
-                sprintf(buf, "ZYZ");
-              else
-                *buf = '\0';
+              if (w->att_workspace_p[i]->type == att_mrp)
+                fac = 1.0;
 
-              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &euler_params.vector, euler_spline_p);
+              gsl_bspline2_vector_eval(t0, &control_pts.matrix, &align_params.vector, align_spline_p);
 
-              fprintf(stderr, "\t euler %zu: %12.4f %12.4f %12.4f [deg] [%s]\n",
+              fprintf(stderr, "\t align %zu: %12.4f %12.4f %12.4f [%s]\n",
                       i,
-                      euler_data[0] * 180.0 / M_PI,
-                      euler_data[1] * 180.0 / M_PI,
-                      euler_data[2] * 180.0 / M_PI,
-                      buf);
+                      align_data[0] * fac,
+                      align_data[1] * fac,
+                      align_data[2] * fac,
+                      att_name(w->att_workspace_p[i]));
             }
         }
     }
@@ -2796,7 +2789,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL)
             {
-              double t0 = w->data_workspace_p->t0[i];
+              double t0 = epoch2year(w->data_workspace_p->t0[i]);
               gsl_bspline2_workspace *fluxcal_spline_p = w->fluxcal_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[i];
               size_t ncontrol = gsl_bspline2_ncontrol(fluxcal_spline_p);

@@ -457,7 +457,7 @@ invert_data_map(const char *dir_prefix, const invert_data_workspace *w)
 
       fprintf(stderr, "invert_data_map: printing spatial coverage of satellite %zu to %s...",
               i, buf);
-      magdata_map(buf, mptr);
+      magdata_map(buf, MAGDATA_FLG_FIT_MF, mptr);
       fprintf(stderr, "done\n");
     }
 

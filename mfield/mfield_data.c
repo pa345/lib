@@ -16,6 +16,7 @@
 #include <gsl/gsl_randist.h>
 
 #include <mainlib/ml_satdata.h>
+#include <mainlib/ml_att.h>
 #include <mainlib/ml_common.h>
 
 #include "mfield_data.h"
@@ -57,8 +58,16 @@ mfield_data_alloc(const size_t nsources, const mfield_data_parameters *params)
       return 0;
     }
 
-  w->mdata = calloc(1, nsources * sizeof(magdata *));
+  w->mdata = calloc(nsources, sizeof(magdata *));
   if (!w->mdata)
+    {
+      mfield_data_free(w);
+      return 0;
+    }
+
+  w->t_scale = calloc(nsources, sizeof(double *));
+  w->t_year = calloc(nsources, sizeof(double *));
+  if (!w->t_scale || !w->t_year)
     {
       mfield_data_free(w);
       return 0;
@@ -77,7 +86,7 @@ mfield_data_alloc(const size_t nsources, const mfield_data_parameters *params)
   w->t1_data = -1.0;
 
   return w;
-} /* mfield_data_alloc() */
+}
 
 void
 mfield_data_free(mfield_data_workspace *w)
@@ -104,6 +113,32 @@ mfield_data_free(mfield_data_workspace *w)
         }
 
       free(w->mdata);
+    }
+
+  if (w->t_scale)
+    {
+      size_t i;
+
+      for (i = 0; i < w->nsources; ++i)
+        {
+          if (w->t_scale[i])
+            free(w->t_scale[i]);
+        }
+
+      free(w->t_scale);
+    }
+
+  if (w->t_year)
+    {
+      size_t i;
+
+      for (i = 0; i < w->nsources; ++i)
+        {
+          if (w->t_year[i])
+            free(w->t_year[i]);
+        }
+
+      free(w->t_year);
     }
 
   free(w);
@@ -156,9 +191,9 @@ mfield_data_filter_time(const double tmin, const double tmax,
 }
 
 /*
-mfield_data_filter_euler()
-  We are not fitting Euler angles (fit_euler is 0),
-so discard any data which is marked Euler only
+mfield_data_filter_align()
+  We are not fitting alignment parameters (fit_align is 0),
+so discard any data which is marked alignment only
 
 Inputs: w    - workspace
 
@@ -166,7 +201,7 @@ Return: number of data flagged
 */
 
 size_t
-mfield_data_filter_euler(mfield_data_workspace *w)
+mfield_data_filter_align(mfield_data_workspace *w)
 {
   size_t cnt = 0;
   size_t i, j;
@@ -187,7 +222,7 @@ mfield_data_filter_euler(mfield_data_workspace *w)
     }
 
   return cnt;
-} /* mfield_data_filter_euler() */
+}
 
 /*
 mfield_data_filter_comp()
@@ -375,6 +410,60 @@ mfield_data_filter_observatory(mfield_data_workspace *w)
 }
 
 /*
+mfield_data_compact()
+  Remove magdata entries which have the discard flag set or will
+not be used in the model
+*/
+
+int
+mfield_data_compact(mfield_data_workspace * w)
+{
+  int s = 0;
+  const size_t keep_flags = MAGDATA_FLG_FIT_MF | MAGDATA_FLG_FIT_ALIGN;
+  magdata ** new_data = malloc(w->nsources * sizeof(magdata *));
+  size_t i;
+
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w);
+      new_data[i] = magdata_compact(keep_flags, mptr);
+      magdata_free(mptr);
+    }
+
+  w->mdata = new_data;
+
+  return s;
+}
+
+/*
+mfield_data_init_align()
+  Change alignment conventions at run-time for different satellites
+*/
+
+int
+mfield_data_init_align(mfield_data_workspace *w)
+{
+  int s = 0;
+  size_t i;
+
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w);
+
+      if (mptr->global_flags & MAGDATA_GLOBFLG_SWARM)
+        mptr->align_flags = ATT_TYPE_EULER_ZYX;
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_CHAMP)
+        mptr->align_flags = ATT_TYPE_EULER_ZYX;
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
+        mptr->align_flags = ATT_TYPE_MRP;
+      else if (mptr->global_flags & MAGDATA_GLOBFLG_CRYOSAT)
+        mptr->align_flags = ATT_TYPE_MRP;
+    }
+
+  return s;
+}
+
+/*
 mfield_data_init()
   Compute mean and stddev of timestamps minus epoch for later time scaling
 
@@ -394,6 +483,8 @@ Notes:
 3) w->t1_data is initialized to the timestamp of the last data point (CDF_EPOCH)
 
 3) w->t0 and w->t1 are initialized to the first/last timestamps of each satellite
+
+4) initialize w->t_scale and w->t_year arrays
 */
 
 int
@@ -443,8 +534,26 @@ mfield_data_init(mfield_data_workspace *w)
       w->t_sigma = 1.0;
     }
 
+  /* initialize t_scale and t_year */
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w);
+
+      w->t_scale[i] = malloc(GSL_MAX(mptr->n, 1) * sizeof(double));
+      w->t_year[i] = malloc(GSL_MAX(mptr->n, 1) * sizeof(double));
+
+      for (j = 0; j < mptr->n; ++j)
+        {
+          double * t_scale = w->t_scale[i];
+          double * t_year = w->t_year[i];
+
+          t_scale[j] = (mptr->t[j] - w->t_mu) / w->t_sigma;
+          t_year[j] = epoch2year(mptr->t[j]);
+        }
+    }
+
   return s;
-} /* mfield_data_init() */
+}
 
 /*
 mfield_data_epoch()
@@ -472,11 +581,13 @@ mfield_data_map(const char *dir_prefix, const mfield_data_workspace *w)
       magdata *mptr = mfield_data_ptr(i, w);
 
       sprintf(buf, "%s/datamap%zu", dir_prefix, i);
-
-      fprintf(stderr, "mfield_data_map: printing spatial coverage of satellite %zu to %s...",
-              i, buf);
-      magdata_map(buf, mptr);
+      fprintf(stderr, "mfield_data_map: printing spatial coverage of satellite %zu to %s (MF data)...", i, buf);
+      magdata_map(buf, MAGDATA_FLG_FIT_MF, mptr);
       fprintf(stderr, "done\n");
+
+      sprintf(buf, "%s/datamap%zu_align", dir_prefix, i);
+      fprintf(stderr, "mfield_data_map: printing spatial coverage of satellite %zu to %s (alignment data)...", i, buf);
+      magdata_map(buf, MAGDATA_FLG_FIT_ALIGN, mptr);
     }
 
   return s;

@@ -138,7 +138,6 @@ magdata *
 copy_data(const obsdata *data)
 {
   size_t ndata = obsdata_n(data);
-  size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
   magdata_params params;
   magdata *mdata = magdata_alloc(ndata, R_EARTH_KM);
   size_t i;
@@ -157,7 +156,7 @@ copy_data(const obsdata *data)
     {
       obsdata_station *station = data->stations[i];
 
-      magdata_copy_station(&params, station, mdata, npts);
+      magdata_copy_station(&params, station, mdata);
     }
 
   fprintf(stderr, "done (ndata = %zu mdata_n = %zu, mdata_ntot = %zu)\n", ndata, mdata->n, mdata->ntot);

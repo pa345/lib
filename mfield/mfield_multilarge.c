@@ -44,7 +44,11 @@ mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs,
     gsl_multilarge_nlinear_free(w->nlinear_workspace_p);
 
   fdf_params.trs = trs;
+#if 0 /*XXX*/
   fdf_params.scale = gsl_multilarge_nlinear_scale_levenberg;
+#else
+  fdf_params.scale = gsl_multilarge_nlinear_scale_more;
+#endif
 
   w->nlinear_workspace_p = gsl_multilarge_nlinear_alloc(T, &fdf_params, w->nres_tot, w->p);
 
@@ -251,6 +255,7 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
           for (i = 0; i < w->nsat; ++i)
             {
               magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+              double * t_year = w->data_workspace_p->t_year[i];
 
 #pragma omp parallel for private(j)
               for (j = 0; j < mptr->n; ++j)
@@ -258,7 +263,7 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
                   int thread_id, flag;
                   gsl_vector *N_gauss;
                   size_t ridx, left, istart;
-                  double t, Nii, Njj, alpha;
+                  double Nii, Njj, alpha;
                   gsl_vector *VX, *VY, *VZ;
                   gsl_vector_view vx, vy, vz;
 
@@ -276,8 +281,7 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
                   N_gauss = w->gauss_spline_workspace_p[thread_id]->B;
                   VX = VY = VZ = NULL;
 
-                  t = epoch2year(mptr->t[j]);
-                  left = gsl_bspline2_find_interval(t, &flag, w->gauss_spline_workspace_p[thread_id]);
+                  left = gsl_bspline2_find_interval(t_year[j], &flag, w->gauss_spline_workspace_p[thread_id]);
                   if (flag != 0)
                     continue;
 
@@ -308,7 +312,7 @@ mfield_nonlinear_precompute_core(const gsl_vector *sqrt_weights, gsl_matrix * JT
                   green_calc_intopt(1, nmax, mmax, mptr->r[j], mptr->theta[j], mptr->phi[j], VX, VY, VZ, w->green_array_p[thread_id]);
 
                   /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-                  gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
+                  gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
 
                   Nii = gsl_vector_get(N_gauss, ii - istart);
                   Njj = gsl_vector_get(N_gauss, jj - istart);
@@ -709,6 +713,7 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
       for (i = 0; i < w->nsat; ++i)
         {
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+          double * t_year = w->data_workspace_p->t_year[i];
 
 #pragma omp parallel for private(j)
           for (j = 0; j < mptr->n; ++j)
@@ -716,7 +721,7 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
               int thread_id, flag;
               gsl_vector *N_gauss;
               size_t ridx, left, istart;
-              double t, Nii, alpha;
+              double Nii, alpha;
               gsl_vector *VX, *VY, *VZ;
               gsl_vector_view vx, vy, vz;
 
@@ -731,11 +736,10 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
 
               thread_id = omp_get_thread_num();
               ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-              t = epoch2year(mptr->t[j]);
               N_gauss = w->gauss_spline_workspace_p[thread_id]->B;
               VX = VY = VZ = NULL;
 
-              left = gsl_bspline2_find_interval(t, &flag, w->gauss_spline_workspace_p[thread_id]);
+              left = gsl_bspline2_find_interval(t_year[j], &flag, w->gauss_spline_workspace_p[thread_id]);
               if (flag != 0)
                 continue;
 
@@ -764,7 +768,7 @@ mfield_nonlinear_precompute_mixed(const gsl_vector *sqrt_weights, gsl_matrix * J
               green_calc_int2(mptr->r[j], mptr->theta[j], mptr->phi[j], VX, VY, VZ, w->green_array_p[thread_id]);
 
               /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
+              gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
 
               Nii = gsl_vector_get(N_gauss, ii - istart);
               alpha = sqrt(Nii);
@@ -1043,6 +1047,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      const double * t_year = w->data_workspace_p->t_year[i];
 
       /* loop over data for individual satellite */
 #pragma omp parallel for private(j)
@@ -1075,7 +1080,7 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
               green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
 
               /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
+              gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
             }
 
           /* calculate internal Green's functions for gradient point (N/S or E/W) */
@@ -1503,6 +1508,7 @@ mfield_nonlinear_scalar_core(const gsl_vector * x, const gsl_vector * sqrt_weigh
           for (i = 0; i < w->nsat; ++i)
             {
               magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+              const double * t_year = w->data_workspace_p->t_year[i];
 
 #pragma omp parallel for private(j)
               for (j = 0; j < mptr->n; ++j)
@@ -1510,7 +1516,7 @@ mfield_nonlinear_scalar_core(const gsl_vector * x, const gsl_vector * sqrt_weigh
                   int thread_id, flag;
                   gsl_vector *N_gauss;
                   size_t ridx, left, istart;
-                  double t, Nii, Njj, alpha;
+                  double Nii, Njj, alpha;
                   gsl_vector_view vx, vy, vz;
 
                   if (MAGDATA_Discarded(mptr->flags[j]))
@@ -1528,9 +1534,8 @@ mfield_nonlinear_scalar_core(const gsl_vector * x, const gsl_vector * sqrt_weigh
                   vx = gsl_matrix_subrow(w->omp_dB[thread_id], 0, 0, w->nnm_core);
                   vy = gsl_matrix_subrow(w->omp_dB[thread_id], 1, 0, w->nnm_core);
                   vz = gsl_matrix_subrow(w->omp_dB[thread_id], 2, 0, w->nnm_core);
-                  t = epoch2year(mptr->t[j]);
 
-                  left = gsl_bspline2_find_interval(t, &flag, w->gauss_spline_workspace_p[thread_id]);
+                  left = gsl_bspline2_find_interval(t_year[j], &flag, w->gauss_spline_workspace_p[thread_id]);
                   if (flag != 0)
                     continue;
 
@@ -1544,7 +1549,7 @@ mfield_nonlinear_scalar_core(const gsl_vector * x, const gsl_vector * sqrt_weigh
                                     &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
 
                   /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-                  gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
+                  gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
 
                   Nii = gsl_vector_get(N_gauss, ii - istart);
                   Njj = gsl_vector_get(N_gauss, jj - istart);
@@ -1683,6 +1688,7 @@ mfield_nonlinear_scalar_crust(const gsl_vector * x, const gsl_vector * sqrt_weig
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      const double * t_year = w->data_workspace_p->t_year[i];
 
 #pragma omp parallel for private(j)
       for (j = 0; j < mptr->n; ++j)
@@ -1713,7 +1719,6 @@ mfield_nonlinear_scalar_crust(const gsl_vector * x, const gsl_vector * sqrt_weig
 
           if (MAGDATA_ExistScalar(mptr->flags[j]))
             {
-              double t = epoch2year(mptr->t[j]);
               double sqrt_wj = gsl_vector_get(sqrt_weights, ridx);
               gsl_vector_view vx = gsl_matrix_row(w->omp_dB[thread_id], 0);
               gsl_vector_view vy = gsl_matrix_row(w->omp_dB[thread_id], 1);
@@ -1726,7 +1731,7 @@ mfield_nonlinear_scalar_crust(const gsl_vector * x, const gsl_vector * sqrt_weig
               size_t istart;
 
               /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
+              gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
 
               /* calculate internal Green's functions for core and crustal field */
               green_calc_intopt(1, nmax, mmax, mptr->r[j], mptr->theta[j], mptr->phi[j],
@@ -1842,12 +1847,12 @@ mfield_nonlinear_scalar_mixed(const gsl_vector * x, const gsl_vector * sqrt_weig
       for (i = 0; i < w->nsat; ++i)
         {
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+          const double * t_year = w->data_workspace_p->t_year[i];
 
 #pragma omp parallel for private(j)
           for (j = 0; j < mptr->n; ++j)
             {
               int thread_id, flag;
-              double t;
               size_t ridx, left;
 
               if (MAGDATA_Discarded(mptr->flags[j]))
@@ -1861,9 +1866,8 @@ mfield_nonlinear_scalar_mixed(const gsl_vector * x, const gsl_vector * sqrt_weig
 
               thread_id = omp_get_thread_num();
               ridx = mptr->index[j]; /* residual index for this data point in [0:nres-1] */
-              t = epoch2year(mptr->t[j]);
 
-              left = gsl_bspline2_find_interval(t, &flag, w->gauss_spline_workspace_p[thread_id]);
+              left = gsl_bspline2_find_interval(t_year[j], &flag, w->gauss_spline_workspace_p[thread_id]);
               if (flag != 0)
                 continue;
 
@@ -1903,7 +1907,7 @@ mfield_nonlinear_scalar_mixed(const gsl_vector * x, const gsl_vector * sqrt_weig
                                     &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
 
                   /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-                  gsl_bspline2_eval_basis_nonzero(t, N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
+                  gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart, w->gauss_spline_workspace_p[thread_id]);
 
                   Nii = gsl_vector_get(N_gauss, ii - istart);
                   alpha = sqrt(Nii);
@@ -2077,6 +2081,7 @@ mfield_calc_df4(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
+      const double * t_year = w->data_workspace_p->t_year[i];
 
       /* loop over data for individual satellite */
 #pragma omp parallel for private(j)
@@ -2108,7 +2113,7 @@ mfield_calc_df4(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
               green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, w->green_array_p[thread_id]);
 
               /* calculate non-zero B-splines for the Gauss coefficients for this timestamp */
-              gsl_bspline2_eval_basis_nonzero(epoch2year(mptr->t[j]), N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
+              gsl_bspline2_eval_basis_nonzero(t_year[j], N_gauss, &istart_gauss, w->gauss_spline_workspace_p[thread_id]);
             }
 
           /* calculate internal Green's functions for gradient point (N/S or E/W) */

@@ -347,7 +347,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "done\n");
 
   fprintf(stderr, "main: writing data map to %s...", datamap_prefix);
-  magdata_map(datamap_prefix, mdata);
+  magdata_map(datamap_prefix, MAGDATA_FLG_FIT_MF, mdata);
   fprintf(stderr, "done\n");
 
   fprintf(stderr, "main: satellite rmin = %.1f (%.1f) [km]\n",

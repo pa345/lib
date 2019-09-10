@@ -227,7 +227,7 @@ since different criteria are used for mid and high-latitudes
 Reject point if:
 
 mid-latitudes:
-  ! LT_eq \in [min_LT,max_LT] and ! LT_eq \in [euler_min_LT,euler_max_LT]
+  ! LT_eq \in [min_LT,max_LT] and ! LT_eq \in [align_min_LT,align_max_LT]
 
 high-latitudes:
   zenith < min_zenith
@@ -264,9 +264,9 @@ mfield_flag_LT(const size_t magdata_flags, const preprocess_parameters * params,
       size_t end_idx = tptr->end_idx;
       double LT = tptr->lt_eq;
       int good_MF = mfield_check_LT(LT, params->min_LT, params->max_LT);
-      int good_euler = mfield_check_LT(LT, params->euler_min_LT, params->euler_max_LT) &&
-                       (magdata_flags & MAGDATA_GLOBFLG_EULER);
-      int flag_LT = !good_MF && !good_euler;
+      int good_align = mfield_check_LT(LT, params->align_min_LT, params->align_max_LT) &&
+                       (magdata_flags & MAGDATA_GLOBFLG_ALIGN);
+      int flag_LT = !good_MF && !good_align;
 
       if (!flag_LT)
         continue;

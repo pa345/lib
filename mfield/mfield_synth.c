@@ -18,9 +18,9 @@
 
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_msynth.h>
-#include <mainlib/ml_euler.h>
 
 #include "mfield.h"
+#include "mfield_align.h"
 #include "mfield_fluxcal.h"
 #include "mfield_synth.h"
 
@@ -63,6 +63,9 @@ mfield_synth_replace(mfield_workspace *w)
   const double beta = -5.2 * M_PI / 180.0 * 1.0;
   const double gamma = 3.4 * M_PI / 180.0 * 1.0;
 
+  const double align_data[] = { alpha, beta, gamma };
+  gsl_vector_const_view align_params = gsl_vector_const_view_array(align_data, ALIGN_P);
+
   /* fluxgate calibration parameters */
   const double cal_data[] = { 1.01, 0.98, 1.03, 40.0, -11.2, 13.2, 0.01 * M_PI / 180.0, -0.02 * M_PI / 180.0, 0.03 * M_PI / 180.0 };
   gsl_vector_const_view cal_params = gsl_vector_const_view_array(cal_data, FLUXCAL_P);
@@ -79,7 +82,7 @@ mfield_synth_replace(mfield_workspace *w)
   for (i = 0; i < w->nsat; ++i)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
-      int fit_euler = params->fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
+      int fit_align = params->fit_align && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
       int fit_fluxcal = params->fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
 
 #pragma omp parallel for private(j)
@@ -144,12 +147,12 @@ mfield_synth_replace(mfield_workspace *w)
           mptr->Bz_model[j] = 0.0;
 
           /* rotate NEC vector to VFM frame */
-          if (fit_euler)
+          if (fit_align)
             {
               double *q = &(mptr->q[4*j]);
               double B_vfm[3];
 
-              euler_nec2vfm(mptr->euler_flags, alpha, beta, gamma, q, B, B_vfm);
+              mfield_align_nec2vfm(&align_params.vector, q, B, B_vfm, w->att_workspace_p[i], w);
 
               if (fit_fluxcal)
                 mfield_fluxcal_invapply_datum(&cal_params.vector, B_vfm, B_vfm);
@@ -185,12 +188,12 @@ mfield_synth_replace(mfield_workspace *w)
               mptr->Bz_model_ns[j] = 0.0;
 
               /* rotate NEC vector to VFM frame */
-              if (fit_euler)
+              if (fit_align)
                 {
                   double *q = &(mptr->q_ns[4*j]);
                   double B_vfm[3];
 
-                  euler_nec2vfm(mptr->euler_flags, alpha, beta, gamma, q, B, B_vfm);
+                  mfield_align_nec2vfm(&align_params.vector, q, B, B_vfm, w->att_workspace_p[i], w);
 
                   mptr->Bx_vfm_ns[j] = B_vfm[0];
                   mptr->By_vfm_ns[j] = B_vfm[1];

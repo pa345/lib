@@ -106,16 +106,10 @@ copy_data_SV(const size_t magdata_flags, const obsdata_station *station)
 {
   size_t ndata = station->n_sv_tot;
   magdata *mdata;
-  magdata_params params;
-  size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
   size_t i;
 
   if (ndata == 0)
     return NULL;
-
-  params.model_main = 0;
-  params.model_crust = 0;
-  params.model_ext = 0;
 
   mdata = magdata_alloc(ndata, R_EARTH_KM);
   if (!mdata)
@@ -123,7 +117,7 @@ copy_data_SV(const size_t magdata_flags, const obsdata_station *station)
 
   mdata->global_flags = magdata_flags;
 
-  magdata_copy_station_SV(&params, station, mdata, npts);
+  magdata_copy_station_SV(station, mdata);
 
   /*
    * the calculation of daily means and SV values already performed extensive data
@@ -142,7 +136,6 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
   size_t ndata = station->n_mean_tot;
   magdata *mdata;
   magdata_params params;
-  size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
   size_t i;
 
   if (ndata == 0)
@@ -164,7 +157,7 @@ copy_data(const size_t magdata_flags, const obsdata_station *station, preprocess
   mdata->global_flags = magdata_flags;
 
   /* copy daily means into magdata struct */
-  magdata_copy_station_means(&params, station, mdata, npts);
+  magdata_copy_station_means(&params, station, mdata);
 
   /*
    * the calculation of daily means and SV values already performed extensive data

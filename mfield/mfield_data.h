@@ -55,6 +55,9 @@ typedef struct
   size_t nsources;   /* number of data sources (satellites) */
   magdata **mdata;
 
+  double **t_scale;  /* scaled timestamps */
+  double **t_year;   /* decimal year timestamps */
+
   double *t0;        /* array of size nsources for first time of each satellite (CDF_EPOCH) */
   double *t1;        /* array of size nsources for last time of each satellite (CDF_EPOCH) */
 
@@ -79,9 +82,11 @@ int mfield_data_copy(const size_t sat_idx, satdata_mag *data,
                      const size_t flags, mfield_data_workspace *w);
 size_t mfield_data_filter_time(const double tmin, const double tmax,
                                mfield_data_workspace *w);
-size_t mfield_data_filter_euler(mfield_data_workspace *w);
+size_t mfield_data_filter_align(mfield_data_workspace *w);
 size_t mfield_data_filter_comp(mfield_data_workspace *w);
 size_t mfield_data_filter_observatory(mfield_data_workspace *w);
+int mfield_data_compact(mfield_data_workspace * w);
+int mfield_data_init_align(mfield_data_workspace *w);
 int mfield_data_init(mfield_data_workspace *w);
 double mfield_data_epoch(mfield_data_workspace *w);
 int mfield_data_map(const char *dir_prefix, const mfield_data_workspace *w);

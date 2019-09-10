@@ -13,11 +13,10 @@
 #include <gsl/gsl_rstat.h>
 
 #include <mainlib/ml_common.h>
-#include <mainlib/ml_euler.h>
 #include <mainlib/ml_magdata.h>
 
 #include "mfield.h"
-#include "mfield_euler.h"
+#include "mfield_align.h"
 #include "mfield_fluxcal.h"
 #include "mfield_residual.h"
 
@@ -183,19 +182,20 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
                                 size_t * index, magdata * mptr, mfield_workspace * w)
 {
   int s = 0;
+  const double *t_year = w->data_workspace_p->t_year[nsource];
   const char *fmtstr = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f %.4f\n";
   const char *fmtstr_F = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f\n";
   const char *fmtstr_grad = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f %.4f %.4f %.4f %.4f\n";
   const double qdlat_cutoff = w->params.qdlat_fit_cutoff; /* cutoff latitude for high/low statistics */
   const size_t n = 12; /* number of components to write to disk */
 
-  /* Euler angle variables */
-  const int fit_euler = w->params.fit_euler && (mptr->global_flags & MAGDATA_GLOBFLG_EULER);
-  const size_t euler_ncontrol = fit_euler ? gsl_bspline2_ncontrol(w->euler_spline_workspace_p[CIDX2(nsource, w->nsat, 0, w->max_threads)]) : 0;
-  const size_t euler_idx = w->euler_offset + w->offset_euler[nsource];
-  gsl_bspline2_workspace *euler_spline_p = fit_euler ? w->euler_spline_workspace_p[CIDX2(nsource, w->nsat, 0, w->max_threads)] : NULL;
-  double euler_data[EULER_P];
-  gsl_vector_view euler_params = gsl_vector_view_array(euler_data, EULER_P);
+  /* alignment variables */
+  const int fit_align = w->params.fit_align && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
+  const size_t align_ncontrol = fit_align ? gsl_bspline2_ncontrol(w->align_spline_workspace_p[CIDX2(nsource, w->nsat, 0, w->max_threads)]) : 0;
+  const size_t align_idx = w->align_offset + w->offset_align[nsource];
+  gsl_bspline2_workspace *align_spline_p = fit_align ? w->align_spline_workspace_p[CIDX2(nsource, w->nsat, 0, w->max_threads)] : NULL;
+  double align_data[ALIGN_P];
+  gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
 
   /* Fluxgate calibration variables */
   const int fit_fluxcal = w->params.fit_fluxcal && (mptr->global_flags & MAGDATA_GLOBFLG_FLUXCAL);
@@ -422,17 +422,17 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
 
           B_nec[3] = mptr->F[j];
 
-          if (fit_euler)
+          if (fit_align)
             {
               double *q = &(mptr->q[4*j]);
               /* Euler angle control points for this dataset */
-              gsl_vector_const_view v1 = gsl_vector_const_subvector(w->c, euler_idx, EULER_P * euler_ncontrol);
-              gsl_matrix_const_view euler_control_pts = gsl_matrix_const_view_vector(&v1.vector, EULER_P, euler_ncontrol);
+              gsl_vector_const_view v1 = gsl_vector_const_subvector(w->c, align_idx, ALIGN_P * align_ncontrol);
+              gsl_matrix_const_view align_control_pts = gsl_matrix_const_view_vector(&v1.vector, ALIGN_P, align_ncontrol);
 
               double B_vfm[3];
 
               /* compute Euler angles for this timestamp */
-              gsl_bspline2_vector_eval(mptr->t[j], &euler_control_pts.matrix, &euler_params.vector, euler_spline_p);
+              gsl_bspline2_vector_eval(t_year[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
 
               B_vfm[0] = mptr->Bx_vfm[j];
               B_vfm[1] = mptr->By_vfm[j];
@@ -445,7 +445,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
                   /* compute fluxgate calibration parameters for this timestamp */
-                  gsl_bspline2_vector_eval(mptr->t[j], &fluxcal_control_pts.matrix, &fluxcal_params.vector, fluxcal_spline_p);
+                  gsl_bspline2_vector_eval(t_year[j], &fluxcal_control_pts.matrix, &fluxcal_params.vector, fluxcal_spline_p);
 
                   /* apply calibration to B_vfm */
                   mfield_fluxcal_apply_datum(&fluxcal_params.vector, B_vfm, B_vfm);
@@ -454,7 +454,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
                 }
 
               /* rotate to NEC with computed Euler angles */
-              euler_vfm2nec(mptr->euler_flags, euler_data[0], euler_data[1], euler_data[2], q, B_vfm, B_nec);
+              mfield_align_vfm2nec(&align_params.vector, q, B_vfm, B_nec, w->att_workspace_p[nsource], w);
             }
           else
             {

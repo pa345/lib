@@ -579,7 +579,7 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
 
   /* print data map */
   fprintf(stderr, "main_proc: writing data map to %s...", datamap_file);
-  magdata_map(datamap_file, mdata);
+  magdata_map(datamap_file, MAGDATA_FLG_FIT_MF, mdata);
   fprintf(stderr, "done\n");
 
   /* construct least squares matrix (common for all timestamps) */
