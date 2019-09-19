@@ -451,9 +451,9 @@ mfield_data_init_align(mfield_data_workspace *w)
       magdata *mptr = mfield_data_ptr(i, w);
 
       if (mptr->global_flags & MAGDATA_GLOBFLG_SWARM)
-        mptr->align_flags = ATT_TYPE_EULER_ZYX;
+        mptr->align_flags = ATT_TYPE_EULER_XYZ;
       else if (mptr->global_flags & MAGDATA_GLOBFLG_CHAMP)
-        mptr->align_flags = ATT_TYPE_EULER_ZYX;
+        mptr->align_flags = ATT_TYPE_EULER_XYZ;
       else if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
         mptr->align_flags = ATT_TYPE_MRP;
       else if (mptr->global_flags & MAGDATA_GLOBFLG_CRYOSAT)

@@ -13,8 +13,9 @@ vbuffer = 0.8
 load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
-satnum = '3'
-iternum = '5'
+filedir = '../output_G'
+satnum = '0'
+iternum = '15'
 set out 'res'.satnum.'_iter'.iternum.'.png'
 
 unset key
@@ -30,19 +31,19 @@ set ytics 25
 
 set multiplot layout nrow,ncol
 
-file = '../output_C/res'.satnum.'_X_iter'.iternum.'.dat'
+file = filedir.'/res'.satnum.'_X_iter'.iternum.'.dat'
 set title "X residuals"
 plot file us 5:13 every nskip w p
 
 load 'incrow.cfg'
 
-file = '../output_C/res'.satnum.'_Y_iter'.iternum.'.dat'
+file = filedir.'/res'.satnum.'_Y_iter'.iternum.'.dat'
 set title "Y residuals"
 plot file us 5:13 every nskip w p
 
 load 'incrow.cfg'
 
-file = '../output_C/res'.satnum.'_Z_iter'.iternum.'.dat'
+file = filedir.'/res'.satnum.'_Z_iter'.iternum.'.dat'
 set title "Z residuals"
 plot file us 5:13 every nskip w p
 
@@ -50,7 +51,7 @@ load 'incrow.cfg'
 
 set xlabel "QD latitude (degrees)"
 
-file = '../output_C/res'.satnum.'_F_iter'.iternum.'.dat'
+file = filedir.'/res'.satnum.'_F_iter'.iternum.'.dat'
 set title "F residuals"
 plot file us 5:12 every nskip w p
 

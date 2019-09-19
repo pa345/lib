@@ -44,7 +44,7 @@ mfield_nonlinear_alloc_multilarge(const gsl_multilarge_nlinear_trs * trs,
     gsl_multilarge_nlinear_free(w->nlinear_workspace_p);
 
   fdf_params.trs = trs;
-#if 0 /*XXX*/
+#if 1 /*XXX*/
   fdf_params.scale = gsl_multilarge_nlinear_scale_levenberg;
 #else
   fdf_params.scale = gsl_multilarge_nlinear_scale_more;
@@ -90,9 +90,9 @@ mfield_calc_nonlinear_multilarge(const gsl_vector *c, mfield_workspace *w)
    * For the third iteration and onward, they are usually minor refinements, so we can use less inner iterations.
    */
   if (w->niter <= 1)
-    max_iter = 30;
+    max_iter = 50;
   else
-    max_iter = 5;
+    max_iter = 10;
 
   n = w->nres;
   if (params->regularize == 1 && !params->synth_data)

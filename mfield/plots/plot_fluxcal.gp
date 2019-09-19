@@ -14,7 +14,7 @@ vbuffer = 0.8
 load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
-satnum = '3'
+satnum = '4'
 iternum = '15'
 outfile = 'fluxcal.'.satnum.'_iter'.iternum.'.png'
 set out outfile
@@ -26,9 +26,13 @@ unset xlabel
 load 'grid.cfg'
 load 'lines2.cfg'
 
+#set xrange [2011:2018.5]
+
 set multiplot layout nrow,ncol
 
-file = '../output/fluxcal.'.satnum.'.iter'.iternum.'.txt'
+file = '../output_G/fluxcal.'.satnum.'.iter'.iternum.'.txt'
+
+set yrange [0.998:1.0035]
 set title "Scale factors"
 plot file us 2:3 w lp ti "S_x", \
      file us 2:4 w lp ti "S_y", \
@@ -36,6 +40,7 @@ plot file us 2:3 w lp ti "S_x", \
 
 load 'incrow.cfg'
 
+set yrange [-10:15]
 set ylabel "nT"
 set title "Offsets"
 plot file us 2:6 w lp ti "O_x", \
@@ -44,6 +49,7 @@ plot file us 2:6 w lp ti "O_x", \
 
 load 'incrow.cfg'
 
+set yrange [-0.1:0.2]
 set xlabel "time"
 set ylabel "degrees"
 set title "Non-orthogonality angles"

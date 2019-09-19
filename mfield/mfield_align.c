@@ -31,18 +31,22 @@ mfield_align_print(const char *filename, const size_t sat_idx,
   gsl_bspline2_workspace *spline_p = w->align_spline_workspace_p[CIDX2(sat_idx, w->nsat, 0, w->max_threads)];
   const size_t ncontrol = gsl_bspline2_ncontrol(spline_p);
   const size_t align_idx = w->align_offset + w->offset_align[sat_idx];
-  const double dt = 5.0 / 365.25; /* 5 days in years */
 
   double align_data[ALIGN_P];
   gsl_vector_view align_params = gsl_vector_view_array(align_data, ALIGN_P);
 
-  /* Euler angle control points for this dataset */
+  /* alignment control points for this dataset */
   gsl_vector_const_view tmp = gsl_vector_const_subvector(w->c, align_idx, ALIGN_P * ncontrol);
   gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, ALIGN_P, ncontrol);
 
-  double t0 = t_year[0];
-  double t1 = t_year[mptr->n - 1];
+  const double dt = 5.0 * 8.64e7; /* 5 days in ms */
+  const double t0 = w->data_workspace_p->t0[sat_idx];
+  const double t1 = w->data_workspace_p->t1[sat_idx];
   double t;
+
+  const att_type * type_ptr = w->att_workspace_p[sat_idx]->type;
+  int euler = 1;
+  char buf[2048];
   size_t i;
 
   fp = fopen(filename, "w");
@@ -53,24 +57,48 @@ mfield_align_print(const char *filename, const size_t sat_idx,
       return -1;
     }
 
+  if (type_ptr == att_mrp)
+    {
+      euler = 0;
+      sprintf(buf, "dimensionless");
+    }
+  else
+    {
+      sprintf(buf, "degrees");
+    }
+
   i = 1;
-  fprintf(fp, "# Euler angles for satellite %zu\n", sat_idx);
+  fprintf(fp, "# alignment parameters for satellite %zu [%s]\n", sat_idx, att_name(w->att_workspace_p[sat_idx]));
   fprintf(fp, "# Field %zu: timestamp (CDF_EPOCH)\n", i++);
   fprintf(fp, "# Field %zu: time (decimal years)\n", i++);
-  fprintf(fp, "# Field %zu: alpha (degrees)\n", i++);
-  fprintf(fp, "# Field %zu: beta (degrees)\n", i++);
-  fprintf(fp, "# Field %zu: gamma (degrees)\n", i++);
+  fprintf(fp, "# Field %zu: p1 (%s)\n", i++, buf);
+  fprintf(fp, "# Field %zu: p2 (%s)\n", i++, buf);
+  fprintf(fp, "# Field %zu: p3 (%s)\n", i++, buf);
 
   for (t = t0; t < t1; t += dt)
     {
-      gsl_bspline2_vector_eval(t, &control_pts.matrix, &align_params.vector, spline_p);
+      double t_year = epoch2year(t);
+      double p1, p2, p3;
+
+      gsl_bspline2_vector_eval(t_year, &control_pts.matrix, &align_params.vector, spline_p);
+
+      p1 = align_data[0];
+      p2 = align_data[1];
+      p3 = align_data[2];
+
+      if (euler)
+        {
+          p1 = wrap180(p1 * 180.0 / M_PI);
+          p2 = wrap180(p2 * 180.0 / M_PI);
+          p3 = wrap180(p3 * 180.0 / M_PI);
+        }
 
       fprintf(fp, "%f %f %.12e %.12e %.12e\n",
               t,
-              satdata_epoch2year(t),
-              wrap180(align_data[0] * 180.0 / M_PI),
-              wrap180(align_data[1] * 180.0 / M_PI),
-              wrap180(align_data[2] * 180.0 / M_PI));
+              t_year,
+              p1,
+              p2,
+              p3);
     }
 
   fclose(fp);

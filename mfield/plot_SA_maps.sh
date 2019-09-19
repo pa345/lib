@@ -8,13 +8,13 @@ plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 #outfile="F17.mp4"
 #title="DMSP F-17"
 
-#coef_file="/data/palken/repo/msynth/src/cof/CHAOS-6-x8_core.shc"
-#coefdir="maps_CHAOS"
+coef_file="/data/palken/repo/msynth/src/cof/CHAOS-6-x8_core.shc"
+coefdir="maps_CHAOS"
 
-coef_file="Model_F.shc"
-coefdir="maps_F"
+#coef_file="Model_G.shc"
+#coefdir="maps_G"
 
-title="Model F"
+title="CHAOS-6-x8"
 
 plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
 

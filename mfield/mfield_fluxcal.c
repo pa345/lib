@@ -37,7 +37,6 @@ mfield_fluxcal_print(const char *filename, const size_t sat_idx,
   gsl_bspline2_workspace *spline_p = w->fluxcal_spline_workspace_p[CIDX2(sat_idx, w->nsat, 0, w->max_threads)];
   const size_t ncontrol = gsl_bspline2_ncontrol(spline_p);
   const size_t fluxcal_idx = w->fluxcal_offset + w->offset_fluxcal[sat_idx];
-  const double dt = 5.0 * 86400000; /* 5 days in ms */
 
   double cal_data[FLUXCAL_P];
   gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
@@ -46,8 +45,9 @@ mfield_fluxcal_print(const char *filename, const size_t sat_idx,
   gsl_vector_const_view tmp = gsl_vector_const_subvector(w->c, fluxcal_idx, FLUXCAL_P * ncontrol);
   gsl_matrix_const_view control_pts = gsl_matrix_const_view_vector(&tmp.vector, FLUXCAL_P, ncontrol);
 
-  double t0 = w->data_workspace_p->t0[sat_idx];
-  double t1 = w->data_workspace_p->t1[sat_idx];
+  const double dt = 5.0 * 8.64e7; /* 5 days in ms */
+  const double t0 = w->data_workspace_p->t0[sat_idx];
+  const double t1 = w->data_workspace_p->t1[sat_idx];
   double t;
   size_t i;
 
@@ -75,11 +75,13 @@ mfield_fluxcal_print(const char *filename, const size_t sat_idx,
 
   for (t = t0; t < t1; t += dt)
     {
-      gsl_bspline2_vector_eval(t, &control_pts.matrix, &cal_params.vector, spline_p);
+      double t_year = epoch2year(t);
+
+      gsl_bspline2_vector_eval(t_year, &control_pts.matrix, &cal_params.vector, spline_p);
 
       fprintf(fp, "%f %f %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n",
               t,
-              epoch2year(t),
+              t_year,
               cal_data[FLUXCAL_IDX_SX],
               cal_data[FLUXCAL_IDX_SY],
               cal_data[FLUXCAL_IDX_SZ],
@@ -132,7 +134,9 @@ mfield_fluxcal_apply_datum(const gsl_vector *m, const double E[3], double B[4])
   U[2] = gsl_vector_get(m, FLUXCAL_IDX_U3);
 
   /* construct P^{-1} */
-  fluxcal_Pinv(U, &Pinv.matrix);
+  s = fluxcal_Pinv(U, &Pinv.matrix);
+  if (s)
+    return s;
 
   /* compute B = P^{-1} S (E - O) */
   s = fluxcal_apply_datum_Pinv(&Pinv.matrix, m, E, B);
@@ -249,6 +253,8 @@ P^{-1} = [                   1                                              0   
 where:
 
 w = sqrt(1 - sin(u2)^2 - sin(u3)^2)
+
+Return: 0 on success, -1 if angles u cause a singularity in the P matrix
 */
 
 static int
@@ -258,7 +264,13 @@ fluxcal_Pinv(const double u[3], gsl_matrix * Pinv)
   const double c1 = cos(u[0]);
   const double s2 = sin(u[1]);
   const double s3 = sin(u[2]);
-  const double w = sqrt(1.0 - s2*s2 - s3*s3);
+  const double sterm = s2*s2 + s3*s3;
+  double w;
+
+  if (sterm > 1.0)
+    return -1; /* invalid (u2,u3) parameters */
+
+  w = sqrt(1.0 - sterm);
 
   gsl_matrix_set(Pinv, 0, 0, 1.0);
   gsl_matrix_set(Pinv, 0, 1, 0.0);

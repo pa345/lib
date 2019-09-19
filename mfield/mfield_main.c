@@ -1086,14 +1086,8 @@ main(int argc, char *argv[])
 
                 gsl_bspline2_vector_eval(0.5*(t0 + t1), &control_pts.matrix, &align_params.vector, align_spline_p);
 
-                fprintf(stderr, "main: satellite %zu: p1 = %f p2 = %f p3 = %f [deg]\n",
-                        n,
-                        wrap180(align_data[0] * 180.0 / M_PI),
-                        wrap180(align_data[1] * 180.0 / M_PI),
-                        wrap180(align_data[2] * 180.0 / M_PI));
-
                 sprintf(filename, "align.%zu", n);
-                fprintf(stderr, "main: satellite %zu: printing Euler angles to %s...", n, filename);
+                fprintf(stderr, "main: satellite %zu: printing alignment parameters to %s...", n, filename);
                 mfield_align_print(filename, n, mfield_workspace_p);
                 fprintf(stderr, "done\n");
               }

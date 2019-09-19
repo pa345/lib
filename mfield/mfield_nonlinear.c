@@ -423,7 +423,11 @@ mfield_init_nonlinear(mfield_workspace *w)
 #endif
 
   /* allocate sparse Jacobian matrix for Euler angles, fluxgate calibration and external field */
-  w->J2 = gsl_spmatrix_alloc(nres, GSL_MAX(w->p_sparse, 1));
+  {
+    const double density = 0.01;
+    const size_t nzmax = (size_t) floor(nres * GSL_MAX(w->p_sparse, 1) * density);
+    w->J2 = gsl_spmatrix_alloc_nzmax(nres, GSL_MAX(w->p_sparse, 1), nzmax, GSL_SPMATRIX_COO);
+  }
   
   w->wts_spatial = gsl_vector_alloc(nres);
   w->wts_robust = gsl_vector_alloc(nres);
@@ -459,7 +463,7 @@ mfield_init_nonlinear(mfield_workspace *w)
 
         /* down-weight DMSP data relative to CHAMP/Swarm; this should be a cfg file parameter */
         if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
-          global_weight = 0.01;
+          global_weight = 0.005;
         else if (mptr->global_flags & MAGDATA_GLOBFLG_CRYOSAT)
           global_weight = 0.03;
         else if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))

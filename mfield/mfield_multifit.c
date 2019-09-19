@@ -46,7 +46,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
   size_t i, j;
   struct timeval tv0, tv1;
 
-  mfield_debug("mfield_calc_f: entering function...\n");
+  mfield_debug("mfield_calc_f: entering function (||x|| = %g)...\n", gsl_blas_dnrm2(x));
   gettimeofday(&tv0, NULL);
 
   gsl_vector_set_zero(f);
@@ -87,6 +87,12 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           /* compute vector model for this residual */
           mfield_nonlinear_model(0, x, mptr, i, j, thread_id, B_model, w);
 
+          if (!gsl_finite(B_model[0]) || !gsl_finite(B_model[1]) || !gsl_finite(B_model[2]))
+            {
+              fprintf(stderr, "HERE\n");
+              exit(1);
+            }
+
           /* compute vector SV model for this residual */
           if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
             {
@@ -126,6 +132,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 
               if (fit_fluxcal)
                 {
+                  int status;
                   double cal_data[FLUXCAL_P];
                   gsl_vector_view cal_params = gsl_vector_view_array(cal_data, FLUXCAL_P);
 
@@ -134,7 +141,15 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
 
                   gsl_bspline2_vector_eval(t_year[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
-                  mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
+
+                  status = mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
+                  if (status)
+                    {
+                      /* XXX non-orthogonality angles caused a singularity in the P^{-1} matrix */
+                      B_vfm[0] = mptr->Bx_vfm[j];
+                      B_vfm[1] = mptr->By_vfm[j];
+                      B_vfm[2] = mptr->Bz_vfm[j];
+                    }
                 }
 
               /* rotate VFM vector to NEC, B_obs = R_q R_3(alpha) B_VFM(c) */
@@ -658,6 +673,8 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
 
               if (fit_fluxcal)
                 {
+                  int status;
+
                   /* fluxgate calibration control points for this dataset */
                   gsl_vector_const_view v2 = gsl_vector_const_subvector(&y.vector, fluxcal_idx, FLUXCAL_P * fluxcal_ncontrol);
                   gsl_matrix_const_view fluxcal_control_pts = gsl_matrix_const_view_vector(&v2.vector, FLUXCAL_P, fluxcal_ncontrol);
@@ -672,7 +689,14 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                                               w->att_workspace_p[i], w);
 
                   /* compute B_vfm := P^{-1} S (B_vfm - O) */
-                  mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
+                  status = mfield_fluxcal_apply_datum(&cal_params.vector, B_vfm, B_vfm);
+                  if (status)
+                    {
+                      /* XXX non-orthogonality angles caused a singularity in the P^{-1} matrix */
+                      B_vfm[0] = mptr->Bx_vfm[j];
+                      B_vfm[1] = mptr->By_vfm[j];
+                      B_vfm[2] = mptr->Bz_vfm[j];
+                    }
 
                   /* evaluate non-zero basis splines for time t */
                   gsl_bspline2_eval_basis_nonzero(t_year[j], N_fluxcal, &istart_fluxcal, fluxcal_spline_p);
@@ -849,6 +873,11 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
   mfield_debug("mfield_calc_J2: leaving function (%g seconds, nnz = %zu [%.1f%%])\n",
                time_diff(tv0, tv1), gsl_spmatrix_nnz(J),
                (double) gsl_spmatrix_nnz(J) / (double) (J->size1 * J->size2) * 100.0);
+
+#if 0
+  printsp_octave(J, "J2");
+  exit(1);
+#endif
 
   return s;
 }
