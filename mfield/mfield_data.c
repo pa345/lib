@@ -212,8 +212,45 @@ mfield_data_filter_align(mfield_data_workspace *w)
 
       for (j = 0; j < mptr->n; ++j)
         {
-          if ((mptr->flags[j] & MAGDATA_FLG_FIT_EULER) &&
+          if ((mptr->flags[j] & MAGDATA_FLG_FIT_ALIGN) &&
               !(mptr->flags[j] & MAGDATA_FLG_FIT_MF))
+            {
+              mptr->flags[j] |= MAGDATA_FLG_DISCARD;
+              ++cnt;
+            }
+        }
+    }
+
+  return cnt;
+}
+
+/*
+mfield_data_filter_fluxcal()
+  When fitting fluxgate calibration parameters, scalar field data
+requires also a VFM vector, so flag any data which has a scalar
+measurement but not a vector
+
+Inputs: w - workspace
+
+Return: number of data flagged
+
+Notes:
+1) This function should only be called if fit_align and fit_fluxcal are true
+*/
+
+size_t
+mfield_data_filter_fluxcal(mfield_data_workspace *w)
+{
+  size_t cnt = 0;
+  size_t i, j;
+
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = mfield_data_ptr(i, w);
+
+      for (j = 0; j < mptr->n; ++j)
+        {
+          if (MAGDATA_ExistScalar(mptr->flags[j]) && !MAGDATA_ExistVector(mptr->flags[j]))
             {
               mptr->flags[j] |= MAGDATA_FLG_DISCARD;
               ++cnt;

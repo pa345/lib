@@ -1071,9 +1071,6 @@ mfield_calc_df3(CBLAS_TRANSPOSE_t TransJ, const gsl_vector *x, const gsl_vector 
           gsl_vector_view vy_grad = gsl_matrix_row(w->omp_dY_grad, thread_id);
           gsl_vector_view vz_grad = gsl_matrix_row(w->omp_dZ_grad, thread_id);
 
-          if (MAGDATA_Discarded(mptr->flags[j]))
-            continue;
-
           if (MAGDATA_FitMF(mptr->flags[j]))
             {
               /* compute internal Green's functions for this point */

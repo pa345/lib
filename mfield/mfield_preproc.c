@@ -390,7 +390,7 @@ copy_data(const size_t magdata_flags, const satdata_mag *data, const track_works
             ++(nmodel[MFIELD_IDX_DF_EW]);
         }
 
-      if ((fitting_flags & MAGDATA_FLG_FIT_EULER) &&
+      if ((fitting_flags & MAGDATA_FLG_FIT_ALIGN) &&
           MAGDATA_ExistVector(mdata->flags[i]))
         ++(nmodel[MFIELD_IDX_B_EULER]);
 
@@ -553,7 +553,7 @@ within [params->min_LT,params->max_LT], flag is set to MAGDATA_FLG_FIT_MF
 is computed and if the point is in darkness, MAGDATA_FLG_FIT_MF is set
 
 3) If we are fitting Euler angles to this satellite, and the data
-point satisfies the criteria, MAGDATA_FLG_FIT_EULER is set
+point satisfies the criteria, MAGDATA_FLG_FIT_ALIGN is set
 */
 
 static size_t
@@ -573,7 +573,7 @@ model_flags(const size_t magdata_flags, const double t,
       (magdata_flags & MAGDATA_GLOBFLG_ALIGN) &&
       (fabs(qdlat) <= MFIELD_EULER_QDLAT))
     {
-      flags |= MAGDATA_FLG_FIT_EULER;
+      flags |= MAGDATA_FLG_FIT_ALIGN;
     }
 
   /* check if we should fit main field model to this data point */

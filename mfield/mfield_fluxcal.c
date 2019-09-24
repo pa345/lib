@@ -311,7 +311,13 @@ fluxcal_Pinv_deriv(const double u[3], gsl_matrix * Pinv_1, gsl_matrix * Pinv_2, 
   const double c2 = cos(u[1]);
   const double s3 = sin(u[2]);
   const double c3 = cos(u[2]);
-  const double w = sqrt(1.0 - s2*s2 - s3*s3);
+  const double sterm = s2*s2 + s3*s3;
+  double w;
+
+  if (sterm > 1.0)
+    return -1; /* invalid (u2,u3) parameters */
+
+  w = sqrt(1.0 - sterm);
 
   /* d/du_1 P^{-1} */
 
@@ -421,6 +427,7 @@ Inputs: m   - calibration parameters
 int
 mfield_fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac)
 {
+  int status;
   double S[3], O[3], U[3];
   double Pinv_data[9], Pinv_1_data[9], Pinv_2_data[9], Pinv_3_data[9];
   gsl_matrix_view Pinv = gsl_matrix_view_array(Pinv_data, 3, 3);
@@ -443,7 +450,9 @@ mfield_fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac)
   U[2] = gsl_vector_get(m, FLUXCAL_IDX_U3);
 
   /* construct P^{-1} */
-  fluxcal_Pinv(U, &Pinv.matrix);
+  status = fluxcal_Pinv(U, &Pinv.matrix);
+  if (status)
+    return status;
 
   for (j = 0; j < 3; ++j)
     {
@@ -462,7 +471,9 @@ mfield_fluxcal_jac(const gsl_vector *m, const double E[3], gsl_matrix *jac)
     }
 
   /* compute d/du_j P^{-1} matrices */
-  fluxcal_Pinv_deriv(U, &Pinv_1.matrix, &Pinv_2.matrix, &Pinv_3.matrix);
+  status = fluxcal_Pinv_deriv(U, &Pinv_1.matrix, &Pinv_2.matrix, &Pinv_3.matrix);
+  if (status)
+    return status;
 
   /* compute tmp_j = d/dU_j P^{-1} * S * (E - O) */
   fluxcal_apply_datum_Pinv(&Pinv_1.matrix, m, E, tmp1);

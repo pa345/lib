@@ -818,6 +818,13 @@ main(int argc, char *argv[])
         fprintf(stderr, "done\n");
       }
 
+    if (mfield_params.fit_align && mfield_params.fit_fluxcal)
+      {
+        fprintf(stderr, "main: flagging fluxcal-incompatible data...");
+        nflag = mfield_data_filter_fluxcal(mfield_data_p);
+        fprintf(stderr, "done (%zu data flagged)\n", nflag);
+      }
+
     fprintf(stderr, "main: flagging non-fitted components...");
     nflag = mfield_data_filter_comp(mfield_data_p);
     fprintf(stderr, "done (%zu data flagged)\n", nflag);

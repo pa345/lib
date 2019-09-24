@@ -83,6 +83,7 @@ int mfield_data_copy(const size_t sat_idx, satdata_mag *data,
 size_t mfield_data_filter_time(const double tmin, const double tmax,
                                mfield_data_workspace *w);
 size_t mfield_data_filter_align(mfield_data_workspace *w);
+size_t mfield_data_filter_fluxcal(mfield_data_workspace *w);
 size_t mfield_data_filter_comp(mfield_data_workspace *w);
 size_t mfield_data_filter_observatory(mfield_data_workspace *w);
 int mfield_data_compact(mfield_data_workspace * w);

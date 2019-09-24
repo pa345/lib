@@ -682,7 +682,12 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
                   gsl_bspline2_vector_eval(t_year[j], &fluxcal_control_pts.matrix, &cal_params.vector, fluxcal_spline_p);
 
                   /* compute jac_fluxcal := d/dm B_vfm(m) */
-                  mfield_fluxcal_jac(&cal_params.vector, B_vfm, &jac_fluxcal.matrix);
+                  status = mfield_fluxcal_jac(&cal_params.vector, B_vfm, &jac_fluxcal.matrix);
+                  if (status)
+                    {
+                      /* XXX non-orthogonality angles caused a singularity in the P^{-1} matrix */
+                      gsl_matrix_set_zero(&jac_fluxcal.matrix);
+                    }
 
                   /* apply R_q * R_3(alpha) to d/dm B_vfm(m) vectors */
                   mfield_align_matrix_vfm2nec(&align_params.vector, q, &jac_fluxcal.matrix, &jac_fluxcal_align.matrix,
