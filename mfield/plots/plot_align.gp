@@ -15,9 +15,9 @@ l = 1.3
 load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
-satnum = '3'
-iternum = '5'
-outfile = 'euler.'.satnum.'_iter'.iternum.'.png'
+satnum = '1'
+iternum = '10'
+outfile = 'align.'.satnum.'_iter'.iternum.'.png'
 set out outfile
 
 str = sprintf('Generating %s', outfile)
@@ -27,12 +27,12 @@ unset xlabel
 unset key
 load 'grid.cfg'
 load 'lines2.cfg'
-set xrange [2009:*]
+#set xrange [2009:*]
 mylw = 4
 
 set multiplot layout nrow,ncol
 
-file = '../output/euler.'.satnum.'.iter'.iternum.'.txt'
+file = '../output_IGRF/align.'.satnum.'.iter'.iternum.'.txt'
 
 set ylabel "alpha (degrees)"
 plot file us 2:3 w lp lw mylw lt 3

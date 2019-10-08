@@ -39,6 +39,7 @@
 #include <mainlib/ml_magdata.h>
 
 #include "invert.h"
+#include "invert_residual.h"
 #include "invert_multifit.c"
 
 #define MAX_BUFFER           2048
@@ -232,9 +233,9 @@ print_J_grid(const char * filename, const double t, invert_workspace * w)
   fprintf(fp, "# Radius: %.4f [km]\n", r);
   fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
-  fprintf(fp, "# Field %zu: J_X (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_Y (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_Z (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_r (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_t (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_p (A/m^2)\n", i++);
 
   for (lon = -180.0; lon <= 180.0; lon += 5.0)
     {
@@ -250,9 +251,9 @@ print_J_grid(const char * filename, const double t, invert_workspace * w)
           fprintf(fp, "%f %f %.6e %.6e %.6e\n",
                   lon,
                   lat,
-                  J[0],
-                  J[1],
-                  J[2]);
+                  -J[2],
+                  -J[0],
+                  J[1]);
         }
 
       fprintf(fp, "\n");

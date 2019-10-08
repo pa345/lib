@@ -714,7 +714,7 @@ invert_jacobian_vector(const int thread_id, const double t, const double r, cons
     {
       for (j = 0; j < smode_p->nmodes[i]; ++j)
         {
-          gsl_complex phi_ij[3] = { GSL_COMPLEX_ONE, GSL_COMPLEX_ONE, GSL_COMPLEX_ONE };/*XXX*/
+          gsl_complex phi_ij[3];
 
           invert_smode_get(thread_id, r, theta, phi, i, j, phi_ij, smode_p);
 

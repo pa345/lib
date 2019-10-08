@@ -109,8 +109,13 @@ invert_alloc(const invert_parameters *params)
 
   /* use same number of spatial modes per bin as the temporal modes */
   nsmodes = malloc(w->nfreq * sizeof(size_t));
+#if 0 /*XXX*/
   for (i = 0; i < w->nfreq; ++i)
     nsmodes[i] = w->tmode_workspace_p->nmodes[i];
+#else
+  for (i = 0; i < w->nfreq; ++i)
+    nsmodes[i] = GSL_MIN(w->tmode_workspace_p->nmodes[i], 6);
+#endif
 
   fprintf(stderr, "invert_alloc: reading spatial modes...");
   w->smode_workspace_p = invert_smode_alloc(w->nfreq, nsmodes);

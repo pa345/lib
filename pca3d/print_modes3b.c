@@ -95,6 +95,7 @@ int
 print_modes(const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
 {
   const size_t T = U->size2;
+  const double alt_B = 450.0;
   magfield_eval_workspace * w = magfield_eval_alloc(params);
   double lat, lon;
   size_t t;
@@ -113,6 +114,8 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fp = fopen(buf, "w");
 
       fprintf(fp, "# Frequency: %g [cpd]\n", freq);
+      fprintf(fp, "# Altitude for J: %g [km]\n", r - R_EARTH_KM);
+      fprintf(fp, "# Altitude for B: %g [km]\n", alt_B);
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: Re J_r\n", i++);
@@ -121,6 +124,9 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fprintf(fp, "# Field %zu: Im J_t\n", i++);
       fprintf(fp, "# Field %zu: Re J_p\n", i++);
       fprintf(fp, "# Field %zu: Im J_p\n", i++);
+      fprintf(fp, "# Field %zu: B_r\n", i++);
+      fprintf(fp, "# Field %zu: B_t\n", i++);
+      fprintf(fp, "# Field %zu: B_p\n", i++);
 
       /* prepare magfield_eval workspace for this singular vector */
       fill_magfield(&v.vector, w);
@@ -135,10 +141,11 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
               complex double J[3];
               double B[4];
 
-#if 0
+#if 1
               magfield_eval_J_complex(r, theta, phi, J, w);
+              magfield_eval_B(R_EARTH_KM + alt_B, theta, phi, B, w);
 
-              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
                       lat,
                       creal(J[0]),
@@ -146,7 +153,10 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
                       creal(J[1]),
                       cimag(J[1]),
                       creal(J[2]),
-                      cimag(J[2]));
+                      cimag(J[2]),
+                      B[0],
+                      B[1],
+                      B[2]);
 #else
               magfield_eval_B(r, theta, phi, B, w);
 
