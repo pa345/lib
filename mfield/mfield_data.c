@@ -550,15 +550,7 @@ mfield_data_init(mfield_data_workspace *w)
         }
 
       for (j = 0; j < mptr->n; ++j)
-        {
-          double t;
-
-          if (mptr->flags[j] & MAGDATA_FLG_DISCARD)
-            continue;
-
-          t = satdata_epoch2year(mptr->t[j]) - w->params.epoch;
-          gsl_rstat_add(t, w->rstat_workspace_p);
-        }
+        gsl_rstat_add(mptr->t[j], w->rstat_workspace_p);
     }
 
   w->t_mu = gsl_rstat_mean(w->rstat_workspace_p);

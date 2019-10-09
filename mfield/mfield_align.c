@@ -26,8 +26,6 @@ mfield_align_print(const char *filename, const size_t sat_idx,
                    const mfield_workspace *w)
 {
   FILE *fp;
-  const magdata *mptr = mfield_data_ptr(sat_idx, w->data_workspace_p);
-  const double *t_year = w->data_workspace_p->t_year[sat_idx];
   gsl_bspline2_workspace *spline_p = w->align_spline_workspace_p[CIDX2(sat_idx, w->nsat, 0, w->max_threads)];
   const size_t ncontrol = gsl_bspline2_ncontrol(spline_p);
   const size_t align_idx = w->align_offset + w->offset_align[sat_idx];
@@ -77,10 +75,10 @@ mfield_align_print(const char *filename, const size_t sat_idx,
 
   for (t = t0; t < t1; t += dt)
     {
-      double t_year = epoch2year(t);
+      double ts = (t - w->data_workspace_p->t_mu) / w->data_workspace_p->t_sigma;
       double p1, p2, p3;
 
-      gsl_bspline2_vector_eval(t_year, &control_pts.matrix, &align_params.vector, spline_p);
+      gsl_bspline2_vector_eval(ts, &control_pts.matrix, &align_params.vector, spline_p);
 
       p1 = align_data[0];
       p2 = align_data[1];
@@ -95,7 +93,7 @@ mfield_align_print(const char *filename, const size_t sat_idx,
 
       fprintf(fp, "%f %f %.12e %.12e %.12e\n",
               t,
-              t_year,
+              epoch2year(t),
               p1,
               p2,
               p3);

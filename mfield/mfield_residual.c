@@ -183,6 +183,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
 {
   int s = 0;
   const double *t_year = w->data_workspace_p->t_year[nsource];
+  const double *t_scale = w->data_workspace_p->t_scale[nsource];
   const char *fmtstr = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f %.4f\n";
   const char *fmtstr_F = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f\n";
   const char *fmtstr_grad = "%ld %.8f %.4f %.4f %.4f %.4f %.3e %.3e %.3e %.4f %.4f %.4f %.4f %.4f %.4f %.4f\n";
@@ -432,7 +433,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
               double B_vfm[3];
 
               /* compute Euler angles for this timestamp */
-              gsl_bspline2_vector_eval(t_year[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
+              gsl_bspline2_vector_eval(t_scale[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
 
               B_vfm[0] = mptr->Bx_vfm[j];
               B_vfm[1] = mptr->By_vfm[j];

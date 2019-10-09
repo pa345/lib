@@ -55,6 +55,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
       const double *t_year = w->data_workspace_p->t_year[i];
+      const double *t_scale = w->data_workspace_p->t_scale[i];
 
       /* alignment parameters */
       int fit_align = mparams->fit_align && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
@@ -124,7 +125,7 @@ mfield_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
               double B_vfm[4];
 
               /* compute alignment parameters for this timestamp */
-              gsl_bspline2_vector_eval(t_year[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
+              gsl_bspline2_vector_eval(t_scale[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
 
               B_vfm[0] = mptr->Bx_vfm[j];
               B_vfm[1] = mptr->By_vfm[j];
@@ -612,6 +613,7 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
     {
       magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
       const double *t_year = w->data_workspace_p->t_year[i];
+      const double *t_scale = w->data_workspace_p->t_scale[i];
 
       /* Euler angles */
       int fit_align = w->params.fit_align && (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN);
@@ -661,10 +663,10 @@ mfield_calc_J2(const gsl_vector *x, gsl_spmatrix *J, mfield_workspace *w)
               gsl_matrix_const_view align_control_pts = gsl_matrix_const_view_vector(&v1.vector, ALIGN_P, align_ncontrol);
 
               /* compute Euler angles for this timestamp */
-              gsl_bspline2_vector_eval(t_year[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
+              gsl_bspline2_vector_eval(t_scale[j], &align_control_pts.matrix, &align_params.vector, align_spline_p);
 
               /* evaluate non-zero basis splines for time t */
-              gsl_bspline2_eval_basis_nonzero(t_year[j], N_align, &istart_align, align_spline_p);
+              gsl_bspline2_eval_basis_nonzero(t_scale[j], N_align, &istart_align, align_spline_p);
 
               /* get vector in VFM frame */
               B_vfm[0] = mptr->Bx_vfm[j];

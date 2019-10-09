@@ -402,6 +402,8 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->lambda_2 = fval;
   if (config_lookup_float(&cfg, "lambda_3", &fval))
     mfield_params->lambda_3 = fval;
+  if (config_lookup_float(&cfg, "lambda_a", &fval))
+    mfield_params->lambda_a = fval;
   if (config_lookup_float(&cfg, "lambda_s", &fval))
     mfield_params->lambda_s = fval;
   if (config_lookup_float(&cfg, "lambda_o", &fval))
@@ -497,25 +499,26 @@ print_help(char *argv[])
 {
   fprintf(stderr, "Usage: %s [options] sat1.dat sat2.dat ...\n", argv[0]);
   fprintf(stderr, "Options:\n");
-  fprintf(stderr, "\t --maxit | -n num_iterations     - number of robust iterations\n");
-  fprintf(stderr, "\t --output_file | -o file         - coefficient output file (ASCII)\n");
-  fprintf(stderr, "\t --epoch | -e epoch              - model epoch in decimal years\n");
-  fprintf(stderr, "\t --align | -p period             - alignment parameter bin size in days\n");
-  fprintf(stderr, "\t --print_residuals | -r          - write residuals at each iteration\n");
-  fprintf(stderr, "\t --lcurve_file | -l file         - L-curve data file\n");
-  fprintf(stderr, "\t --tmin | -b min_time            - minimum data period time in decimal years\n");
-  fprintf(stderr, "\t --tmax | -c max_time            - maximum data period time in decimal years\n");
-  fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
-  fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
-  fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
-  fprintf(stderr, "\t --lambda_0 | -J lambda_0        - main field damping parameter\n");
-  fprintf(stderr, "\t --lambda_1 | -K lambda_1        - 1st time derivative of main field damping parameter\n");
-  fprintf(stderr, "\t --lambda_2 | -L lambda_2        - 2nd time derivative of main field damping parameter\n");
-  fprintf(stderr, "\t --lambda_3 | -M lambda_3        - 3rd time derivative of main field damping parameter\n");
-  fprintf(stderr, "\t --lambda_s | -N lambda_s        - scale factor damping parameter\n");
-  fprintf(stderr, "\t --lambda_o | -O lambda_o        - offset factor damping parameter\n");
-  fprintf(stderr, "\t --lambda_u | -P lambda_u        - non-orthogonality factor damping parameter\n");
-} /* print_help() */
+  fprintf(stderr, "\t --maxit | -n num_iterations      - number of robust iterations\n");
+  fprintf(stderr, "\t --output_file | -o file          - coefficient output file (ASCII)\n");
+  fprintf(stderr, "\t --epoch | -e epoch               - model epoch in decimal years\n");
+  fprintf(stderr, "\t --align | -p period              - alignment parameter bin size in days\n");
+  fprintf(stderr, "\t --print_residuals | -r           - write residuals at each iteration\n");
+  fprintf(stderr, "\t --lcurve_file | -l file          - L-curve data file\n");
+  fprintf(stderr, "\t --tmin | -b min_time             - minimum data period time in decimal years\n");
+  fprintf(stderr, "\t --tmax | -c max_time             - maximum data period time in decimal years\n");
+  fprintf(stderr, "\t --print_data | -d                - print data used for MF modeling to output directory\n");
+  fprintf(stderr, "\t --print_map | -m                 - print spatial data map files to output directory\n");
+  fprintf(stderr, "\t --config_file | -C file          - configuration file\n");
+  fprintf(stderr, "\t --lambda_0 | -J lambda_0         - main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_1 | -K lambda_1         - 1st time derivative of main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_2 | -L lambda_2         - 2nd time derivative of main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_3 | -M lambda_3         - 3rd time derivative of main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_s | -N lambda_s         - scale factor damping parameter\n");
+  fprintf(stderr, "\t --lambda_o | -O lambda_o         - offset factor damping parameter\n");
+  fprintf(stderr, "\t --lambda_u | -P lambda_u         - non-orthogonality factor damping parameter\n");
+  fprintf(stderr, "\t --lambda_a | -Q lambda_a         - alignment damping parameter\n");
+}
 
 int
 main(int argc, char *argv[])
@@ -547,6 +550,7 @@ main(int argc, char *argv[])
   double lambda_1 = -1.0;     /* 1st time derivative of MF damping parameter */
   double lambda_2 = -1.0;     /* 2nd time derivative of MF damping parameter */
   double lambda_3 = -1.0;     /* 3rd time derivative of MF damping parameter */
+  double lambda_a = -1.0;     /* alignment damping parameter */
   double lambda_s = -1.0;     /* scale factor damping parameter */
   double lambda_o = -1.0;     /* offset factor damping parameter */
   double lambda_u = -1.0;     /* non-orthogonality factor damping parameter */
@@ -578,13 +582,14 @@ main(int argc, char *argv[])
           { "lambda_1", required_argument, NULL, 'K' },
           { "lambda_2", required_argument, NULL, 'L' },
           { "lambda_3", required_argument, NULL, 'M' },
+          { "lambda_a", required_argument, NULL, 'Q' },
           { "lambda_s", required_argument, NULL, 'N' },
           { "lambda_o", required_argument, NULL, 'O' },
           { "lambda_u", required_argument, NULL, 'P' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:n:o:p:r", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:Q:n:o:p:r", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -604,6 +609,10 @@ main(int argc, char *argv[])
 
           case 'M':
             lambda_3 = atof(optarg);
+            break;
+
+          case 'Q':
+            lambda_a = atof(optarg);
             break;
 
           case 'N':
@@ -698,6 +707,8 @@ main(int argc, char *argv[])
     mfield_params.lambda_2 = lambda_2;
   if (lambda_3 >= 0.0)
     mfield_params.lambda_3 = lambda_3;
+  if (lambda_a >= 0.0)
+    mfield_params.lambda_a = lambda_a;
   if (lambda_s >= 0.0)
     mfield_params.lambda_s = lambda_s;
   if (lambda_o >= 0.0)
@@ -744,6 +755,9 @@ main(int argc, char *argv[])
 
   if (mfield_params.fit_sv && mfield_params.fit_sa)
     fprintf(stderr, "main: SA nmax = %zu\n", mfield_params.nmax_sa);
+
+  if (mfield_params.fit_align)
+    fprintf(stderr, "main: alignment damping           = %g\n", mfield_params.lambda_a);
 
   if (mfield_params.fit_fluxcal)
     {
@@ -1074,12 +1088,12 @@ main(int argc, char *argv[])
         for (n = 0; n < mfield_workspace_p->nsat; ++n)
           {
             const magdata *mptr = mfield_data_ptr(n, mfield_workspace_p->data_workspace_p);
-            const double *t_year = mfield_workspace_p->data_workspace_p->t_year[n];
+            const double *t_scale = mfield_workspace_p->data_workspace_p->t_scale[n];
 
             if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
               {
-                double t0 = t_year[0];
-                double t1 = t_year[mptr->n - 1];
+                double t0 = t_scale[0];
+                double t1 = t_scale[mptr->n - 1];
                 gsl_bspline2_workspace *align_spline_p = mfield_workspace_p->align_spline_workspace_p[CIDX2(n, mfield_workspace_p->nsat, 0, mfield_workspace_p->max_threads)];
                 size_t ncontrol = gsl_bspline2_ncontrol(align_spline_p);
                 size_t align_idx = mfield_workspace_p->align_offset + mfield_workspace_p->offset_align[n];

@@ -1766,6 +1766,93 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
       s += mfield_nonlinear_regularize_core(w->lambda_3, 3, w);
     }
 
+  if (w->p_align > 0)
+    {
+      const size_t nderiv = 2; /* which spline derivative to minimize */
+      size_t n;
+
+      for (n = 0; n < w->nsat; ++n)
+        {
+          const size_t offset = w->align_offset + w->offset_align[n];
+          magdata *mptr = mfield_data_ptr(n, w->data_workspace_p);
+          gsl_bspline2_workspace *align_spline_p = w->align_spline_workspace_p[CIDX2(n, w->nsat, 0, w->max_threads)];
+          size_t ncontrol, order;
+          double t0, t1;
+          gsl_matrix * G_align, *G_align_orig;
+          size_t i, j;
+
+          if (!(mptr->global_flags & MAGDATA_GLOBFLG_ALIGN))
+            continue;
+
+          ncontrol = gsl_bspline2_ncontrol(align_spline_p);
+          order = gsl_bspline2_order(align_spline_p);
+          t0 = gsl_vector_get(align_spline_p->knots, 0);
+          t1 = gsl_vector_get(align_spline_p->knots, align_spline_p->knots->size - 1);
+
+          G_align = gsl_matrix_alloc(ncontrol, order);
+          G_align_orig = gsl_matrix_alloc(ncontrol, order);
+
+          /* construct G_{ij} = 1/dt * \int N^{(nderiv)}_i(t) N^{(nderiv)}_j(t) dt for alignment splines */
+          gsl_bspline2_gram(nderiv, G_align, align_spline_p);
+          printsb_octave(G_align, "G_align1");
+          gsl_matrix_scale(G_align, 1.0 / (t1 - t0));
+
+          printsb_octave(G_align, "G_align");
+
+          gsl_matrix_memcpy(G_align_orig, G_align);
+
+          {
+            /* XXX: need to add epsilon to diagonal of G^{(nderiv)} so LLT decomposition will work */
+            gsl_vector_view diag = gsl_matrix_column(G_align, 0);
+            gsl_vector_add_constant(&diag.vector, 1.0e-10);
+            gsl_linalg_cholesky_band_decomp(G_align);
+          }
+
+          /*
+           * construct L(1:p_align,1:p_align) = I_3 x G_L^{(nderiv)},
+           * the Kronecker product of the Cholesky factors of I_3 and G^{(nderiv)}
+           */
+#if 0 /*XXX*/
+          for (j = 0; j < ncontrol; ++j)
+            {
+              for (i = 0; i < order && i + j < ncontrol; ++i)
+                {
+                  size_t row = i + j;
+                  double Lij = gsl_matrix_get(G_align, j, i); /* Cholesky factor of G^{(nderiv)} */
+                  double Gij = gsl_matrix_get(G_align_orig, j, i);
+                  size_t k;
+
+                  for (k = 0; k < ALIGN_P; ++k)
+                    {
+                      gsl_spmatrix_set(w->L, offset + row * ALIGN_P + k, offset + j * ALIGN_P + k, w->lambda_a * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + row * ALIGN_P + k, offset + j * ALIGN_P + k, w->lambda_a * w->lambda_a * Gij);
+                    }
+                }
+            }
+#else
+          for (j = 0; j < ncontrol; ++j)
+            {
+              for (i = 0; i < order && i + j < ncontrol; ++i)
+                {
+                  size_t row = i + j;
+                  double Lij = gsl_matrix_get(G_align, j, i); /* Cholesky factor of G^{(nderiv)} */
+                  double Gij = gsl_matrix_get(G_align_orig, j, i);
+                  size_t k;
+
+                  for (k = 0; k < ALIGN_P; ++k)
+                    {
+                      gsl_spmatrix_set(w->L, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_a * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_a * w->lambda_a * Gij);
+                    }
+                }
+            }
+#endif
+
+          gsl_matrix_free(G_align);
+          gsl_matrix_free(G_align_orig);
+        }
+    }
+
   if (w->p_fluxcal > 0)
     {
       size_t n;
@@ -2600,7 +2687,7 @@ mfield_nonlinear_callback(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
             {
-              double t0 = epoch2year(w->data_workspace_p->t0[i]);
+              double t0 = w->data_workspace_p->t_scale[i][0];
               gsl_bspline2_workspace *align_spline_p = w->align_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t align_idx = w->align_offset + w->offset_align[i];
               size_t ncontrol = gsl_bspline2_ncontrol(align_spline_p);
@@ -2755,7 +2842,7 @@ mfield_nonlinear_callback2(const size_t iter, void *params,
 
           if (mptr->global_flags & MAGDATA_GLOBFLG_ALIGN)
             {
-              double t0 = epoch2year(w->data_workspace_p->t0[i]);
+              double t0 = w->data_workspace_p->t_scale[i][0];
               gsl_bspline2_workspace *align_spline_p = w->align_spline_workspace_p[CIDX2(i, w->nsat, 0, w->max_threads)];
               size_t align_idx = w->align_offset + w->offset_align[i];
               size_t ncontrol = gsl_bspline2_ncontrol(align_spline_p);

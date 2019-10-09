@@ -683,7 +683,7 @@ to minimizing
 
 .. math:: \mathbf{x}_{Euler}^T \Lambda_{Euler} \mathbf{x}_{Euler}
 
-where :math:`\Lambda_{Euler}` is a block matrix with blocks for each satellite of the form :math:`G^{(2)} \otimes I_3`,
+where :math:`\Lambda_{Euler}` is a block matrix with blocks for each satellite of the form :math:`I_3 \otimes G^{(2)}`,
 and :math:`G^{(2)}` is the Gram matrix of B-spline second derivatives using the knot vector and time period of
 that particular satellite, size :code:`ncontrol_euler-by-ncontrol_euler`.
 

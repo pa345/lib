@@ -225,7 +225,7 @@ mfield_alloc(const mfield_parameters *params)
           magdata *mptr = mfield_data_ptr(i, w->data_workspace_p);
           const att_type * align_type = att_type_ptr(mptr->align_flags);
           const size_t att_p = align_type->num_params;
-          double t0, t1, dt;
+          double t0, t1;
           size_t nbreak, ncontrol;
 
           if (!(mptr->global_flags & MAGDATA_GLOBFLG_ALIGN))
@@ -234,14 +234,18 @@ mfield_alloc(const mfield_parameters *params)
           w->att_workspace_p[i] = att_alloc(align_type);
 
           magdata_t(&t0, &t1, mptr);
-          t0 = epoch2year(t0);
-          t1 = epoch2year(t1);
-          dt = (t1 - t0) * 365.25; /* convert to days */
 
           if (params->align_period <= 0.0)
             nbreak = 2;
           else
-            nbreak = GSL_MAX((size_t) (dt / (params->align_period - 1.0)), 2);
+            {
+              double dt = (t1 - t0) / 8.64e7; /* convert to days */
+              nbreak = GSL_MAX((size_t) (dt / (params->align_period - 1.0)), 2);
+            }
+
+          /* compute scaled time */
+          t0 = (t0 - w->data_workspace_p->t_mu) / w->data_workspace_p->t_sigma;
+          t1 = (t1 - w->data_workspace_p->t_mu) / w->data_workspace_p->t_sigma;
 
           for (j = 0; j < w->max_threads; ++j)
             {
@@ -465,6 +469,7 @@ mfield_alloc(const mfield_parameters *params)
   w->lambda_1 = params->lambda_1;
   w->lambda_2 = params->lambda_2;
   w->lambda_3 = params->lambda_3;
+  w->lambda_a = params->lambda_a;
   w->lambda_s = params->lambda_s;
   w->lambda_o = params->lambda_o;
   w->lambda_u = params->lambda_u;
@@ -763,6 +768,7 @@ mfield_init_params(mfield_parameters * params)
   params->lambda_1 = 0.0;
   params->lambda_2 = 0.0;
   params->lambda_3 = 0.0;
+  params->lambda_a = 0.0;
   params->lambda_s = 0.0;
   params->lambda_o = 0.0;
   params->lambda_u = 0.0;
@@ -1410,6 +1416,7 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% lambda_1: %.4f\n", params->lambda_1);
   fprintf(fp, "%% lambda_2: %.4f\n", params->lambda_2);
   fprintf(fp, "%% lambda_3: %.4f\n", params->lambda_3);
+  fprintf(fp, "%% lambda_a: %.4f\n", params->lambda_a);
   fprintf(fp, "%% lambda_s: %.4f\n", params->lambda_s);
   fprintf(fp, "%% lambda_o: %.4f\n", params->lambda_o);
   fprintf(fp, "%% lambda_u: %.4f\n", params->lambda_u);
