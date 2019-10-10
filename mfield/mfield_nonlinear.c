@@ -1794,9 +1794,6 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
 
           /* construct G_{ij} = 1/dt * \int N^{(nderiv)}_i(t) N^{(nderiv)}_j(t) dt for alignment splines */
           gsl_bspline2_gram(nderiv, G_align, align_spline_p);
-          printsb_octave(G_align, "G_align1");
-          gsl_matrix_scale(G_align, 1.0 / (t1 - t0));
-
           printsb_octave(G_align, "G_align");
 
           gsl_matrix_memcpy(G_align_orig, G_align);
@@ -1812,24 +1809,6 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
            * construct L(1:p_align,1:p_align) = I_3 x G_L^{(nderiv)},
            * the Kronecker product of the Cholesky factors of I_3 and G^{(nderiv)}
            */
-#if 0 /*XXX*/
-          for (j = 0; j < ncontrol; ++j)
-            {
-              for (i = 0; i < order && i + j < ncontrol; ++i)
-                {
-                  size_t row = i + j;
-                  double Lij = gsl_matrix_get(G_align, j, i); /* Cholesky factor of G^{(nderiv)} */
-                  double Gij = gsl_matrix_get(G_align_orig, j, i);
-                  size_t k;
-
-                  for (k = 0; k < ALIGN_P; ++k)
-                    {
-                      gsl_spmatrix_set(w->L, offset + row * ALIGN_P + k, offset + j * ALIGN_P + k, w->lambda_a * Lij);
-                      gsl_spmatrix_set(w->Lambda, offset + row * ALIGN_P + k, offset + j * ALIGN_P + k, w->lambda_a * w->lambda_a * Gij);
-                    }
-                }
-            }
-#else
           for (j = 0; j < ncontrol; ++j)
             {
               for (i = 0; i < order && i + j < ncontrol; ++i)
@@ -1846,7 +1825,6 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
                     }
                 }
             }
-#endif
 
           gsl_matrix_free(G_align);
           gsl_matrix_free(G_align_orig);
@@ -1855,6 +1833,7 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
 
   if (w->p_fluxcal > 0)
     {
+      const size_t nderiv = 2; /* which spline derivative to minimize */
       size_t n;
 
       for (n = 0; n < w->nsat; ++n)
@@ -1878,8 +1857,8 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
           G_fluxcal = gsl_matrix_alloc(ncontrol, order);
           G_fluxcal_orig = gsl_matrix_alloc(ncontrol, order);
 
-          /* construct G_{ij} = 1/dt * \int N^{(2)}_i(t) N^{(2)}_j(t) dt for fluxcal splines */
-          gsl_bspline2_gram(2, G_fluxcal, fluxcal_spline_p);
+          /* construct G_{ij} = 1/dt * \int N^{(nderiv)}_i(t) N^{(nderiv)}_j(t) dt for fluxcal splines */
+          gsl_bspline2_gram(nderiv, G_fluxcal, fluxcal_spline_p);
           printsb_octave(G_fluxcal, "G_fluxcal1");
           gsl_matrix_scale(G_fluxcal, 1.0 / (t1 - t0));
 
@@ -1888,41 +1867,41 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
           gsl_matrix_memcpy(G_fluxcal_orig, G_fluxcal);
 
           {
-            /* XXX: need to add epsilon to diagonal of G^{(2)} so LLT decomposition will work */
+            /* XXX: need to add epsilon to diagonal of G^{(nderiv)} so LLT decomposition will work */
             gsl_vector_view diag = gsl_matrix_column(G_fluxcal, 0);
             gsl_vector_add_constant(&diag.vector, 1.0e-10);
             gsl_linalg_cholesky_band_decomp(G_fluxcal);
           }
 
           /*
-           * construct L(1:p_fluxcal,1:p_fluxcal) = G_L^{(2)} x I_9,
-           * the Kronecker product of the Cholesky factors of G^{(2)} and I_9
+           * construct L(1:p_fluxcal,1:p_fluxcal) = I_9 x G_L^{(nderiv)}
+           * the Kronecker product of the Cholesky factors of I_9 and G^{(nderiv)}
            */
           for (j = 0; j < ncontrol; ++j)
             {
               for (i = 0; i < order && i + j < ncontrol; ++i)
                 {
                   size_t row = i + j;
-                  double Lij = gsl_matrix_get(G_fluxcal, j, i); /* Cholesky factor of G^{(3)} */
+                  double Lij = gsl_matrix_get(G_fluxcal, j, i); /* Cholesky factor of G^{(nderiv)} */
                   double Gij = gsl_matrix_get(G_fluxcal_orig, j, i);
                   size_t k;
 
                   for (k = FLUXCAL_IDX_SX; k <= FLUXCAL_IDX_SZ; ++k)
                     {
-                      gsl_spmatrix_set(w->L, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_s * Lij);
-                      gsl_spmatrix_set(w->Lambda, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_s * w->lambda_s * Gij);
+                      gsl_spmatrix_set(w->L, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_s * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_s * w->lambda_s * Gij);
                     }
 
                   for (k = FLUXCAL_IDX_OX; k <= FLUXCAL_IDX_OZ; ++k)
                     {
-                      gsl_spmatrix_set(w->L, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_o * Lij);
-                      gsl_spmatrix_set(w->Lambda, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_o * w->lambda_o * Gij);
+                      gsl_spmatrix_set(w->L, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_o * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_o * w->lambda_o * Gij);
                     }
 
                   for (k = FLUXCAL_IDX_U1; k <= FLUXCAL_IDX_U3; ++k)
                     {
-                      gsl_spmatrix_set(w->L, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_u * Lij);
-                      gsl_spmatrix_set(w->Lambda, offset + row * FLUXCAL_P + k, offset + j * FLUXCAL_P + k, w->lambda_u * w->lambda_u * Gij);
+                      gsl_spmatrix_set(w->L, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_u * Lij);
+                      gsl_spmatrix_set(w->Lambda, offset + ncontrol * k + row, offset + ncontrol * k + j, w->lambda_u * w->lambda_u * Gij);
                     }
                 }
             }

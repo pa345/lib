@@ -595,8 +595,8 @@ mfield_data_epoch(mfield_data_workspace *w)
   /* initialize t_mu and t_sigma */
   mfield_data_init(w);
 
-  return w->t_mu + w->params.epoch;
-} /* mfield_data_epoch() */
+  return epoch2year(w->t_mu);
+}
 
 int
 mfield_data_map(const char *dir_prefix, const mfield_data_workspace *w)

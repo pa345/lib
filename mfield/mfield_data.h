@@ -61,8 +61,8 @@ typedef struct
   double *t0;        /* array of size nsources for first time of each satellite (CDF_EPOCH) */
   double *t1;        /* array of size nsources for last time of each satellite (CDF_EPOCH) */
 
-  double t_mu;       /* mean of timestamps (years) */
-  double t_sigma;    /* stddev of timestamps (years) */
+  double t_mu;       /* mean of timestamps (CDF_EPOCH) */
+  double t_sigma;    /* stddev of timestamps (CDF_EPOCH) */
   double t0_data;    /* timestamp of first data point (CDF_EPOCH) */
   double t1_data;    /* timestamp of last data point (CDF_EPOCH) */
 
