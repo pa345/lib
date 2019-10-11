@@ -5,16 +5,13 @@ set term pngcairo enh col size 1000,1000
 mapprog="$DATAHOME/palken/repo/msynth/src/print_map"
 plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 
-#outfile="F17.mp4"
-#title="DMSP F-17"
+#coef_file="/data/palken/repo/msynth/src/cof/CHAOS-6-x8_core.shc"
+#coefdir="maps_CHAOS"
+#title="CHAOS-6-x8"
 
-coef_file="/data/palken/repo/msynth/src/cof/CHAOS-6-x8_core.shc"
-coefdir="maps_CHAOS"
-
-#coef_file="Model_G.shc"
-#coefdir="maps_G"
-
-title="CHAOS-6-x8"
+coef_file="Model_A2.shc"
+coefdir="maps_A2"
+title="Model A"
 
 plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
 

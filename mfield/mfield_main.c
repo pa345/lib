@@ -757,7 +757,7 @@ main(int argc, char *argv[])
     fprintf(stderr, "main: SA nmax = %zu\n", mfield_params.nmax_sa);
 
   if (mfield_params.fit_align)
-    fprintf(stderr, "main: alignment damping           = %g\n", mfield_params.lambda_a);
+    fprintf(stderr, "main: alignment damping         = %g\n", mfield_params.lambda_a);
 
   if (mfield_params.fit_fluxcal)
     {
