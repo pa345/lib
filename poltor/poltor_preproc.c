@@ -157,7 +157,7 @@ main(int argc, char *argv[])
   size_t gradient_ns = 0;    /* number of seconds between N/S gradient points */
   size_t magdata_flags = 0;       /* MAGDATA_GLOBFLG_xxx */
   size_t magdata_flags2 = 0;
-  size_t magdata_euler_flags = 0; /* EULER_FLG_xxx */
+  size_t magdata_align_flags = 0; /* ATT_FLG_xxx */
   int flag_vec_rms = 1;
 
   /* initialize parameters */
@@ -192,7 +192,6 @@ main(int argc, char *argv[])
           case 'a':
             data = read_swarm(optarg, 0);
             /*magdata_flags = MAGDATA_GLOBFLG_EULER;*/
-            magdata_euler_flags = EULER_FLG_ZYZ | EULER_FLG_RINV;
             flag_vec_rms = 0; /* no NEC data for rms flagging */
             break;
 
@@ -200,7 +199,6 @@ main(int argc, char *argv[])
           case 's':
             data = read_swarm(optarg, 0);
             /*magdata_flags = MAGDATA_GLOBFLG_EULER;*/
-            magdata_euler_flags = EULER_FLG_ZYX;
             break;
 
           /* For E/W gradients */
@@ -338,9 +336,6 @@ main(int argc, char *argv[])
   magdata_calc(mdata);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
-
-  /* set Euler convention flags */
-  magdata_set_euler(magdata_euler_flags, mdata);
 
   fprintf(stderr, "main: writing data to %s...", data_prefix);
   magdata_print(data_prefix, mdata);
