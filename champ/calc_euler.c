@@ -176,7 +176,7 @@ main(int argc, char *argv[])
     }
 
   satdata_champ_filter_instrument(1, 0, data);
-  satdata_champ_fix_q(data);
+  satdata_champ_fix_q(0, data);
 
   {
 #if 1
