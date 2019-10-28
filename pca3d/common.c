@@ -35,3 +35,43 @@ count_windows(const size_t nsamples, const double fs,
 
   return T;
 }
+
+/*
+calc_nlm_complex()
+  Calculate number of complex coefficients, including negative and positive m values
+
+Inputs: lmin - minimum SH degree
+        lmax - maximum SH degree
+        mmax - maximum SH order
+
+Return: number of SH coefficients
+*/
+
+static size_t
+calc_nlm_complex(const size_t lmin, const size_t lmax, const size_t mmax)
+{
+  size_t nlm = (mmax + lmin + 1) * (mmax - lmin + 1) + (2 * mmax + 1) * (lmax - mmax);
+  return nlm;
+}
+
+static size_t
+lmidx_complex(const size_t l, const int m, const size_t mmax)
+{
+  size_t idx;
+
+  if (l <= mmax)
+    {
+      size_t base = (l - 1) * (l + 1);
+      int offset = m + (int) l;
+      idx = base + (size_t) offset;
+    }
+  else
+    {
+      size_t base1 = mmax * (mmax + 2);
+      size_t base2 = (l - mmax - 1) * (2 * mmax + 1);
+      int offset = m + (int) mmax;
+      idx = base1 + base2 + (size_t) offset;
+    }
+
+  return idx;
+}

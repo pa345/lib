@@ -250,11 +250,10 @@ check_parameters(preprocess_parameters * params)
 magdata *
 copy_data(const size_t magdata_flags, const satdata_mag *data, const track_workspace *track_p,
           const size_t magdata_flags2, const satdata_mag *data2, const track_workspace *track_p2,
-          preprocess_parameters * preproc_params)
+          preprocess_parameters * preproc_params, magdata * mdata)
 {
   const size_t nflagged = satdata_nflagged(data);
   size_t ndata = data->n - nflagged;
-  magdata *mdata;
   magdata_params params;
   size_t i;
   size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
@@ -287,7 +286,11 @@ copy_data(const size_t magdata_flags, const satdata_mag *data, const track_works
   for (i = 0; i < MFIELD_IDX_END; ++i)
     nmodel[i] = 0;
 
-  mdata = magdata_alloc(ndata, data->R);
+  if (mdata == NULL)
+    mdata = magdata_alloc(ndata, data->R);
+  else
+    mdata = magdata_realloc(ndata + mdata->n, data->R, mdata);
+
   if (!mdata)
     return 0;
 
@@ -455,9 +458,9 @@ read_swarm(const char *filename, const int asmv)
   gettimeofday(&tv0, NULL);
 
   if (asmv)
-    data = satdata_swarm_asmv_read_idx(filename, 0);
+    data = satdata_swarm_asmv_read_idx(filename, 1);
   else
-    data = satdata_swarm_read_idx(filename, 0);
+    data = satdata_swarm_read_idx(filename, 1);
 
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%zu data read, %g seconds)\n",
@@ -482,7 +485,7 @@ read_champ(const char *filename)
 
   fprintf(stderr, "read_champ: reading %s...", filename);
   gettimeofday(&tv0, NULL);
-  data = satdata_champ_read_idx(filename, 0);
+  data = satdata_champ_read_idx(filename, 1);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%zu data read, %g seconds)\n",
           data->n, time_diff(tv0, tv1));
@@ -494,7 +497,7 @@ read_champ(const char *filename)
           nflag, data->n, (double)nflag / (double)data->n * 100.0);
 
   return data;
-} /* read_champ() */
+}
 
 /*
 mfield_check_LT()
@@ -1150,6 +1153,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --output_file     | -o output_file            - binary output data file (magdata format)\n");
   fprintf(stderr, "\t --config_file     | -C config_file            - configuration file\n");
   fprintf(stderr, "\t --polar_gap       | -p polar_gap              - fill random points in polar gap given by argument in degrees\n");
+  fprintf(stderr, "\t --append_file     | -A append_file            - new data will be appended to this dataset in magdata binary format\n");
 }
 
 int
@@ -1159,11 +1163,12 @@ main(int argc, char *argv[])
   char *datamap_file = "datamap.dat";
   char *data_file = "data.dat";
   char *output_file = NULL;
+  char *append_file = NULL;
   char *config_file = "MF_preproc.cfg";
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   obsdata *observatory_data = NULL;
-  magdata *mdata;
+  magdata *mdata = NULL;
   euler_workspace *euler_p = NULL;
   euler_workspace *euler_p2 = NULL;
   struct timeval tv0, tv1;
@@ -1174,7 +1179,6 @@ main(int argc, char *argv[])
   size_t gradient_ns = 0;    /* number of seconds between N/S gradient points */
   size_t magdata_flags = 0;       /* MAGDATA_GLOBFLG_xxx */
   size_t magdata_flags2 = 0;
-  size_t magdata_euler_flags = 0; /* EULER_FLG_xxx */
   size_t magdata_align_flags = 0; /* ATT_TYPE_xxx */
   double polar_gap = -1.0;
   int flag_vec_rms = 1;
@@ -1227,10 +1231,11 @@ main(int argc, char *argv[])
           { "config_file", required_argument, NULL, 'C' },
           { "gradient_ns", required_argument, NULL, 'g' },
           { "polar_gap", required_argument, NULL, 'p' },
+          { "append_file", required_argument, NULL, 'A' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:c:C:d:D:e:f:g:o:O:p:r:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:A:c:C:d:D:e:f:g:o:O:p:r:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -1238,9 +1243,8 @@ main(int argc, char *argv[])
         {
           /* Swarm ASM-V */
           case 'a':
-            data = read_swarm(optarg, 0);
+            data = read_swarm(optarg, 1);
             magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_SWARM;
-            magdata_euler_flags = EULER_FLG_ZYZ | EULER_FLG_RINV;
             flag_vec_rms = 0; /* no NEC data for rms flagging */
             break;
 
@@ -1248,15 +1252,13 @@ main(int argc, char *argv[])
           case 's':
             data = read_swarm(optarg, 0);
             magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_SWARM;
-            magdata_euler_flags = EULER_FLG_ZYX;
-            magdata_align_flags = ATT_TYPE_EULER_ZYX;
+            magdata_align_flags = ATT_TYPE_EULER_XYZ;
             break;
 
           /* DMSP data in Swarm format */
           case 'D':
             data = read_swarm(optarg, 0);
             magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_DMSP;
-            magdata_euler_flags = EULER_FLG_ZYX;
             magdata_align_flags = ATT_TYPE_MRP;
             break;
 
@@ -1264,7 +1266,6 @@ main(int argc, char *argv[])
           case 'r':
             data = read_swarm(optarg, 0);
             magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_FLUXCAL | MAGDATA_GLOBFLG_CRYOSAT;
-            magdata_euler_flags = EULER_FLG_ZYX;
             magdata_align_flags = ATT_TYPE_MRP;
             break;
 
@@ -1275,7 +1276,8 @@ main(int argc, char *argv[])
             break;
 
           case 'c':
-            magdata_flags = MAGDATA_GLOBFLG_CHAMP;
+            magdata_flags = MAGDATA_GLOBFLG_ALIGN | MAGDATA_GLOBFLG_CHAMP;
+            magdata_align_flags = ATT_TYPE_EULER_XYZ;
             data = read_champ(optarg);
             break;
 
@@ -1320,6 +1322,10 @@ main(int argc, char *argv[])
 
           case 'p':
             polar_gap = atof(optarg);
+            break;
+
+          case 'A':
+            append_file = optarg;
             break;
 
           default:
@@ -1407,6 +1413,18 @@ main(int argc, char *argv[])
       track_p2 = preprocess_data(&params, magdata_flags2, data2);
     }
 
+  /* for CHAMP recompute quaternions from CRF to NEC */
+  if (magdata_flags & MAGDATA_GLOBFLG_CHAMP)
+    {
+      size_t nq;
+
+      fprintf(stderr, "main: recomputing quaternions for CHAMP...");
+      gettimeofday(&tv0, NULL);
+      nq = satdata_champ_fix_q(SATDATA_FLG_OUTLIER | SATDATA_FLG_INSTERR | SATDATA_FLG_FILTER | SATDATA_FLG_DOWNSAMPLE, data);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%zu data processed, %g seconds)\n", nq, time_diff(tv0, tv1));
+    }
+
 #if 0
   if (params.fit_track_RC)
     {
@@ -1429,9 +1447,16 @@ main(int argc, char *argv[])
   exit(1);
 #endif
 
+  if (append_file)
+    {
+      fprintf(stderr, "main: reading append file %s...", append_file);
+      mdata = magdata_read(append_file, NULL);
+      fprintf(stderr, "done (%zu data read)\n", mdata->n);
+    }
+
   fprintf(stderr, "main: computing vector residuals...");
   gettimeofday(&tv0, NULL);
-  mdata = copy_data(magdata_flags, data, track_p, magdata_flags2, data2, track_p2, &params);
+  mdata = copy_data(magdata_flags, data, track_p, magdata_flags2, data2, track_p2, &params, mdata);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%zu residuals copied, %g seconds)\n",
           mdata->n, time_diff(tv0, tv1));
@@ -1451,7 +1476,6 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
   /* set alignment flags */
-  magdata_set_euler(magdata_euler_flags, mdata);
   magdata_set_align(magdata_align_flags, mdata);
 
 #if 0

@@ -561,9 +561,11 @@ mfield_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) high-latitude points due to zenith angle [cutoff: %.1f deg]\n",
           nflagged_zenith, data->n, (double) nflagged_zenith / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
 
+#if 0
   nflagged_IMF = mfield_flag_IMF(params, track_p, data);
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) high-latitude points due to IMF [cutoff: %.1f deg]\n",
           nflagged_IMF, data->n, (double) nflagged_IMF / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
+#endif
 
   /* look for plasma bubbles last, after LT selection */
   if (params->pb_flag)

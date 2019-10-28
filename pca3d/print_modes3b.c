@@ -95,7 +95,7 @@ int
 print_modes(const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
 {
   const size_t T = U->size2;
-  const double alt_B = 450.0;
+  const double alt_B = 0.0;
   magfield_eval_workspace * w = magfield_eval_alloc(params);
   double lat, lon;
   size_t t;
@@ -108,7 +108,7 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       char buf[2048];
       size_t i = 1;
 
-      sprintf(buf, "plots/J_%02zu.txt", t + 1);
+      sprintf(buf, "plots/mode_%02zu.txt", t + 1);
       fprintf(stderr, "print_modes: writing %s...", buf);
 
       fp = fopen(buf, "w");
@@ -119,11 +119,8 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: Re J_r\n", i++);
-      fprintf(fp, "# Field %zu: Im J_r\n", i++);
       fprintf(fp, "# Field %zu: Re J_t\n", i++);
-      fprintf(fp, "# Field %zu: Im J_t\n", i++);
       fprintf(fp, "# Field %zu: Re J_p\n", i++);
-      fprintf(fp, "# Field %zu: Im J_p\n", i++);
       fprintf(fp, "# Field %zu: B_r\n", i++);
       fprintf(fp, "# Field %zu: B_t\n", i++);
       fprintf(fp, "# Field %zu: B_p\n", i++);
@@ -145,15 +142,12 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
               magfield_eval_J_complex(r, theta, phi, J, w);
               magfield_eval_B(R_EARTH_KM + alt_B, theta, phi, B, w);
 
-              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
                       lat,
                       creal(J[0]),
-                      cimag(J[0]),
                       creal(J[1]),
-                      cimag(J[1]),
                       creal(J[2]),
-                      cimag(J[2]),
                       B[0],
                       B[1],
                       B[2]);

@@ -148,6 +148,7 @@ do_transforms(const pca3d_data * data, const double fs, const double window_size
   fft_data.lmax = w->lmax;
   fft_data.mmax = w->mmax;
   fft_data.nlm = w->nlm;
+  fft_data.nlm_complex = calc_nlm_complex(w->lmin, w->lmax, w->mmax);
   fft_data.T = T;
   fft_data.fs = fs;
   fft_data.window_size = window_size;
@@ -168,6 +169,8 @@ do_transforms(const pca3d_data * data, const double fs, const double window_size
   fprintf(stderr, "do_transforms: number of freqs      = %zu\n", nfreq);
   fprintf(stderr, "do_transforms: time samples         = %zu [hourly]\n", nt);
   fprintf(stderr, "do_transforms: window segments (T)  = %zu\n", T);
+  fprintf(stderr, "do_transforms: real nlm coeffs      = %zu\n", fft_data.nlm);
+  fprintf(stderr, "do_transforms: complex nlm coeffs   = %zu\n", fft_data.nlm_complex);
 
   /* compute window function */
   /*apply_ps1(NULL, window);*/

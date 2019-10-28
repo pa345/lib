@@ -33,6 +33,8 @@
 #include "pca3d.h"
 #include "tiegcm3d.h"
 
+#include "common.c"
+
 /*
 build_X()
 
@@ -58,7 +60,7 @@ int
 build_X(const size_t ifreq, const pca3d_fft_data * data, gsl_matrix_complex * X)
 {
   int s = 0;
-  const size_t N = data->nlm * data->nr;
+  const size_t N = data->nlm_complex * data->nr;
   const size_t T = data->T;               /* number of time window segments */
   const size_t nfreq = data->nfreq;       /* FFT output buffer size (number of frequencies) */
   size_t t;                               /* window index \in [0,T-1] */
@@ -83,15 +85,42 @@ build_X(const size_t ifreq, const pca3d_fft_data * data, gsl_matrix_complex * X)
               for (m = 0; m <= M; ++m)
                 {
                   size_t lmidx = magfield_lmidx(l, m, data->mmax);
-                  size_t row_idx = CIDX2(ir, data->nr, lmidx, data->nlm);
-                  size_t grid_idx = CIDX4(t, T, ifreq, nfreq, ir, data->nr, lmidx, data->nlm);
-                  gsl_complex Qqt = data->Qqt[grid_idx];
-                  gsl_complex Qp = data->Qp[grid_idx];
-                  gsl_complex Qq = data->Qq[grid_idx];
+                  size_t lmidx_c, row_idx, grid_idx;
+                  gsl_complex Qqt, Qp, Qq;
+
+                  lmidx_c = lmidx_complex(l, m, data->mmax);
+                  row_idx = CIDX2(ir, data->nr, lmidx_c, data->nlm_complex);
+
+                  grid_idx = CIDX4(t, T, ifreq, nfreq, ir, data->nr, lmidx, data->nlm);
+                  Qqt = data->Qqt[grid_idx];
+                  Qp = data->Qp[grid_idx];
+                  Qq = data->Qq[grid_idx];
 
                   gsl_matrix_complex_set(X, row_idx, t, Qqt);
                   gsl_matrix_complex_set(X, row_idx + N, t, Qp);
                   gsl_matrix_complex_set(X, row_idx + 2*N, t, Qq);
+
+                  if (m > 0)
+                    {
+                      if (ifreq != 0)
+                        {
+                          /*
+                           * compute Q_{n,-m}(omega) = conj(Q_{nm}(-omega))
+                           * negative frequencies can be obtained by substituting nfreq - ifreq
+                           */
+                          grid_idx = CIDX4(t, T, nfreq - ifreq, nfreq, ir, data->nr, lmidx, data->nlm);
+                          Qqt = data->Qqt[grid_idx];
+                          Qp = data->Qp[grid_idx];
+                          Qq = data->Qq[grid_idx];
+                        }
+
+                      lmidx_c = lmidx_complex(l, -m, data->mmax);
+                      row_idx = CIDX2(ir, data->nr, lmidx_c, data->nlm_complex);
+
+                      gsl_matrix_complex_set(X, row_idx, t, gsl_complex_conjugate(Qqt));
+                      gsl_matrix_complex_set(X, row_idx + N, t, gsl_complex_conjugate(Qp));
+                      gsl_matrix_complex_set(X, row_idx + 2*N, t, gsl_complex_conjugate(Qq));
+                    }
                 }
             }
         }
@@ -107,7 +136,7 @@ proc_svd(const size_t ifreq, const pca3d_fft_data * data)
   const double window_size = data->window_size;
   const double window_shift = data->window_shift;
   const double freq = ifreq / window_size;                   /* desired frequency in cpd */
-  const size_t N = data->nr * data->nlm;                     /* spatial grid size */
+  const size_t N = data->nr * data->nlm_complex;             /* spatial grid size */
   const size_t T = data->T;                                  /* number of time window segments */
   gsl_matrix_complex *X = gsl_matrix_complex_alloc(3 * N, T);
   gsl_vector *S = gsl_vector_alloc(T);
@@ -208,7 +237,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
   fprintf(stderr, "main: nr  = %zu\n", data.nr);
-  fprintf(stderr, "main: nlm = %zu\n", data.nlm);
+  fprintf(stderr, "main: nlm = %zu\n", data.nlm_complex);
 
   for (i = 0; i < nidx; ++i)
     proc_svd(indices[i], &data);

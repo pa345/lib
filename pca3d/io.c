@@ -257,6 +257,7 @@ pca3d_write_fft_data2(const char *filename, const pca3d_fft_data *data, const in
   fwrite(&(data->lmax), sizeof(size_t), 1, fp);
   fwrite(&(data->mmax), sizeof(size_t), 1, fp);
   fwrite(&(data->nlm), sizeof(size_t), 1, fp);
+  fwrite(&(data->nlm_complex), sizeof(size_t), 1, fp);
   fwrite(&(data->T), sizeof(size_t), 1, fp);
   fwrite(&(data->fs), sizeof(double), 1, fp);
   fwrite(&(data->window_size), sizeof(double), 1, fp);
@@ -312,6 +313,7 @@ pca3d_read_fft_data2(const char *filename)
   fread(&(data.lmax), sizeof(size_t), 1, fp);
   fread(&(data.mmax), sizeof(size_t), 1, fp);
   fread(&(data.nlm), sizeof(size_t), 1, fp);
+  fread(&(data.nlm_complex), sizeof(size_t), 1, fp);
   fread(&(data.T), sizeof(size_t), 1, fp);
   fread(&(data.fs), sizeof(double), 1, fp);
   fread(&(data.window_size), sizeof(double), 1, fp);

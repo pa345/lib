@@ -617,6 +617,7 @@ mfield_data_map(const char *dir_prefix, const mfield_data_workspace *w)
       sprintf(buf, "%s/datamap%zu_align", dir_prefix, i);
       fprintf(stderr, "mfield_data_map: printing spatial coverage of satellite %zu to %s (alignment data)...", i, buf);
       magdata_map(buf, MAGDATA_FLG_FIT_ALIGN, mptr);
+      fprintf(stderr, "done\n");
     }
 
   return s;
