@@ -465,7 +465,7 @@ mfield_init_nonlinear(mfield_workspace *w)
         if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
           global_weight = 0.005;
         else if (mptr->global_flags & MAGDATA_GLOBFLG_CRYOSAT)
-          global_weight = 0.03;
+          global_weight = 0.1;
         else if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
           global_weight = 10.0;
         else if (mptr->global_flags & MAGDATA_GLOBFLG_EEJ_MAGEQ)
