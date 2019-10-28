@@ -4,6 +4,7 @@
 
 datadir="$DATAHOME/CHAMP/Stage1_CHAOS"
 outfile="data/champ.dat"
+cfgfile="MF_preproc.cfg"
 
 rm -f ${outfile}
 
@@ -14,9 +15,9 @@ for year in $(seq 2000 2010); do
 
   echo "Processing year ${year}..."
   if [ "${year}" = "2000" ]; then
-    ./mfield_preproc -c ${idxfile} -C MF_preproc.cfg -o ${outfile}
+    ./mfield_preproc -c ${idxfile} -C ${cfgfile} -o ${outfile}
   else
-    ./mfield_preproc -c ${idxfile} -C MF_preproc.cfg --append ${outfile} -o ${outfile}
+    ./mfield_preproc -c ${idxfile} -C ${cfgfile} --append ${outfile} -o ${outfile}
   fi
 
   rm -f $idxfile
