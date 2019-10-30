@@ -492,9 +492,9 @@ mfield_data_init_align(mfield_data_workspace *w)
       else if (mptr->global_flags & MAGDATA_GLOBFLG_CHAMP)
         mptr->align_flags = ATT_TYPE_EULER_XYZ;
       else if (mptr->global_flags & MAGDATA_GLOBFLG_DMSP)
-        mptr->align_flags = ATT_TYPE_MRP;
+        mptr->align_flags = ATT_TYPE_EULER_XYZ;
       else if (mptr->global_flags & MAGDATA_GLOBFLG_CRYOSAT)
-        mptr->align_flags = ATT_TYPE_MRP;
+        mptr->align_flags = ATT_TYPE_EULER_XYZ;
     }
 
   return s;

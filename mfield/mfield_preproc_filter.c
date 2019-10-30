@@ -10,6 +10,8 @@ static size_t mfield_flag_RC(const double RC_max, track_workspace *track_p, satd
 static size_t mfield_flag_dRC(const double dRC_max, track_workspace *track_p, satdata_mag *data);
 static size_t mfield_flag_LT(const size_t magdata_flags, const preprocess_parameters * params,
                              track_workspace *track_p, satdata_mag *data);
+static size_t mfield_flag_EEJ(const size_t magdata_flags, const preprocess_parameters * params,
+                              track_workspace *track_p, satdata_mag *data);
 static size_t mfield_flag_zenith(const preprocess_parameters * params, track_workspace *track_p, satdata_mag *data);
 static int mfield_preprocess_filter(const size_t magdata_flags, const preprocess_parameters *params,
                                     track_workspace *track_p, satdata_mag *data);
@@ -287,6 +289,57 @@ mfield_flag_LT(const size_t magdata_flags, const preprocess_parameters * params,
 }
 
 /*
+mfield_flag_EEJ()
+  Flag points in the EEJ region. This is used for Cryosat when we
+use both ascending and descending tracks.
+
+Reject point if:
+
+LT_eq \in [6,17] and |qdlat| < 20 deg
+
+Inputs: magdata_flags - MAGDATA_GLOBFLG_xxx
+        params        - parameters
+        track_p       - track workspace
+        data          - data
+
+Return: number of points flagged
+*/
+
+static size_t
+mfield_flag_EEJ(const size_t magdata_flags, const preprocess_parameters * params,
+                track_workspace *track_p, satdata_mag *data)
+{
+  size_t nflagged = 0; /* number of points flagged */
+  size_t i, j;
+
+  if (data->n == 0)
+    return 0;
+
+  for (i = 0; i < track_p->n; ++i)
+    {
+      track_data *tptr = &(track_p->tracks[i]);
+      size_t start_idx = tptr->start_idx;
+      size_t end_idx = tptr->end_idx;
+      double LT = tptr->lt_eq;
+
+      if (LT < 6.0 || LT > 17.0)
+        continue; /* don't flag night-side data */
+
+      for (j = start_idx; j <= end_idx; ++j)
+        {
+          if (fabs(data->qdlat[j]) <= 20.0)
+            {
+              /* we are at low-latitudes on the dayside, so flag point */
+              data->flags[j] |= SATDATA_FLG_OUTLIER;
+              ++nflagged;
+            }
+        }
+    }
+
+  return nflagged;
+}
+
+/*
 mfield_flag_zenith()
   Flag high-latitude points for zenith angle criteria.
 
@@ -536,6 +589,7 @@ mfield_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
          nflagged_dRC,
          nflagged_pb,
          nflagged_LT,
+         nflagged_EEJ,
          nflagged_zenith,
          nflagged_IMF;
 
@@ -560,6 +614,14 @@ mfield_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
   nflagged_zenith = mfield_flag_zenith(params, track_p, data);
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) high-latitude points due to zenith angle [cutoff: %.1f deg]\n",
           nflagged_zenith, data->n, (double) nflagged_zenith / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
+
+  if (magdata_flags & MAGDATA_GLOBFLG_CRYOSAT)
+    {
+      /* we use ascending and descending tracks for Cryosat, so exclude the EEJ region */
+      nflagged_EEJ = mfield_flag_EEJ(magdata_flags, params, track_p, data);
+      fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) points due to EEJ region\n",
+              nflagged_EEJ, data->n, (double) nflagged_EEJ / (double) data->n * 100.0);
+    }
 
 #if 0
   nflagged_IMF = mfield_flag_IMF(params, track_p, data);

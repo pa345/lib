@@ -39,8 +39,8 @@ int pca3d_write_S(const char *filename, const size_t nmax, const size_t mmax,
 int pca_write_complex_U(const char *filename, const size_t nmax, const size_t mmax,
                         const double freq_cpd, const double window_size,
                         const double window_shift, const size_t nmodes, const gsl_matrix_complex *U);
-int pca_write_complex_V(const char *filename, const size_t nmax, const size_t mmax,
-                        const double freq_cpd, const double window_size,
-                        const double window_shift, const size_t nmodes, const gsl_matrix_complex *V);
+int pca3d_write_complex_V(const char *filename, const size_t nmax, const size_t mmax,
+                          const double freq_cpd, const double window_size,
+                          const double window_shift, const gsl_matrix_complex *V);
 
 #endif /* INCLUDED_io_h */

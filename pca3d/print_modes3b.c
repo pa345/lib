@@ -30,24 +30,27 @@
 #include <mainlib/ml_bsearch.h>
 
 #include <magfield/magfield.h>
-#include <magfield/magfield_eval.h>
+#include <magfield/magfield_eval_complex.h>
 
 #include "io.h"
 #include "pca3d.h"
 #include "tiegcm3d.h"
 
+/* print only magnetic field for Gary */
+#define PRINT_B_ONLY          1
+
 /*
 fill_magfield()
   Given an eigenmode, fill in the 'qtcoeff', 'pcoeff', and 'qcoeff' arrays
-in magfield and compute radial splines to prepare for magfield_eval_J()
-and magfield_eval_B() routines
+in magfield and compute radial splines to prepare for magfield_eval_complex_J()
+and magfield_eval_complex_B() routines
 
-Inputs: u - singular vector (3*N-by-1, where N = nr*nlm)
-        w - magfield_eval workspace
+Inputs: u - singular vector (3*N-by-1, where N = nr*nlm_complex)
+        w - magfield_eval_complex workspace
 */
 
 int
-fill_magfield(const gsl_vector_complex * u, magfield_eval_workspace * w)
+fill_magfield(const gsl_vector_complex * u, magfield_eval_complex_workspace * w)
 {
   const size_t N = w->nr * w->nlm;
   gsl_vector_complex * qtcoeff = gsl_vector_complex_alloc(N);
@@ -64,11 +67,11 @@ fill_magfield(const gsl_vector_complex * u, magfield_eval_workspace * w)
           int M = (int) GSL_MIN(l, w->mmax);
           int m;
 
-          for (m = 0; m <= M; ++m)
+          for (m = -M; m <= M; ++m)
             {
-              size_t lmidx = magfield_lmidx(l, m, w->mmax);
+              size_t lmidx = magfield_complex_lmidx(l, m, w->mmax);
               size_t uidx = CIDX2(ir, w->nr, lmidx, w->nlm);
-              size_t midx = MAG_COEFIDX(ir, lmidx, w);
+              size_t midx = MAG_CMPLX_COEFIDX(ir, lmidx, w);
 
               gsl_complex qt = gsl_vector_complex_get(u, uidx);
               gsl_complex p = gsl_vector_complex_get(u, uidx + N);
@@ -82,7 +85,7 @@ fill_magfield(const gsl_vector_complex * u, magfield_eval_workspace * w)
     }
 
   /* compute spline coefficients */
-  magfield_eval_init(qtcoeff, qcoeff, pcoeff, w);
+  magfield_eval_complex_init(qtcoeff, qcoeff, pcoeff, w);
 
   gsl_vector_complex_free(qtcoeff);
   gsl_vector_complex_free(qcoeff);
@@ -96,7 +99,7 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
 {
   const size_t T = U->size2;
   const double alt_B = 0.0;
-  magfield_eval_workspace * w = magfield_eval_alloc(params);
+  magfield_eval_complex_workspace * w = magfield_eval_complex_alloc(params);
   double lat, lon;
   size_t t;
 
@@ -114,18 +117,28 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fp = fopen(buf, "w");
 
       fprintf(fp, "# Frequency: %g [cpd]\n", freq);
+#if !PRINT_B_ONLY
       fprintf(fp, "# Altitude for J: %g [km]\n", r - R_EARTH_KM);
+#endif
       fprintf(fp, "# Altitude for B: %g [km]\n", alt_B);
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
+#if !PRINT_B_ONLY
       fprintf(fp, "# Field %zu: Re J_r\n", i++);
       fprintf(fp, "# Field %zu: Re J_t\n", i++);
       fprintf(fp, "# Field %zu: Re J_p\n", i++);
-      fprintf(fp, "# Field %zu: B_r\n", i++);
-      fprintf(fp, "# Field %zu: B_t\n", i++);
-      fprintf(fp, "# Field %zu: B_p\n", i++);
+      fprintf(fp, "# Field %zu: Im J_r\n", i++);
+      fprintf(fp, "# Field %zu: Im J_t\n", i++);
+      fprintf(fp, "# Field %zu: Im J_p\n", i++);
+#endif
+      fprintf(fp, "# Field %zu: Re B_r\n", i++);
+      fprintf(fp, "# Field %zu: Re B_t\n", i++);
+      fprintf(fp, "# Field %zu: Re B_p\n", i++);
+      fprintf(fp, "# Field %zu: Im B_r\n", i++);
+      fprintf(fp, "# Field %zu: Im B_t\n", i++);
+      fprintf(fp, "# Field %zu: Im B_p\n", i++);
 
-      /* prepare magfield_eval workspace for this singular vector */
+      /* prepare magfield_eval_complex workspace for this singular vector */
       fill_magfield(&v.vector, w);
 
       for (lon = -180.0; lon <= 180.0; lon += 1.0)
@@ -135,31 +148,39 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
           for (lat = -89.9; lat <= 89.9; lat += 1.0)
             {
               double theta = M_PI / 2.0 - lat * M_PI / 180.0;
-              complex double J[3];
-              double B[4];
+              complex double J[3], B[3];
 
-#if 1
-              magfield_eval_J_complex(r, theta, phi, J, w);
-              magfield_eval_B(R_EARTH_KM + alt_B, theta, phi, B, w);
+#if !PRINT_B_ONLY
+              magfield_eval_complex_J(r, theta, phi, J, w);
+              magfield_eval_complex_B(R_EARTH_KM + alt_B, theta, phi, B, w);
 
-              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
                       lat,
                       creal(J[0]),
                       creal(J[1]),
                       creal(J[2]),
-                      B[0],
-                      B[1],
-                      B[2]);
+                      cimag(J[0]),
+                      cimag(J[1]),
+                      cimag(J[2]),
+                      creal(B[0]),
+                      creal(B[1]),
+                      creal(B[2]),
+                      cimag(B[0]),
+                      cimag(B[1]),
+                      cimag(B[2]));
 #else
-              magfield_eval_B(r, theta, phi, B, w);
+              magfield_eval_complex_B(R_EARTH_KM + alt_B, theta, phi, B, w);
 
-              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e\n",
+              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
                       lat,
-                      B[0],
-                      B[1],
-                      B[2]);
+                      creal(B[0]),
+                      creal(B[1]),
+                      creal(B[2]),
+                      cimag(B[0]),
+                      cimag(B[1]),
+                      cimag(B[2]));
 #endif
             }
 
@@ -171,7 +192,7 @@ print_modes(const double freq, const double r, const gsl_matrix_complex *U, magf
       fprintf(stderr, "done\n");
     }
 
-  magfield_eval_free(w);
+  magfield_eval_complex_free(w);
 
   return 0;
 }

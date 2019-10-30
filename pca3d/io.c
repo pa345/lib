@@ -563,9 +563,9 @@ pca_write_complex_U(const char *filename, const size_t nmax, const size_t mmax,
 }
 
 int
-pca_write_complex_V(const char *filename, const size_t nmax, const size_t mmax,
-                    const double freq_cpd, const double window_size,
-                    const double window_shift, const size_t nmodes, const gsl_matrix_complex *V)
+pca3d_write_complex_V(const char *filename, const size_t nmax, const size_t mmax,
+                      const double freq_cpd, const double window_size,
+                      const double window_shift, const gsl_matrix_complex *V)
 {
   int s = 0;
   const size_t N = V->size1;
@@ -574,7 +574,7 @@ pca_write_complex_V(const char *filename, const size_t nmax, const size_t mmax,
   fp = fopen(filename, "w");
   if (!fp)
     {
-      fprintf(stderr, "pca_write_complex_V: unable to open %s: %s\n",
+      fprintf(stderr, "pca3d_write_complex_V: unable to open %s: %s\n",
               filename, strerror(errno));
       return -1;
     }

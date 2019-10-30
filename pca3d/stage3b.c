@@ -176,6 +176,11 @@ proc_svd(const size_t ifreq, const pca3d_fft_data * data)
   pca3d_write_matrix_complex(buf, U);
   fprintf(stderr, "done\n");
 
+  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_V_TXT, ifreq);
+  fprintf(stderr, "main: writing right singular vectors for frequency %g [cpd] in text format to %s...", freq, buf);
+  pca3d_write_complex_V(buf, data->lmax, data->mmax, freq, window_size, window_shift, V);
+  fprintf(stderr, "done\n");
+
   gsl_matrix_complex_free(X);
   gsl_matrix_complex_free(U);
   gsl_matrix_complex_free(V);

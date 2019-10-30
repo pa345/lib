@@ -1801,7 +1801,7 @@ mfield_nonlinear_regularize_init(mfield_workspace *w)
           {
             /* XXX: need to add epsilon to diagonal of G^{(nderiv)} so LLT decomposition will work */
             gsl_vector_view diag = gsl_matrix_column(G_align, 0);
-            gsl_vector_add_constant(&diag.vector, 1.0e-10);
+            gsl_vector_add_constant(&diag.vector, 1.0e-9);
             gsl_linalg_cholesky_band_decomp(G_align);
           }
 

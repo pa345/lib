@@ -330,7 +330,7 @@ copy_data(const size_t magdata_flags, const satdata_mag *data, const track_works
         {
           /*
            * mid-latitude point: check local time of equator crossing to determine whether
-           * to fit field model and/or Euler angles
+           * to fit field model and/or alignment parameters (and calibration parameters)
            */
 
           double LT = mdata->lt_eq[i];
