@@ -185,11 +185,10 @@ check_parameters(preprocess_parameters * params)
 magdata *
 copy_data(const size_t magdata_flags, const satdata_mag *data, const track_workspace *track_p,
           const size_t magdata_flags2, const satdata_mag *data2, const track_workspace *track_p2,
-          preprocess_parameters * preproc_params)
+          preprocess_parameters * preproc_params, magdata * mdata)
 {
   const size_t nflagged = satdata_nflagged(data);
   size_t ndata = data->n - nflagged;
-  magdata *mdata;
   magdata_params params;
   size_t i;
   size_t npts[6] = { 0, 0, 0, 0, 0, 0 };
@@ -222,7 +221,11 @@ copy_data(const size_t magdata_flags, const satdata_mag *data, const track_works
   for (i = 0; i < MFIELD_IDX_END; ++i)
     nmodel[i] = 0;
 
-  mdata = magdata_alloc(ndata, data->R);
+  if (mdata == NULL)
+    mdata = magdata_alloc(ndata, data->R);
+  else
+    mdata = magdata_realloc(ndata + mdata->n, data->R, mdata);
+
   if (!mdata)
     return 0;
 
@@ -381,7 +384,7 @@ read_swarm(const char *filename, const int asmv)
   if (asmv)
     data = satdata_swarm_asmv_read_idx(filename, 0);
   else
-    data = satdata_swarm_read_idx(filename, 0);
+    data = satdata_swarm_read_idx(filename, 1);
 
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%zu data read, %g seconds)\n",
@@ -844,6 +847,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --gradient_ns     | -g num_samples            - number of samples between N/S gradient points\n");
   fprintf(stderr, "\t --output_file     | -o output_file            - binary output data file (magdata format)\n");
   fprintf(stderr, "\t --config_file     | -C config_file            - configuration file\n");
+  fprintf(stderr, "\t --append_file     | -A append_file            - new data will be appended to this dataset in magdata binary format\n");
 }
 
 int
@@ -853,6 +857,7 @@ main(int argc, char *argv[])
   char *datamap_file = "datamap.dat";
   char *data_file = "data.dat";
   char *output_file = NULL;
+  char *append_file = NULL;
   char *config_file = "INVERT_preproc.cfg";
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
@@ -903,10 +908,11 @@ main(int argc, char *argv[])
           { "output_file", required_argument, NULL, 'o' },
           { "config_file", required_argument, NULL, 'C' },
           { "gradient_ns", required_argument, NULL, 'g' },
+          { "append_file", required_argument, NULL, 'A' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:c:C:d:D:g:o:O:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:A:c:C:d:D:g:o:O:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -957,6 +963,10 @@ main(int argc, char *argv[])
             observatory_data = obsdata_swarm_read_idx(optarg, 1);
             fprintf(stderr, "done (%zu stations read, %zu total measurements)\n",
                     observatory_data->nstation, obsdata_n(observatory_data));
+            break;
+
+          case 'A':
+            append_file = optarg;
             break;
 
           default:
@@ -1010,15 +1020,16 @@ main(int argc, char *argv[])
       track_p2 = preprocess_data(&params, magdata_flags2, data2);
     }
 
-#if 0 /* XXX */
-  print_unflagged_data("data1.dat", data);
-  /*print_unflagged_data("data2.dat", data2);*/
-  exit(1);
-#endif
+  if (append_file)
+    {
+      fprintf(stderr, "main: reading append file %s...", append_file);
+      mdata = magdata_read(append_file, NULL);
+      fprintf(stderr, "done (%zu data read)\n", mdata->n);
+    }
 
   fprintf(stderr, "main: computing vector residuals...");
   gettimeofday(&tv0, NULL);
-  mdata = copy_data(magdata_flags, data, track_p, magdata_flags2, data2, track_p2, &params);
+  mdata = copy_data(magdata_flags, data, track_p, magdata_flags2, data2, track_p2, &params, mdata);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%zu residuals copied, %g seconds)\n",
           mdata->n, time_diff(tv0, tv1));

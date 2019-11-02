@@ -10,7 +10,7 @@ down_sample="1"
 cdfdir="/data/CHAMP/L3"
 outdir="/data/CHAMP/Stage1"
 
-prog="/data/palken/lib/champ/stage1"
+prog="/home/palken/usr/bin/stage1"
 
 # Use CHAOS external field model?
 extra_flags=""

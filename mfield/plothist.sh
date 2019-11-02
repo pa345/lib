@@ -16,7 +16,7 @@ echo "prefix = ${prefix}"
 echo "bin size = ${binsize} [days]"
 
 tmin="2000"
-tmax="2019"
+tmax="2020"
 nbins=$(echo "($tmax - $tmin) / $dt" | bc)
 
 function proc
@@ -35,7 +35,7 @@ function proc
 rm -f ${prefix_dir}/hist_scal.sat*
 rm -f ${prefix_dir}/hist_vec_Z.sat*
 
-for sat in 0_1 $(seq 2 9); do
+for sat in $(seq 0 8); do
   fileF="${prefix}${sat}_F.dat"
   if [ -f ${fileF} ]; then
     echo "processing ${fileF}..."

@@ -12,7 +12,7 @@
 #include <gsl/gsl_interp.h>
 #include <gsl/gsl_complex.h>
 
-#include <magfield/magfield_eval.h>
+#include <magfield/magfield_eval_complex.h>
 
 /* spatial modes data structure */
 typedef struct
@@ -43,7 +43,7 @@ typedef struct
    */
   gsl_matrix_complex ** modes_U;
 
-  magfield_eval_workspace ** magfield_eval_p;
+  magfield_eval_complex_workspace ** magfield_eval_p;
 } invert_smode_workspace;
 
 /*
