@@ -1314,6 +1314,7 @@ mfield_spectrum(const double t, const size_t n, const size_t nderiv, mfield_work
   return sum;
 }
 
+/* write binary coefficient file */
 int
 mfield_write(const char *filename, mfield_workspace *w)
 {
@@ -1328,29 +1329,18 @@ mfield_write(const char *filename, mfield_workspace *w)
       return GSL_FAILURE;
     }
 
-  fwrite(&(w->params), sizeof(mfield_parameters), 1, fp);
-  fwrite(&(w->t_mu), sizeof(double), 1, fp);
-  fwrite(&(w->t_sigma), sizeof(double), 1, fp);
-  fwrite(&(w->t0_data), sizeof(double), 1, fp);
-
-  /*
-   * only write internal coefficients since when we later read
-   * the file we won't be able to recalculate w->p_align
-   */
-  fwrite(w->c->data, sizeof(double), w->p_int, fp);
-
-  gsl_matrix_fwrite(fp, w->covar);
+  fwrite(&(w->c->size), sizeof(size_t), 1, fp);
+  gsl_vector_fwrite(fp, w->c);
 
   fclose(fp);
 
   return s;
-} /* mfield_write() */
+}
 
-mfield_workspace *
-mfield_read(const char *filename)
+int
+mfield_read(const char *filename, gsl_vector *c)
 {
-  mfield_workspace *w;
-  mfield_parameters params;
+  size_t n;
   FILE *fp;
 
   fp = fopen(filename, "r");
@@ -1358,25 +1348,22 @@ mfield_read(const char *filename)
     {
       fprintf(stderr, "mfield_read: unable to open %s: %s\n",
               filename, strerror(errno));
-      return 0;
+      return -1;
     }
 
-  fread(&params, sizeof(mfield_parameters), 1, fp);
+  fread(&n, sizeof(size_t), 1, fp);
+  if (c->size != n)
+    {
+      fprintf(stderr, "mfield_read: coefficient vector has wrong size\n");
+      return -1;
+    }
 
-  params.mfield_data_p = NULL;
-
-  w = mfield_alloc(&params);
-
-  fread(&(w->t_mu), sizeof(double), 1, fp);
-  fread(&(w->t_sigma), sizeof(double), 1, fp);
-  fread(&(w->t0_data), sizeof(double), 1, fp);
-  fread(w->c->data, sizeof(double), w->p_int, fp);
-  gsl_matrix_fread(fp, w->covar);
+  gsl_vector_fread(fp, c);
 
   fclose(fp);
 
-  return w;
-} /* mfield_read() */
+  return 0;
+}
 
 /*
 mfield_write_ascii()

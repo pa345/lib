@@ -324,7 +324,7 @@ int mfield_eval_g_ext(const double t, const double r, const double theta, const 
 int mfield_calc_evals(gsl_vector *evals, mfield_workspace *w);
 double mfield_spectrum(const double t, const size_t n, const size_t nderiv, mfield_workspace *w);
 int mfield_write(const char *filename, mfield_workspace *w);
-mfield_workspace *mfield_read(const char *filename);
+int mfield_read(const char *filename, gsl_vector *c);
 int mfield_write_ascii(const char *filename, const double epoch,
                        const gsl_vector * c, mfield_workspace *w);
 int mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w);

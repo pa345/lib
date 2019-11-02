@@ -526,6 +526,8 @@ main(int argc, char *argv[])
   int status;
   const char *error_file = "error.txt";
   char *outfile = NULL;
+  char *output_coef_file = NULL;
+  char *input_coef_file = NULL;
   char *Lfile = NULL;
   char *datamap_prefix = "output";
   char *data_prefix = "output";
@@ -586,10 +588,12 @@ main(int argc, char *argv[])
           { "lambda_s", required_argument, NULL, 'N' },
           { "lambda_o", required_argument, NULL, 'O' },
           { "lambda_u", required_argument, NULL, 'P' },
+          { "output_coef_file", required_argument, NULL, 'x' },
+          { "input_coef_file", required_argument, NULL, 'y' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:Q:n:o:p:r", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:Q:n:o:p:rx:y:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -669,6 +673,14 @@ main(int argc, char *argv[])
 
           case 'l':
             Lfile = optarg;
+            break;
+
+          case 'x':
+            output_coef_file = optarg;
+            break;
+
+          case 'y':
+            input_coef_file = optarg;
             break;
 
           default:
@@ -881,6 +893,11 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of crustal bias parameters:         %zu\n", mfield_workspace_p->p_bias);
   fprintf(stderr, "main: number of total parameters:                %zu\n", mfield_workspace_p->p);
 
+  if (input_coef_file)
+    fprintf(stderr, "main: input coefficient file:                    %s\n", input_coef_file);
+  if (output_coef_file)
+    fprintf(stderr, "main: output coefficient file:                   %s\n", output_coef_file);
+
   if (mfield_params.synth_data)
     {
       fprintf(stderr, "main: replacing with synthetic data...");
@@ -903,11 +920,21 @@ main(int argc, char *argv[])
       fprintf(stderr, "done\n");
     }
 
-  /* construct initial guess vector from IGRF */
   coeffs = gsl_vector_alloc(mfield_workspace_p->p);
-  fprintf(stderr, "main: constructing initial coefficient vector...");
-  initial_guess(coeffs, mfield_workspace_p);
-  fprintf(stderr, "done\n");
+
+  if (input_coef_file)
+    {
+      fprintf(stderr, "main: reading input coefficients...");
+      mfield_read(input_coef_file, coeffs);
+      fprintf(stderr, "done\n");
+    }
+  else
+    {
+      /* construct initial guess vector from IGRF */
+      fprintf(stderr, "main: constructing initial coefficient vector...");
+      initial_guess(coeffs, mfield_workspace_p);
+      fprintf(stderr, "done\n");
+    }
 
   if (print_residuals)
     {
@@ -1051,8 +1078,14 @@ main(int argc, char *argv[])
   if (outfile)
     {
       fprintf(stderr, "main: writing ASCII coefficients to %s...", outfile);
-      /*mfield_write(outfile, mfield_workspace_p);*/
       mfield_write_ascii(outfile, mfield_workspace_p->epoch, 0, mfield_workspace_p);
+      fprintf(stderr, "done\n");
+    }
+
+  if (output_coef_file)
+    {
+      fprintf(stderr, "main: writing binary coefficients to %s...", outfile);
+      mfield_write(output_coef_file, mfield_workspace_p);
       fprintf(stderr, "done\n");
     }
 
