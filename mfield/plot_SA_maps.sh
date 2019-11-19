@@ -9,18 +9,18 @@ plotprog="$DATAHOME/palken/repo/msynth/src/plots/genmap.sh"
 #coefdir="maps_CHAOS"
 #title="CHAOS-6-x8"
 
-coef_file="Model_A2.shc"
-coefdir="maps_A2"
+coef_file="Model_AAA3.shc"
+coefdir="maps_AAA3"
 title="Model A"
 
-plot_args="-c "uT/yr^2" --cbmin -1.0 --cbmax 1.0 --cbstep 0.5"
+plot_args="-c "uT/yr^2" --cbmin -2.0 --cbmax 2.0 --cbstep 1.0"
 
-start_time="2000.0"
-end_time="2019.0"
+start_time="2000.6"
+end_time="2020.0"
 time_step="0.1"
 
 # maximum SH degree for SA maps
-nmax="6"
+nmax="8"
 
 mkdir ${coefdir}
 

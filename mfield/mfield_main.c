@@ -1084,7 +1084,7 @@ main(int argc, char *argv[])
 
   if (output_coef_file)
     {
-      fprintf(stderr, "main: writing binary coefficients to %s...", outfile);
+      fprintf(stderr, "main: writing binary coefficients to %s...", output_coef_file);
       mfield_write(output_coef_file, mfield_workspace_p);
       fprintf(stderr, "done\n");
     }
