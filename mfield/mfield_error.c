@@ -23,33 +23,31 @@ mfield_calc_uncertainties()
   Print uncertainties for internal field coefficients to a file
 
 Inputs: filename - output file
+        t        - time in decimal years for uncertainties
         covar    - covariance matrix
         w        - workspace
 */
 
 int
-mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfield_workspace * w)
+mfield_print_uncertainties(const char * filename, const double t, const gsl_matrix * covar, mfield_workspace * w)
 {
   int s = GSL_SUCCESS;
-#if 0 /*XXX*/
   gsl_vector_const_view d = gsl_matrix_const_diagonal(covar);
+  gsl_bspline2_workspace *gauss_spline_p = w->gauss_spline_workspace_p[0];
+  size_t ncontrol = gsl_bspline2_ncontrol(gauss_spline_p);
   FILE *fp;
   size_t n;
 
   fp = fopen(filename, "w");
 
   n = 1;
+  fprintf(fp, "# Timestamp: %g\n", t);
   fprintf(fp, "# Field %zu: spherical harmonic order m\n", n++);
   fprintf(fp, "# Field %zu: spherical harmonic degree n\n", n++);
   fprintf(fp, "# Field %zu: g(n,m) (nT)\n", n++);
   fprintf(fp, "# Field %zu: g(n,m) error (nT)\n", n++);
-  fprintf(fp, "# Field %zu: uncertainty in MF g(n,m) (dimensionless)\n", n++);
-  fprintf(fp, "# Field %zu: d/dt g(n,m) (nT)\n", n++);
-  fprintf(fp, "# Field %zu: d/dt g(n,m) error (nT)\n", n++);
-  fprintf(fp, "# Field %zu: uncertainty in SV g(n,m) (dimensionless)\n", n++);
-  fprintf(fp, "# Field %zu: (d/dt)^2 g(n,m) (nT)\n", n++);
-  fprintf(fp, "# Field %zu: (d/dt)^2 g(n,m) error (nT)\n", n++);
-  fprintf(fp, "# Field %zu: uncertainty in SA g(n,m) (dimensionless)\n", n++);
+  fprintf(fp, "# Field %zu: d/dt g(n,m) (nT/year)\n", n++);
+  fprintf(fp, "# Field %zu: d/dt g(n,m) error (nT/year)\n", n++);
 
   for (n = 1; n <= w->nmax; ++n)
     {
@@ -58,32 +56,33 @@ mfield_print_uncertainties(const char * filename, const gsl_matrix * covar, mfie
       for (m = -ni; m <= ni; ++m)
         {
           size_t cidx = mfield_coeff_nmidx(n, m);
-          double gnm = mfield_get_mf(w->c, cidx, w);
-          double dgnm = mfield_get_sv(w->c, cidx, w);
-          double ddgnm = mfield_get_sa(w->c, cidx, w);
-          double err_gnm = mfield_get_mf(&d.vector, cidx, w);
-          double err_dgnm = mfield_get_sv(&d.vector, cidx, w);
-          double err_ddgnm = mfield_get_sa(&d.vector, cidx, w);
+          gsl_vector_const_view v1 = gsl_vector_const_subvector_with_stride(w->c, cidx, w->nnm_core, ncontrol);
+          gsl_vector_const_view v2 = gsl_vector_const_subvector_with_stride(&d.vector, cidx, w->nnm_core, ncontrol);
+          double gnm, err_gnm;
+          double dgnm, err_dgnm;
 
-          fprintf(fp, "%5d %5zu %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+          gsl_bspline2_eval(t, &v1.vector, &gnm, gauss_spline_p);
+          gsl_bspline2_eval(t, &v2.vector, &err_gnm, gauss_spline_p);
+
+          gsl_bspline2_eval_deriv(t, &v1.vector, 1, &dgnm, gauss_spline_p);
+          gsl_bspline2_eval_deriv(t, &v2.vector, 1, &err_dgnm, gauss_spline_p);
+
+          err_gnm = sqrt(err_gnm);
+          err_dgnm = sqrt(err_dgnm);
+
+          fprintf(fp, "%5d %5zu %12.4e %12.4e %12.4e %12.4e\n",
                   m,
                   n,
                   gnm,
                   err_gnm,
-                  fabs(err_gnm / gnm),
                   dgnm,
-                  err_dgnm,
-                  fabs(err_dgnm / dgnm),
-                  ddgnm,
-                  err_ddgnm,
-                  fabs(err_ddgnm / ddgnm));
+                  err_dgnm);
         }
 
       fprintf(fp, "\n");
     }
 
   fclose(fp);
-#endif
 
   return s;
 }
@@ -138,7 +137,7 @@ Inputs: C - on input, covariance matrix
 */
 
 int
-mfield_correlation(gsl_matrix * C, mfield_workspace *w)
+mfield_correlation(gsl_matrix * C)
 {
   int s = 0;
   const size_t N = C->size1;

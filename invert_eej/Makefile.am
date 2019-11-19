@@ -31,7 +31,7 @@ AM_CPPFLAGS = -I/home/palken/usr/include -I$(top_builddir)/cond -I$(top_builddir
 
 common_libs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig -llapacke -llapack -lptcblas -lptf77blas -latlas -lpthread
 
-main_LDADD = libmag.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/hwm/libhwm.la $(top_builddir)/cond/libcond.la $(top_builddir)/iri/libiri.la $(top_builddir)/msis/libmsis.la $(top_builddir)/superlu/libsuperlu.la $(top_builddir)/estist/libestist_calc.la -lgslpde -lsuperlu_mt_OPENMP -lmagfield ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+main_LDADD = libmag.la $(top_builddir)/magfit/libmagfit.la $(top_builddir)/pca/libpca.la $(top_builddir)/hwm/libhwm.la $(top_builddir)/cond/libcond.la $(top_builddir)/iri/libiri.la $(top_builddir)/msis/libmsis.la $(top_builddir)/superlu/libsuperlu.la $(top_builddir)/estist/libestist_calc.la -lgslpde -lsuperlu_mt_OPENMP -lmagfield ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp -lnetcdf
 
 swarmeef_print_LDADD = libmag.la ${common_libs}
 

@@ -5,11 +5,11 @@
 prog="./main"
 
 # set for profiles only
-#flags="-p"
-flags=""
+flags="-p -a 0.00001 -b 23.99999"
+#flags=""
 
-for year in $(seq -w 07 10); do
-  log_dir="log_champ_${year}"
+for year in $(seq -w 10 10); do
+  log_dir="log_champ_all_${year}"
   idx_file="champ${year}.idx"
 
   rm -rf ${log_dir}

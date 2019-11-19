@@ -788,7 +788,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of threads = %d\n", omp_get_max_threads());
   fprintf(stderr, "main: print_residuals = %d\n", print_residuals);
   if (outfile)
-    fprintf(stderr, "main: output coefficient file = %s\n", outfile);
+    fprintf(stderr, "main: output ASCII coefficient file = %s\n", outfile);
   if (Lfile)
     fprintf(stderr, "main: L-curve output file = %s\n", Lfile);
 
@@ -813,8 +813,8 @@ main(int argc, char *argv[])
         if (!(*mdata))
           exit(1);
 
-        fprintf(stderr, "done (%zu data total, %g seconds)\n",
-                (*mdata)->n, time_diff(tv0, tv1));
+        fprintf(stderr, "done (%zu data total, name = %s, %g seconds)\n",
+                (*mdata)->n, (*mdata)->name, time_diff(tv0, tv1));
 
         magdata_init(*mdata);
         magdata_calc(*mdata);
@@ -894,9 +894,9 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of total parameters:                %zu\n", mfield_workspace_p->p);
 
   if (input_coef_file)
-    fprintf(stderr, "main: input coefficient file:                    %s\n", input_coef_file);
+    fprintf(stderr, "main: input binary coefficient file:             %s\n", input_coef_file);
   if (output_coef_file)
-    fprintf(stderr, "main: output coefficient file:                   %s\n", output_coef_file);
+    fprintf(stderr, "main: output binary coefficient file:            %s\n", output_coef_file);
 
   if (mfield_params.synth_data)
     {
@@ -1007,14 +1007,14 @@ main(int argc, char *argv[])
       /* calculate errors in coefficients */
       fprintf(stderr, "main: printing coefficient uncertainties to %s...", error_file);
       gettimeofday(&tv0, NULL);
-      mfield_print_uncertainties(error_file, mfield_workspace_p->covar, mfield_workspace_p);
+      mfield_print_uncertainties(error_file, mfield_workspace_p->epoch, mfield_workspace_p->covar, mfield_workspace_p);
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
       /* calculate correlation matrix */
       fprintf(stderr, "main: calculating correlation matrix...");
       gettimeofday(&tv0, NULL);
-      status = mfield_correlation(mfield_workspace_p->covar, mfield_workspace_p);
+      status = mfield_correlation(mfield_workspace_p->covar);
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 

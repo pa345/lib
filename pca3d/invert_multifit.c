@@ -17,12 +17,12 @@ static int invert_calc_nonlinear_multifit(const gsl_vector * c, invert_workspace
 static int invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J);
-static int invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr,
+static int invert_nonlinear_model(const gsl_vector * x, const magdata * mptr,
                                   const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w);
 static int invert_jacobian_vector(const int thread_id, const double t, const double r, const double theta, const double phi,
                                   gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
                                   const invert_workspace *w);
-static int invert_nonlinear_model_J(const int res_flag, const gsl_vector * x, const double t, const double r,
+static int invert_nonlinear_model_J(const gsl_vector * x, const double t, const double r,
                                     const double theta, const double phi,
                                     const int thread_id, double J_model[3], invert_workspace *w);
 static int invert_jacobian_vector_J(const int thread_id, const double t, const double r, const double theta, const double phi,
@@ -226,7 +226,7 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           if (xzero)
             B_model[0] = B_model[1] = B_model[2] = 0.0;
           else
-            invert_nonlinear_model(0, x, mptr, j, thread_id, B_model, w);
+            invert_nonlinear_model(x, mptr, j, thread_id, B_model, w);
 
           /* compute vector SV model for this residual */
           if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
@@ -607,9 +607,7 @@ invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J)
 invert_nonlinear_model()
   Compute total B model vector for a given residual
 
-Inputs: res_flag  - 0 = normal residual
-                    1 = gradient residual
-        x         - parameter vector
+Inputs: x         - parameter vector
         mptr      - magdata structure
         data_idx  - index of datum in magdata
         thread_id - OpenMP thread id
@@ -618,7 +616,7 @@ Inputs: res_flag  - 0 = normal residual
 */
 
 static int
-invert_nonlinear_model(const int res_flag, const gsl_vector * x, const magdata * mptr,
+invert_nonlinear_model(const gsl_vector * x, const magdata * mptr,
                        const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w)
 {
   int s = 0;
@@ -664,7 +662,7 @@ invert_jacobian_vector(const int thread_id, const double t, const double r, cons
   invert_tmode_workspace * tmode_p = w->tmode_workspace_p;
   invert_smode_workspace * smode_p = w->smode_workspace_p;
   const size_t nfreq = w->nfreq;
-  size_t i, j, k, l;
+  size_t i, j, k;
 
   /* precompute magfield arrays for this (r,theta,phi) */
   invert_smode_precompute(thread_id, r, theta, phi, smode_p);
@@ -756,9 +754,7 @@ invert_jacobian_vector(const int thread_id, const double t, const double r, cons
 invert_nonlinear_model_J()
   Compute total J model vector for a given residual
 
-Inputs: res_flag  - 0 = normal residual
-                    1 = gradient residual
-        x         - parameter vector
+Inputs: x         - parameter vector
         t         - timestamp (CDF_EPOCH)
         r         - radius (km)
         theta     - colatitude (radians)
@@ -769,7 +765,7 @@ Inputs: res_flag  - 0 = normal residual
 */
 
 static int
-invert_nonlinear_model_J(const int res_flag, const gsl_vector * x, const double t, const double r,
+invert_nonlinear_model_J(const gsl_vector * x, const double t, const double r,
                          const double theta, const double phi,
                          const int thread_id, double J_model[3], invert_workspace *w)
 {
@@ -819,7 +815,7 @@ invert_jacobian_vector_J(const int thread_id, const double t, const double r, co
   size_t i, j, k;
 
   /* precompute magfield arrays for this (r,theta,phi) */
-  invert_smode_precompute(thread_id, r, theta, phi, smode_p);
+  invert_smode_precompute_J(thread_id, r, theta, phi, smode_p);
 
   for (i = 0; i < nfreq; ++i)
     {

@@ -2507,7 +2507,7 @@ mfield_robust_weights(const gsl_vector * f, gsl_vector * wts, mfield_workspace *
 
       if (mptr->global_flags & MAGDATA_GLOBFLG_SATELLITE)
         {
-          fprintf(stderr, "\t === SATELLITE %zu (robust sigma) ===\n", i);
+          fprintf(stderr, "\t === SATELLITE %zu [%s] (robust sigma) ===\n", i, mptr->name);
 
           mfield_robust_print_stat("sigma X", sigma_X, rstat_x[i]);
           mfield_robust_print_stat("sigma Y", sigma_Y, rstat_y[i]);

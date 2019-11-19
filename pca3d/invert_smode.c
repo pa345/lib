@@ -40,6 +40,7 @@
 #include <gsl/gsl_sf_legendre.h>
 
 #include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
 #include <mainlib/ml_interp.h>
 #include <mainlib/ml_satdata.h>
 
@@ -147,6 +148,7 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
 
   for (i = 0; i < nfreq; ++i)
     {
+      fprintf(stderr, "invert_smode_alloc: freq %zu/%zu\n", i + 1, nfreq);
       for (j = 0; j < w->nmodes[i]; ++j)
         {
           size_t sidx = smode_idx(i, j, w);
@@ -166,14 +168,17 @@ invert_smode_alloc(const size_t nfreq, const size_t nmodes[])
   gsl_vector_complex_free(pcoeff);
 
   w->plm_size = gsl_sf_legendre_array_n(params.lmax);
-  w->nlm = magfield_lmidx(params.lmax, params.mmax, params.mmax) + 1;
+  /*XXXw->nlm = magfield_lmidx(params.lmax, params.mmax, params.mmax) + 1;*/
+  w->nlm = w->magfield_eval_p[0]->nlm;
   w->mmax = params.mmax;
 
   w->Plm = malloc(w->plm_size * w->max_threads * sizeof(double));
   w->dPlm = malloc(w->plm_size * w->max_threads * sizeof(double));
+  w->qtlmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
   w->qlmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
   w->plmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
   w->drplmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
+  w->dqlmr = malloc(w->nlm * w->modes_tot * w->max_threads * sizeof(complex double));
   w->expmphi = malloc((w->mmax + 1) * w->max_threads * sizeof(complex double));
 
   w->acc = malloc(w->max_threads * sizeof(gsl_interp_accel *));
@@ -232,6 +237,9 @@ invert_smode_free(invert_smode_workspace *w)
   if (w->dPlm)
     free(w->dPlm);
 
+  if (w->qtlmr)
+    free(w->qtlmr);
+
   if (w->qlmr)
     free(w->qlmr);
 
@@ -240,6 +248,9 @@ invert_smode_free(invert_smode_workspace *w)
 
   if (w->drplmr)
     free(w->drplmr);
+
+  if (w->dqlmr)
+    free(w->dqlmr);
 
   if (w->expmphi)
     free(w->expmphi);
@@ -296,8 +307,43 @@ invert_smode_precompute(const int thread_id, const double r, const double theta,
 }
 
 /*
+invert_smode_precompute_J()
+  Prepare to calculate J spatial modes for a given (r,theta,phi) by
+initializing magfield arrays
+*/
+
+int
+invert_smode_precompute_J(const int thread_id, const double r, const double theta, const double phi, invert_smode_workspace * w)
+{
+  int status = 0;
+  const size_t thread_offset = thread_id * w->nlm * w->modes_tot; /* offset for this thread in qtlmr,qlmr,dqlmr arrays */
+  double * Plm = w->Plm + thread_id * w->plm_size;
+  double * dPlm = w->dPlm + thread_id * w->plm_size;
+  complex double * expmphi = w->expmphi + thread_id * (w->mmax + 1);
+  size_t j;
+
+  status += magfield_eval_complex_precompute_phi(phi, expmphi, w->magfield_eval_p[0]);
+  status += magfield_eval_complex_precompute_theta(theta, Plm, dPlm, w->magfield_eval_p[0]);
+
+  /* for each mode, initialize qtlmr, qlmr, dqlmr arrays */
+  for (j = 0; j < w->modes_tot; ++j)
+    {
+      size_t idx = thread_offset + j * w->nlm;
+      complex double * qtlmr = w->qtlmr + idx;
+      complex double * qlmr = w->qlmr + idx;
+      complex double * dqlmr = w->dqlmr + idx;
+
+      status = magfield_eval_complex_J_precompute_r(r, qtlmr, qlmr, dqlmr, w->acc[thread_id], w->magfield_eval_p[j]);
+      if (status)
+        return status;
+    }
+
+  return GSL_SUCCESS;
+}
+
+/*
 invert_smode_get()
-  Return value of spatial mode for a specified frequency band and mode number
+  Return value of spatial mode (B) for a specified frequency band and mode number
 
 Inputs: thread_id - thread id
         r         - radius (km)
@@ -343,7 +389,7 @@ invert_smode_get(const int thread_id, const double r, const double theta, const 
       const complex double * qlmr = w->qlmr + idx;
       const complex double * plmr = w->plmr + idx;
       const complex double * drplmr = w->drplmr + idx;
-      complex double B[4];
+      complex double B[3];
 
       magfield_eval_complex_B_compute(r, theta, Plm, dPlm, expmphi, qlmr, plmr, drplmr, B, magfield_eval_p);
 
@@ -374,7 +420,7 @@ Inputs: thread_id - thread id
 Return: success/error
 
 Notes:
-1) invert_smode_precompute() must be called prior to this function to setup magfield correctly
+1) invert_smode_precompute_J() must be called prior to this function to setup magfield correctly
 */
 
 int
@@ -400,12 +446,12 @@ invert_smode_get_J(const int thread_id, const double r, const double theta, cons
       double * Plm = w->Plm + thread_id * w->plm_size;
       double * dPlm = w->dPlm + thread_id * w->plm_size;
       complex double * expmphi = w->expmphi + thread_id * (w->mmax + 1);
+      complex double * qtlmr = w->qtlmr + idx;
       complex double * qlmr = w->qlmr + idx;
-      complex double * plmr = w->plmr + idx;
-      complex double * drplmr = w->drplmr + idx;
+      complex double * dqlmr = w->dqlmr + idx;
       complex double J[3];
 
-      magfield_eval_complex_J(r, theta, phi, J, magfield_eval_p);
+      magfield_eval_complex_J_compute(r, theta, Plm, dPlm, expmphi, qtlmr, qlmr, dqlmr, J, magfield_eval_p);
 
       Phi[0] = gsl_complex_rect(-creal(J[1]), -cimag(J[1]));
       Phi[1] = gsl_complex_rect(creal(J[2]), cimag(J[2]));
@@ -468,7 +514,7 @@ smode_fill_arrays(const magfield_params * params, const gsl_vector_complex * u,
 
 /*
 invert_smode_print()
-  Print spatial modes to output directory
+  Print magnetic field spatial modes to output directory
 */
 
 int
@@ -501,15 +547,18 @@ invert_smode_print(const char * dir_prefix, invert_smode_workspace * w)
           fprintf(fp, "# Radius:      %.2f [km]\n", r);
           fprintf(fp, "# Field %zu: Longitude (degrees)\n", i++);
           fprintf(fp, "# Field %zu: Latitude (degrees)\n", i++);
-          fprintf(fp, "# Field %zu: X component of mode\n", i++);
-          fprintf(fp, "# Field %zu: Y component of mode\n", i++);
-          fprintf(fp, "# Field %zu: Z component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Re B_r component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Re B_t component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Re B_p component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Im B_r component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Im B_t component of mode\n", i++);
+          fprintf(fp, "# Field %zu: Im B_p component of mode\n", i++);
 
           for (lon = -180.0; lon <= 180.0; lon += 10.0)
             {
               double phi = lon * M_PI / 180.0;
 
-              for (lat = -89.9; lat <= 89.9; lat += 10.0)
+              for (lat = -89.5; lat <= 89.5; lat += 10.0)
                 {
                   double theta = M_PI / 2.0 - lat * M_PI / 180.0;
                   gsl_complex Phi[3];
@@ -517,12 +566,15 @@ invert_smode_print(const char * dir_prefix, invert_smode_workspace * w)
                   invert_smode_precompute(thread_id, r, theta, phi, w);
                   invert_smode_get(thread_id, r, theta, phi, f, mode, Phi, w);
 
-                  fprintf(fp, "%f %f %f %f %f\n",
+                  fprintf(fp, "%f %f %f %f %f %f %f %f\n",
                           lon,
                           lat,
-                          GSL_REAL(Phi[0]),
+                          -GSL_REAL(Phi[2]),
+                          -GSL_REAL(Phi[0]),
                           GSL_REAL(Phi[1]),
-                          GSL_REAL(Phi[2]));
+                          -GSL_IMAG(Phi[2]),
+                          -GSL_IMAG(Phi[0]),
+                          GSL_IMAG(Phi[1]));
                 }
 
               fprintf(fp, "\n");

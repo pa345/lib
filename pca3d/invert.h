@@ -223,7 +223,7 @@ int invert_reset(invert_workspace *w);
 int invert_eval(const double t, const double r, const double theta, const double phi,
                 double B[4], invert_workspace *w);
 int invert_write(const char *filename, invert_workspace *w);
-invert_workspace *invert_read(const char *filename);
+int invert_read(const char *filename, gsl_vector *c);
 int invert_write_ascii(const char *filename, const double epoch,
                        const gsl_vector * c, invert_workspace *w);
 size_t invert_coeff_idx(const size_t f, const size_t tmode, const size_t smode, const invert_workspace * w);

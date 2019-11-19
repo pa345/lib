@@ -31,9 +31,11 @@ typedef struct
   double *Plm;             /* Legendre functions, plm_size * max_threads */
   double *dPlm;            /* Legendre function derivatives, plm_size * max_threads */
   complex double *expmphi; /* exp(i m phi) values, (mmax+1) * max_threads */
+  complex double *qtlmr;   /* q~_l^m(r) values, nlm * max_threads */
   complex double *qlmr;    /* q_l^m(r) values, nlm * max_threads */
   complex double *plmr;    /* p_l^m(r) values, nlm * max_threads */
   complex double *drplmr;  /* d/dr [r p_l^m(r)] values, nlm * max_threads */
+  complex double *dqlmr;   /* d/dr q_l^m(r) values, nlm * max_threads */
   gsl_interp_accel **acc;  /* accelerator objects, max_threads */
 
   /*
@@ -53,6 +55,7 @@ typedef struct
 invert_smode_workspace *invert_smode_alloc(const size_t nfreq, const size_t nmodes[]);
 void invert_smode_free(invert_smode_workspace *w);
 int invert_smode_precompute(const int thread_id, const double r, const double theta, const double phi, invert_smode_workspace * w);
+int invert_smode_precompute_J(const int thread_id, const double r, const double theta, const double phi, invert_smode_workspace * w);
 int invert_smode_get(const int thread_id, const double r, const double theta, const double phi, const size_t f, const size_t mode,
                      gsl_complex Phi[3], invert_smode_workspace * w);
 int invert_smode_get_J(const int thread_id, const double r, const double theta, const double phi, const size_t f, const size_t mode,

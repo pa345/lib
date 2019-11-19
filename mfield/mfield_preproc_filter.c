@@ -599,6 +599,11 @@ mfield_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) tracks due to kp [%.1f]\n",
           nflagged_kp, track_p->n, (double) nflagged_kp / (double) track_p->n * 100.0, params->max_kp);
 
+#if PRINT_FILTER_STEPS
+  /* print data after kp filter */
+  print_unflagged_data("unflagged.2a", data, "after kp filter");
+#endif
+
   /*nflagged_RC = mfield_flag_RC(RC_max, track_p, data);*/
   /*fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) tracks due to RC\n",
           nflagged_RC, track_p->n, (double) nflagged_RC / (double) track_p->n * 100.0);*/
@@ -607,13 +612,28 @@ mfield_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) tracks due to dRC/dt [%.1f nT/hour]\n",
           nflagged_dRC, track_p->n, (double) nflagged_dRC / (double) track_p->n * 100.0, params->max_dRC);
 
+#if PRINT_FILTER_STEPS
+  /* print data after RC filter */
+  print_unflagged_data("unflagged.2b", data, "after dRC/dt filter");
+#endif
+
   nflagged_LT = mfield_flag_LT(magdata_flags, params, track_p, data);
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) mid-latitude points due to LT [cutoff: %.1f deg]\n",
           nflagged_LT, data->n, (double) nflagged_LT / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
 
+#if PRINT_FILTER_STEPS
+  /* print data after LT filter */
+  print_unflagged_data("unflagged.2c", data, "after LT filter");
+#endif
+
   nflagged_zenith = mfield_flag_zenith(params, track_p, data);
   fprintf(stderr, "\t mfield_preprocess_filter: flagged %zu/%zu (%.1f%%) high-latitude points due to zenith angle [cutoff: %.1f deg]\n",
           nflagged_zenith, data->n, (double) nflagged_zenith / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
+
+#if PRINT_FILTER_STEPS
+  /* print data after zenith filter */
+  print_unflagged_data("unflagged.2d", data, "after zenith filter");
+#endif
 
   if (magdata_flags & MAGDATA_GLOBFLG_CRYOSAT)
     {

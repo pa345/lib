@@ -36,6 +36,7 @@
 #include <gsl/gsl_test.h>
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_rng.h>
+#include <gsl/gsl_histogram.h>
 
 #include <mainlib/ml_apex.h>
 #include <mainlib/ml_att.h>
@@ -85,7 +86,7 @@ static int mfield_check_LT(const double lt, const double lt_min, const double lt
 static size_t model_flags(const size_t magdata_flags, const double t,
                           const double theta, const double phi, const double qdlat,
                           const preprocess_parameters * params);
-void print_unflagged_data(const char *filename, const satdata_mag *data);
+void print_unflagged_data(const char *filename, const satdata_mag *data, const char * desc);
 
 #define MFIELD_IDX_X              0
 #define MFIELD_IDX_Y              1
@@ -101,6 +102,12 @@ void print_unflagged_data(const char *filename, const satdata_mag *data);
 #define MFIELD_IDX_DF_EW          11
 #define MFIELD_IDX_B_EULER        12
 #define MFIELD_IDX_END            13
+
+/*
+ * when enabled, this flag will print intermediate data files after each filtering step,
+ * for visualizing purposes
+ */
+#define PRINT_FILTER_STEPS        0
 
 /* Global */
 solarpos_workspace *solarpos_workspace_p = NULL;
@@ -650,6 +657,11 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
+#if PRINT_FILTER_STEPS
+  /* print all data before filtering */
+  print_unflagged_data("unflagged.0", data, "all data");
+#endif
+
   /* detect bad tracks with rms test */
   {
     const char *rmsfile = "satrms.dat";
@@ -659,6 +671,11 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
     fprintf(stderr, "preprocess_data: flagged (%zu/%zu) (%.1f%%) tracks due to high rms\n",
             nrms, track_p->n, (double) nrms / (double) track_p->n * 100.0);
   }
+
+#if PRINT_FILTER_STEPS
+  /* print data after rms test */
+  print_unflagged_data("unflagged.1", data, "after rms test");
+#endif
 
 #if 1
 
@@ -672,10 +689,6 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
   /* flag according to WMM criteria */
   satdata_filter_wmm(1, data);
 
-#endif
-
-#if 0
-  print_unflagged_data("data.dat.1", data);
 #endif
 
   /* downsample data */
@@ -693,8 +706,9 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
     fprintf(stderr, "done\n");
   }
 
-#if 0
-  print_unflagged_data("data.dat.2", data);
+#if PRINT_FILTER_STEPS
+  /* print data after downsampling */
+  print_unflagged_data("unflagged.3", data, "after downsampling");
 #endif
 
   /* print track statistics */
@@ -713,48 +727,38 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
 
 /* print unflagged data points for data selection visualization */
 void
-print_unflagged_data(const char *filename, const satdata_mag *data)
+print_unflagged_data(const char *filename, const satdata_mag *data, const char * desc)
 {
   size_t i;
   FILE *fp;
+  const double t0 = epoch2year(data->t[0]);
+  const double t1 = epoch2year(data->t[data->n - 1]);
+  const double dt = 15.0 / 365.25;
+  const size_t n = (size_t) ((t1 - t0) / dt);
+  gsl_histogram *h = gsl_histogram_alloc(n);
 
   fp = fopen(filename, "w");
 
+  gsl_histogram_set_ranges_uniform(h, t0, t1);
+
+  i = 1;
+  fprintf(fp, "# Description: %s\n", desc);
+  fprintf(fp, "# Field %zu: lower time bin (decimal year)\n", i++);
+  fprintf(fp, "# Field %zu: upper time bin (decimal year)\n", i++);
+  fprintf(fp, "# Field %zu: data count\n", i++);
+
   for (i = 0; i < data->n; ++i)
     {
-      double B[3], B_main[3], B_ext[3];
-
-#if 0
       if (!SATDATA_AvailableData(data->flags[i]))
         continue;
-#else
-      if (SATDATA_BadData(data->flags[i]) || (data->flags[i] & SATDATA_FLG_FILTER))
-        continue;
-#endif
 
-      B[0] = SATDATA_VEC_X(data->B, i);
-      B[1] = SATDATA_VEC_Y(data->B, i);
-      B[2] = SATDATA_VEC_Z(data->B, i);
-
-      B_main[0] = SATDATA_VEC_X(data->B_main, i);
-      B_main[1] = SATDATA_VEC_Y(data->B_main, i);
-      B_main[2] = SATDATA_VEC_Z(data->B_main, i);
-
-      B_ext[0] = SATDATA_VEC_X(data->B_ext, i);
-      B_ext[1] = SATDATA_VEC_Y(data->B_ext, i);
-      B_ext[2] = SATDATA_VEC_Z(data->B_ext, i);
-
-      fprintf(fp, "%f %f %f %f %f %f %f\n",
-              data->qdlat[i],
-              B[0],
-              B[1],
-              B[2],
-              B_main[0] + B_ext[0],
-              B_main[1] + B_ext[1],
-              B_main[2] + B_ext[2]);
+      gsl_histogram_increment(h, epoch2year(data->t[i]));
     }
 
+  gsl_histogram_fprintf(fp, h, "%.12e", "%.12e");
+
   fclose(fp);
+  gsl_histogram_free(h);
 }
 
 int
@@ -1154,6 +1158,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --config_file     | -C config_file            - configuration file\n");
   fprintf(stderr, "\t --polar_gap       | -p polar_gap              - fill random points in polar gap given by argument in degrees\n");
   fprintf(stderr, "\t --append_file     | -A append_file            - new data will be appended to this dataset in magdata binary format\n");
+  fprintf(stderr, "\t --name            | -N name                   - name of satellite / dataset\n");
 }
 
 int
@@ -1165,6 +1170,7 @@ main(int argc, char *argv[])
   char *output_file = NULL;
   char *append_file = NULL;
   char *config_file = "MF_preproc.cfg";
+  char *name = NULL;
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   obsdata *observatory_data = NULL;
@@ -1232,10 +1238,11 @@ main(int argc, char *argv[])
           { "gradient_ns", required_argument, NULL, 'g' },
           { "polar_gap", required_argument, NULL, 'p' },
           { "append_file", required_argument, NULL, 'A' },
+          { "name", required_argument, NULL, 'N' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:A:c:C:d:D:e:f:g:o:O:p:r:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:A:c:C:d:D:e:f:g:o:O:N:p:r:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -1326,6 +1333,10 @@ main(int argc, char *argv[])
 
           case 'A':
             append_file = optarg;
+            break;
+
+          case 'N':
+            name = optarg;
             break;
 
           default:
@@ -1441,12 +1452,6 @@ main(int argc, char *argv[])
     }
 #endif
 
-#if 0 /* XXX */
-  print_unflagged_data("data1.dat", data);
-  /*print_unflagged_data("data2.dat", data2);*/
-  exit(1);
-#endif
-
   if (append_file)
     {
       fprintf(stderr, "main: reading append file %s...", append_file);
@@ -1477,6 +1482,10 @@ main(int argc, char *argv[])
 
   /* set alignment flags */
   magdata_set_align(magdata_align_flags, mdata);
+
+  /* set dataset name */
+  if (name != NULL)
+    strncpy(mdata->name, name, MAGDATA_NAME_LENGTH);
 
 #if 0
   fprintf(stderr, "main: writing data to %s...", data_file);

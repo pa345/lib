@@ -225,23 +225,76 @@ void
 print_J_grid(const char * filename, const double t, invert_workspace * w)
 {
   FILE *fp = fopen(filename, "w");
-  const double r = R_EARTH_KM + 110.0;
-  double lon, lat;
+  const double r = R_EARTH_KM + 350.0;
+  const double dlon = 2.0;
+  const double dlat = 2.0;
+  const double lat_min = -89.9;
+  const double lat_max = 89.9;
+  const size_t nlon = (size_t) (360.0 / dlon) + 1;
+  const size_t nlat = (size_t) ((lat_max - lat_min) / dlat) + 1;
+  gsl_matrix *Jr = gsl_matrix_alloc(nlon, nlat);
+  gsl_matrix *Jt = gsl_matrix_alloc(nlon, nlat);
+  gsl_matrix *Jp = gsl_matrix_alloc(nlon, nlat);
   size_t i;
 
   i = 1;
   fprintf(fp, "# Radius: %.4f [km]\n", r);
+  fprintf(fp, "# Timestamp: %ld\n", epoch2timet(t));
   fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: J_r (A/m^2)\n", i++);
   fprintf(fp, "# Field %zu: J_t (A/m^2)\n", i++);
   fprintf(fp, "# Field %zu: J_p (A/m^2)\n", i++);
 
-  for (lon = -180.0; lon <= 180.0; lon += 5.0)
+#pragma omp parallel for private(i)
+  for (i = 0; i < nlon; ++i)
+    {
+      int thread_id = omp_get_thread_num();
+      double lon = -180.0 + i * dlon;
+      double phi = lon * M_PI / 180.0;
+      size_t j;
+
+      for (j = 0; j < nlat; ++j)
+        {
+          double lat = lat_min + j * dlat;
+          double theta = M_PI / 2.0 - lat * M_PI / 180.0;
+          double J[3];
+
+          invert_nonlinear_model_J(w->c, t, r, theta, phi, thread_id, J, w);
+
+          gsl_matrix_set(Jr, i, j, -J[2]);
+          gsl_matrix_set(Jt, i, j, -J[0]);
+          gsl_matrix_set(Jp, i, j, J[1]);
+        }
+    }
+
+  /* write file */
+  for (i = 0; i < nlon; ++i)
+    {
+      double lon = -180.0 + i * dlon;
+      size_t j;
+
+      for (j = 0; j < nlat; ++j)
+        {
+          double lat = lat_min + j * dlat;
+
+          fprintf(fp, "%f %f %.6e %.6e %.6e\n",
+                  lon,
+                  lat,
+                  gsl_matrix_get(Jr, i, j),
+                  gsl_matrix_get(Jt, i, j),
+                  gsl_matrix_get(Jp, i, j));
+        }
+
+      fprintf(fp, "\n");
+    }
+
+#if 0
+  for (lon = -180.0; lon <= 180.0; lon += 2.0)
     {
       double phi = lon * M_PI / 180.0;
 
-      for (lat = -89.9; lat <= 89.9; lat += 5.0)
+      for (lat = -89.9; lat <= 89.9; lat += 2.0)
         {
           double theta = M_PI / 2.0 - lat * M_PI / 180.0;
           double J[3];
@@ -258,8 +311,13 @@ print_J_grid(const char * filename, const double t, invert_workspace * w)
 
       fprintf(fp, "\n");
     }
+#endif
 
   fclose(fp);
+
+  gsl_matrix_free(Jr);
+  gsl_matrix_free(Jt);
+  gsl_matrix_free(Jp);
 }
 
 void
@@ -276,6 +334,8 @@ print_help(char *argv[])
   fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
   fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
+  fprintf(stderr, "\t --output_coef_file | -x file    - output coefficient file (binary)\n");
+  fprintf(stderr, "\t --input_coef_file | -y file     - input coefficient file (binary)\n");
 } /* print_help() */
 
 int
@@ -288,6 +348,8 @@ main(int argc, char *argv[])
   char *data_prefix = "output";
   char *residual_prefix = "output";
   char *config_file = "INVERT.cfg"; /* default config file */
+  char *output_coef_file = NULL;
+  char *input_coef_file = NULL;
   invert_workspace *invert_workspace_p;
   invert_parameters invert_params;
   invert_data_workspace *invert_data_p;
@@ -324,6 +386,8 @@ main(int argc, char *argv[])
           { "print_data", required_argument, NULL, 'd' },
           { "print_map", required_argument, NULL, 'm' },
           { "config_file", required_argument, NULL, 'C' },
+          { "output_coef_file", required_argument, NULL, 'x' },
+          { "input_coef_file", required_argument, NULL, 'y' },
           { 0, 0, 0, 0 }
         };
 
@@ -367,6 +431,14 @@ main(int argc, char *argv[])
 
           case 'r':
             print_residuals = 1;
+            break;
+
+          case 'x':
+            output_coef_file = optarg;
+            break;
+
+          case 'y':
+            input_coef_file = optarg;
             break;
 
           default:
@@ -467,6 +539,11 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: data tmin  = %.2f\n", satdata_epoch2year(invert_data_p->t0_data));
   fprintf(stderr, "main: data tmax  = %.2f\n", satdata_epoch2year(invert_data_p->t1_data));
 
+  if (input_coef_file)
+    fprintf(stderr, "main: input coef file  = %s\n", input_coef_file);
+  if (output_coef_file)
+    fprintf(stderr, "main: output coef file = %s\n", output_coef_file);
+
   if (print_map)
     {
       /* print spatial coverage maps for each satellite */
@@ -520,9 +597,45 @@ main(int argc, char *argv[])
 
   /* construct initial guess vector from IGRF */
   coeffs = gsl_vector_alloc(invert_workspace_p->p);
-  fprintf(stderr, "main: constructing initial coefficient vector...");
-  initial_guess(coeffs, invert_workspace_p);
-  fprintf(stderr, "done\n");
+
+  if (input_coef_file)
+    {
+      fprintf(stderr, "main: reading input coefficients...");
+      invert_read(input_coef_file, coeffs);
+      fprintf(stderr, "done\n");
+
+      /*XXX*/
+      {
+        const double ndays = 30.0;
+        /*const double t0 = invert_workspace_p->t0_data;*/
+        const double t0 = computeEPOCH(2014, 3, 15, 0, 0, 0, 0);
+        const double t1 = t0 + ndays * 8.64e7;
+        const double dt = 3.6e6;
+        char buf[256];
+        double t;
+        size_t idx = 1;
+
+        gsl_vector_memcpy(invert_workspace_p->c, coeffs);
+
+        for (t = t0; t < t1; t += dt)
+          {
+            sprintf(buf, "output/J_grid_%04zu.txt", idx++);
+            fprintf(stderr, "main: writing %s...", buf);
+            gettimeofday(&tv0, NULL);
+            print_J_grid(buf, t, invert_workspace_p);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+          }
+
+        exit(1);
+      }
+    }
+  else
+    {
+      fprintf(stderr, "main: constructing initial coefficient vector...");
+      initial_guess(coeffs, invert_workspace_p);
+      fprintf(stderr, "done\n");
+    }
 
   if (print_residuals)
     {
@@ -556,6 +669,13 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
 
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
+
+  if (output_coef_file)
+    {
+      fprintf(stderr, "main: writing binary coefficients to %s...", output_coef_file);
+      invert_write(output_coef_file, invert_workspace_p);
+      fprintf(stderr, "done\n");
+    }
 
   fprintf(stderr, "main: printing J grid...");
   print_J_grid("grid.txt", invert_workspace_p->t0_data, invert_workspace_p);
@@ -593,14 +713,6 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: writing coefficients to %s...", buf);
   invert_write_ascii(buf, invert_workspace_p->epoch, coeffs, invert_workspace_p);
   fprintf(stderr, "done\n");
-
-  if (outfile)
-    {
-      fprintf(stderr, "main: writing ASCII coefficients to %s...", outfile);
-      /*invert_write(outfile, invert_workspace_p);*/
-      invert_write_ascii(outfile, invert_workspace_p->epoch, 0, invert_workspace_p);
-      fprintf(stderr, "done\n");
-    }
 
 #if 0/*XXX*/
   /* print residual norm between synthetic and computed coefficients */

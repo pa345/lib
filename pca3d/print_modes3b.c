@@ -27,6 +27,7 @@
 #include <gsl/gsl_complex_math.h>
 
 #include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
 #include <mainlib/ml_bsearch.h>
 
 #include <magfield/magfield.h>
@@ -249,8 +250,9 @@ main(int argc, char *argv[])
         }
     }
 
-  fprintf(stderr, "main: frequency: %g [cpd]\n", freq);
-  fprintf(stderr, "main: altitude:  %g [km]\n", alt);
+  fprintf(stderr, "main: frequency:  %g [cpd]\n", freq);
+  fprintf(stderr, "main: J altitude: %g [km]\n", alt);
+  fprintf(stderr, "main: B altitude: %g [km]\n", alt_B);
 
   fprintf(stderr, "main: reading %s...", PCA3D_STAGE2B_FFT_DATA_LIGHT);
   gettimeofday(&tv0, NULL);

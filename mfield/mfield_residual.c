@@ -661,7 +661,7 @@ mfield_residual_print_satellite(const char *prefix, const size_t iter, const siz
         }
     }
 
-  fprintf(stderr, "=== FIT STATISTICS SATELLITE %zu ===\n", nsource);
+  fprintf(stderr, "=== FIT STATISTICS SATELLITE %zu [%s] ===\n", nsource, mptr->name);
 
   /* print header */
   mfield_residual_print_stat(NULL, NULL);

@@ -2127,12 +2127,14 @@ pde_magfield(pde_workspace *w)
                             gsl_matrix_get(w->J_phi, i, idx), gsl_matrix_get(w->J_phi, i, idx + 1), theta);
             }
 
+#if 0/*XXX*/
           for (k = 0; k < nphi; ++k)
             {
               magfield_current_set(MAG_IDX_R, i, j, k, Jr * w->J_s, magfield_p);
               magfield_current_set(MAG_IDX_THETA, i, j, k, Jt * w->J_s, magfield_p);
               magfield_current_set(MAG_IDX_PHI, i, j, k, Jp * w->J_s, magfield_p);
             }
+#endif
         }
     }
 

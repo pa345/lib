@@ -109,7 +109,7 @@ invert_alloc(const invert_parameters *params)
 
   /* use same number of spatial modes per bin as the temporal modes */
   nsmodes = malloc(w->nfreq * sizeof(size_t));
-#if 0 /*XXX*/
+#if 1 /*XXX*/
   for (i = 0; i < w->nfreq; ++i)
     nsmodes[i] = w->tmode_workspace_p->nmodes[i];
 #else
@@ -542,23 +542,19 @@ invert_write(const char *filename, invert_workspace *w)
       return GSL_FAILURE;
     }
 
-  fwrite(&(w->params), sizeof(invert_parameters), 1, fp);
-  fwrite(&(w->t0_data), sizeof(double), 1, fp);
-  fwrite(w->c->data, sizeof(double), w->p, fp);
-
-  gsl_matrix_fwrite(fp, w->covar);
+  fwrite(&(w->c->size), sizeof(size_t), 1, fp);
+  gsl_vector_fwrite(fp, w->c);
 
   fclose(fp);
 
   return s;
-} /* invert_write() */
+}
 
-invert_workspace *
-invert_read(const char *filename)
+int
+invert_read(const char *filename, gsl_vector *c)
 {
-  invert_workspace *w;
-  invert_parameters params;
   FILE *fp;
+  size_t n;
 
   fp = fopen(filename, "r");
   if (!fp)
@@ -568,20 +564,19 @@ invert_read(const char *filename)
       return 0;
     }
 
-  fread(&params, sizeof(invert_parameters), 1, fp);
+  fread(&n, sizeof(size_t), 1, fp);
+  if (c->size != n)
+    {
+      fprintf(stderr, "mfield_read: coefficient vector has wrong size\n");
+      return -1;
+    }
 
-  params.invert_data_p = NULL;
-
-  w = invert_alloc(&params);
-
-  fread(&(w->t0_data), sizeof(double), 1, fp);
-  fread(w->c->data, sizeof(double), w->p, fp);
-  gsl_matrix_fread(fp, w->covar);
+  gsl_vector_fread(fp, c);
 
   fclose(fp);
 
-  return w;
-} /* invert_read() */
+  return 0;
+}
 
 /*
 invert_write_ascii()
@@ -614,6 +609,8 @@ invert_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% Magnetic field model coefficients\n");
   fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
+
+  gsl_vector_fprintf(fp, w->c, "%.12e");
 
   fclose(fp);
 

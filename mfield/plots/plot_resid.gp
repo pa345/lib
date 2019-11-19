@@ -13,9 +13,9 @@ vbuffer = 0.8
 load 'multi_defs.cfg'
 load 'multi_png.cfg'
 
-filedir = '../output_IGRF'
+filedir = '../output'
 satnum = '1'
-iternum = '10'
+iternum = '15'
 set out 'res'.satnum.'_iter'.iternum.'.png'
 
 unset key

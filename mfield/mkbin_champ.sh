@@ -15,9 +15,9 @@ for year in $(seq 2000 2010); do
 
   echo "Processing year ${year}..."
   if [ "${year}" = "2000" ]; then
-    ./mfield_preproc -c ${idxfile} -C ${cfgfile} -o ${outfile}
+    ./mfield_preproc -c ${idxfile} -C ${cfgfile} -N "CHAMP" -o ${outfile}
   else
-    ./mfield_preproc -c ${idxfile} -C ${cfgfile} --append ${outfile} -o ${outfile}
+    ./mfield_preproc -c ${idxfile} -C ${cfgfile} -N "CHAMP" --append ${outfile} -o ${outfile}
   fi
 
   rm -f $idxfile
