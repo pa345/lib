@@ -184,7 +184,7 @@ copy_track(const size_t track_idx, const satdata_mag *data,
                                   SATDATA_VEC_Z(data->B_crust, j) +
                                   SATDATA_VEC_Z(data->B_ext, j);
 
-            datum.r_ns = data->altitude[j] + data->R;
+            datum.r_ns = data->r[j];
             datum.theta_ns = M_PI / 2.0 - data->latitude[j] * M_PI / 180.0;
             datum.phi_ns = data->longitude[j] * M_PI / 180.0;
             datum.qdlat_ns = data->qdlat[j];
@@ -192,7 +192,7 @@ copy_track(const size_t track_idx, const satdata_mag *data,
       }
 
       datum.t = data->t[i];
-      datum.r = data->altitude[i] + data->R;
+      datum.r = data->r[i];
       datum.theta = M_PI / 2.0 - data->latitude[i] * M_PI / 180.0;
       datum.phi = data->longitude[i] * M_PI / 180.0;
       datum.qdlat = data->qdlat[i];

@@ -107,7 +107,7 @@ print_data(const int down_sample, const print_parameters *params,
       if (qdlat < params->qd_min || qdlat > params->qd_max)
         continue;
 
-      if (data->altitude[i] < params->alt_min || data->altitude[i] > params->alt_max)
+      if (data->r[i] - R_EARTH_KM < params->alt_min || data->r[i] - R_EARTH_KM > params->alt_max)
         continue;
 
       unix_time = satdata_epoch2timet(data->t[i]);
@@ -161,7 +161,7 @@ print_data(const int down_sample, const print_parameters *params,
              euvac,
              data->longitude[i],
              data->latitude[i],
-             data->altitude[i],
+             data->r[i] - R_EARTH_KM,
              qdlat,
              satdata_mag_satdir(i, data),
              data->F[i],

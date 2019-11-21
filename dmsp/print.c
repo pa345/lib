@@ -90,7 +90,7 @@ print_data(const int down_sample, const satdata_mag *data)
              data->r[i] - data->R,
              data->qdlat[i],
              satdata_mag_satdir(i, data),
-#if 0
+#if 1
              B_VFM[0],
              B_VFM[1],
              B_VFM[2],

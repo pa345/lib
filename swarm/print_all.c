@@ -94,7 +94,7 @@ print_data(const int down_sample, const satdata_mag *data)
              lt,
              data->longitude[i],
              data->latitude[i],
-             data->altitude[i],
+             data->r[i] - R_EARTH_KM,
              data->qdlat[i],
              satdata_mag_satdir(i, data),
              data->F[i],

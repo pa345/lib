@@ -96,6 +96,7 @@ print_data(const int down_sample, const print_parameters *params,
       time_t unix_time;
       double tyr = satdata_epoch2year(data->t[i]);
       double phi = data->longitude[i] * M_PI / 180.0;
+      double alt = data->r[i] - R_EARTH_KM;
       double lt, ut, euvac;
       double qdlat = data->qdlat[i];
       double B_obs[3], B_main[4], B_crust[3], B_ext[3], B_res[4], B_model[4];
@@ -106,7 +107,7 @@ print_data(const int down_sample, const print_parameters *params,
       if (qdlat < params->qd_min || qdlat > params->qd_max)
         continue;
 
-      if (data->altitude[i] < params->alt_min || data->altitude[i] > params->alt_max)
+      if (alt < params->alt_min || alt > params->alt_max)
         continue;
 
       unix_time = satdata_epoch2timet(data->t[i]);
@@ -164,7 +165,7 @@ print_data(const int down_sample, const print_parameters *params,
              euvac,
              data->longitude[i],
              data->latitude[i],
-             data->altitude[i],
+             data->r[i] - R_EARTH_KM,
              qdlat,
              satdata_mag_satdir(i, data),
              data->ne[i],

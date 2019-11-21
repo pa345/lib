@@ -1,4 +1,4 @@
-bin_PROGRAMS = print print_all print_efi print_lp print_lt print_crust print_alt print_tracks residuals plotsep swarmcdf2fday
+bin_PROGRAMS = print print_all print_efi print_lp print_lt print_crust print_tracks residuals plotsep swarmcdf2fday
 
 commonlibs = -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig ~/usr/lib/liblapacke.a ~/usr/lib/liblapack.a ~/usr/lib/libf77blas.a ~/usr/lib/libcblas.a ~/usr/lib/libatlas.a
 
@@ -16,9 +16,6 @@ print_lt_LDADD = ${commonlibs}
 
 print_all_SOURCES = print_all.c
 print_all_LDADD = ${commonlibs}
-
-print_alt_SOURCES = print_alt.c
-print_alt_LDADD = ${commonlibs}
 
 print_efi_SOURCES = print_efi.c
 print_efi_LDADD = ${commonlibs}
