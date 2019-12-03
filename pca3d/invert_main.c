@@ -225,7 +225,7 @@ void
 print_J_grid(const char * filename, const double t, invert_workspace * w)
 {
   FILE *fp = fopen(filename, "w");
-  const double r = R_EARTH_KM + 350.0;
+  const double r = R_EARTH_KM + 110.0;
   const double dlon = 2.0;
   const double dlat = 2.0;
   const double lat_min = -89.9;
@@ -535,9 +535,9 @@ main(int argc, char *argv[])
     fprintf(stderr, "done\n");
   }
 
-  fprintf(stderr, "main: data epoch = %.2f\n", invert_data_epoch(invert_data_p));
-  fprintf(stderr, "main: data tmin  = %.2f\n", satdata_epoch2year(invert_data_p->t0_data));
-  fprintf(stderr, "main: data tmax  = %.2f\n", satdata_epoch2year(invert_data_p->t1_data));
+  fprintf(stderr, "main: data epoch = %.4f\n", invert_data_epoch(invert_data_p));
+  fprintf(stderr, "main: data tmin  = %.4f\n", satdata_epoch2year(invert_data_p->t0_data));
+  fprintf(stderr, "main: data tmax  = %.4f\n", satdata_epoch2year(invert_data_p->t1_data));
 
   if (input_coef_file)
     fprintf(stderr, "main: input coef file  = %s\n", input_coef_file);

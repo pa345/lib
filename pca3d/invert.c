@@ -203,22 +203,24 @@ invert_alloc(const invert_parameters *params)
 
     /*
      * maximum observations to accumulate at once in LS system, calculated to make
-     * each omp_J matrix approximately of size 'MFIELD_MATRIX_SIZE'
+     * each omp_J matrix approximately of size 'INVERT_MATRIX_SIZE'
      */
-    w->data_block = MFIELD_MATRIX_SIZE / (ncomp * w->p * sizeof(double));
+    w->data_block = INVERT_MATRIX_SIZE / (ncomp * w->p * sizeof(double));
 
     w->omp_J = malloc(w->max_threads * sizeof(gsl_matrix *));
+    w->omp_f = malloc(w->max_threads * sizeof(gsl_vector *));
     w->omp_B = malloc(w->max_threads * sizeof(gsl_matrix *));
     w->omp_rowidx = malloc(w->max_threads * sizeof(size_t));
-    w->omp_colidx = malloc(w->max_threads * sizeof(size_t));
 
     for (i = 0; i < w->max_threads; ++i)
       {
         w->omp_J[i] = gsl_matrix_alloc(ncomp * w->data_block, w->p);
+        w->omp_f[i] = gsl_vector_alloc(ncomp * w->data_block);
         w->omp_B[i] = gsl_matrix_alloc(3, w->p);
       }
 
-    fprintf(stderr, "invert_alloc: data_block     = %zu\n", w->data_block);
+    fprintf(stderr, "invert_alloc: data_block = %zu\n", w->data_block);
+    fprintf(stderr, "invert_alloc: nrows      = %zu\n", ncomp * w->data_block);
   }
 
   return w;
@@ -286,16 +288,20 @@ invert_free(invert_workspace *w)
   if (w->nlinear_workspace_p)
     gsl_multilarge_nlinear_free(w->nlinear_workspace_p);
 
+  if (w->multilarge_linear_p)
+    gsl_multilarge_linear_free(w->multilarge_linear_p);
+
   for (i = 0; i < w->max_threads; ++i)
     {
       gsl_matrix_free(w->omp_J[i]);
+      gsl_vector_free(w->omp_f[i]);
       gsl_matrix_free(w->omp_B[i]);
     }
 
   free(w->omp_J);
+  free(w->omp_f);
   free(w->omp_B);
   free(w->omp_rowidx);
-  free(w->omp_colidx);
 
   if (w->tmode_workspace_p)
     invert_tmode_free(w->tmode_workspace_p);

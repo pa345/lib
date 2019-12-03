@@ -2,9 +2,8 @@
  *
  * FDF_SOLVER = 0   GSL multifit solver / LM
  * FDF_SOLVER = 1   GSL multilarge solver / LM
- * FDF_SOLVER = 2   GSL multilarge solver / Gauss-Newton
  */
-#define FDF_SOLVER     0
+#define FDF_SOLVER     1
 
 #include <gsl/gsl_integration.h>
 #include <mainlib/ml_spatwt.h>
@@ -18,7 +17,7 @@ static double huber(const double x);
 static double bisquare(const double x);
 
 #include "invert_multifit.c"
-
+#include "invert_multilarge.c"
 
 /*
 invert_calc_nonlinear()
@@ -94,10 +93,6 @@ invert_calc_nonlinear(gsl_vector *c, invert_workspace *w)
 
   s = invert_calc_nonlinear_multilarge(c, w);
 
-#elif FDF_SOLVER == 2 /* Gauss-Newton */
-
-  s = invert_calc_nonlinear_gn(c, w);
-
 #endif
 
   gsl_vector_memcpy(c, w->c);
@@ -113,8 +108,6 @@ invert_residual(const gsl_vector *c, invert_workspace *w)
 #if FDF_SOLVER == 0
   gsl_vector *f = gsl_multifit_nlinear_residual(w->multifit_nlinear_p);
 #elif FDF_SOLVER == 1
-  gsl_vector *f = gsl_multilarge_nlinear_residual(w->nlinear_workspace_p);
-#elif FDF_SOLVER == 2
   gsl_vector *f = gsl_multilarge_nlinear_residual(w->nlinear_workspace_p);
 #endif
 
@@ -289,12 +282,7 @@ invert_init_nonlinear(invert_workspace *w)
 
 #elif FDF_SOLVER == 1 /* GSL multilarge */
 
-  /* allocate fit workspace - start with Levenberg-Marquardt solver */
-  invert_nonlinear_alloc_multilarge(gsl_multilarge_nlinear_trs_lm, w);
-
-#elif FDF_SOLVER == 2 /* Gauss-Newton */
-
-  invert_nonlinear_alloc_gn(w);
+  w->multilarge_linear_p = gsl_multilarge_linear_alloc(gsl_multilarge_linear_tsqr, p);
 
 #endif
 

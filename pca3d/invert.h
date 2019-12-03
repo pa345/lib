@@ -14,6 +14,7 @@
 #include <gsl/gsl_multifit.h>
 #include <gsl/gsl_multifit_nlinear.h>
 #include <gsl/gsl_multilarge_nlinear.h>
+#include <gsl/gsl_multilarge.h>
 #include <gsl/gsl_histogram.h>
 #include <gsl/gsl_spmatrix.h>
 #include <gsl/gsl_complex.h>
@@ -41,7 +42,7 @@
  * approximate matrix size in bytes for precomputing J^T J; each
  * thread gets its own matrix (1 GB)
  */
-#define MFIELD_MATRIX_SIZE    (1e9)
+#define INVERT_MATRIX_SIZE    (1e9)
 
 /* define if fitting to the EMAG2 grid */
 #define MFIELD_EMAG2          0
@@ -188,15 +189,16 @@ typedef struct
 
   size_t max_threads;      /* maximum number of threads/processors available */
   gsl_matrix **omp_J;      /* max_threads matrices, each 4*data_block-by-p */
+  gsl_vector **omp_f;      /* max_threads vectors, each 4*data_block-by-1 */
   gsl_matrix **omp_B;      /* max_threads matrices, each 3-by-p */
   size_t *omp_rowidx;      /* row indices for omp_J */
-  size_t *omp_colidx;      /* column indices for omp_T */
 
   int lls_solution;        /* 1 if inverse problem is linear (no scalar residuals or Euler angles) */
 
   gsl_vector *fvec;        /* residual vector for robust weights */
   gsl_vector *wfvec;       /* weighted residual vector */
   gsl_multifit_robust_workspace *robust_workspace_p;
+  gsl_multilarge_linear_workspace *multilarge_linear_p;
 
   invert_tmode_workspace *tmode_workspace_p;
   invert_smode_workspace *smode_workspace_p;

@@ -39,8 +39,9 @@ invert_residual_print(const char *prefix, const size_t iter, invert_workspace *w
 {
   int s = 0;
   size_t i;
+  const size_t n = w->nres_tot;   /* number of residuals */
   invert_data_workspace *data_p = w->data_workspace_p;
-  gsl_vector * f = w->multifit_nlinear_p->f;
+  gsl_vector * f = gsl_vector_alloc(n);
   gsl_rstat_workspace **rstat_X = malloc(3 * sizeof(gsl_rstat_workspace));
   gsl_rstat_workspace **rstat_Y = malloc(3 * sizeof(gsl_rstat_workspace));
   gsl_rstat_workspace **rstat_Z = malloc(3 * sizeof(gsl_rstat_workspace));
@@ -143,6 +144,7 @@ invert_residual_print(const char *prefix, const size_t iter, invert_workspace *w
   free(rstat_DXDT);
   free(rstat_DYDT);
   free(rstat_DZDT);
+  gsl_vector_free(f);
 
   return s;
 }
