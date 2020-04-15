@@ -25,8 +25,10 @@
 
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_bsearch.h>
+#include <mainlib/ml_msynth.h>
 
 #include <magfield/magfield.h>
+#include <magfield/magfield_eval.h>
 
 #include "magfit.h"
 #include "tiegcm3d.h"
@@ -41,12 +43,15 @@ Inputs: data - tiegcm data
 */
 
 int
-print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir, magfield_workspace *w)
+print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir, magfield_eval_workspace *w)
 {
   int s = 0;
+  const double r_B = R_EARTH_KM + 80.0;
   size_t i;
   size_t ilat, ilon;
   FILE *fp;
+
+#if 0
 
   fp = fopen(filename, "w");
   if (!fp)
@@ -57,12 +62,16 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
 
   i = 1;
   fprintf(fp, "# Time: %ld (%.6f DOY)\n", data->t[time_idx], data->doy[time_idx] + data->ut[time_idx] / 24.0);
-  fprintf(fp, "# Radius: %.2f (km) [%.2f km altitude]\n", data->r[ir], data->r[ir] - 6371.2);
+  fprintf(fp, "# Radius J: %.2f (km) [%.2f km altitude]\n", data->r[ir], data->r[ir] - R_EARTH_KM);
+  fprintf(fp, "# Radius B: %.2f (km) [%.2f km altitude]\n", r_B, r_B - R_EARTH_KM);
   fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
-  fprintf(fp, "# Field %zu: J_r (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_t (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_p (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: data J_r (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: data J_t (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: data J_p (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: model J_r (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: model J_t (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: model J_p (A/m^2)\n", i++);
   fprintf(fp, "# Field %zu: B_r (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_t (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_p (nT)\n", i++);
@@ -70,23 +79,26 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
 
   for (ilon = 0; ilon < data->nlon; ++ilon)
     {
-      double phi = w->phi[ilon];
+      double phi = data->glon[ilon] * M_PI / 180.0;
 
       for (ilat = 0; ilat < data->nlat; ++ilat)
         {
           size_t idx = TIEGCM3D_IDX(time_idx, ir, ilat, ilon, data);
-          double theta = w->theta[ilat];
-          double B[4];
+          double theta = M_PI / 2.0 - data->glat[ilat] * M_PI / 180.0;
+          double B[4], J[4];
 
-          /*magfield_eval_B(data->r[ir] * 1.0e3, theta, phi, B, w);*/
-          magfield_eval_B(R_EARTH_KM + 80.0, theta, phi, B, w);
+          magfield_eval_B(r_B * 1.0e3, theta, phi, B, w);
+          magfield_eval_J(data->r[ir] * 1.0e3, theta, phi, J, w);
 
-          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
+          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glon[ilon],
                   data->glat[ilat],
                   data->Jr[idx],
                   data->Jt[idx],
                   data->Jp[idx],
+                  J[0],
+                  J[1],
+                  J[2],
                   B[0] * 1.0e9,
                   B[1] * 1.0e9,
                   B[2] * 1.0e9,
@@ -97,6 +109,72 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
     }
 
   fclose(fp);
+
+#endif
+
+#if 1
+
+  {
+    /* print out latitude profile at 80km and 280 deg longitude */
+    const double epoch = 2020.0;
+    const double r1 = R_EARTH_KM + 80.0;
+    const double r2 = R_EARTH_KM + 450.0;
+    const double r_J = R_EARTH_KM + 110.0;
+    const double phi = 280.0 * M_PI / 180.0;
+    const double dlat = 0.05;
+    msynth_workspace * core_p = msynth_shc_read(MSYNTH_CHAOS_FILE);
+    double lat;
+
+    msynth_set(1, 15, core_p);
+    fp = fopen("profile.txt", "w");
+
+    i = 1;
+    fprintf(fp, "# Time: %ld (%.6f DOY)\n", data->t[time_idx], data->doy[time_idx] + data->ut[time_idx] / 24.0);
+    fprintf(fp, "# Longitude: %.2f (degrees)\n", phi * 180.0 / M_PI);
+    fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
+    fprintf(fp, "# Field %zu: J (A/m2) at %.2f (km)\n", i++, r_J - R_EARTH_KM);
+    fprintf(fp, "# Field %zu: dF (nT) at %.2f (km)\n", i++, r1 - R_EARTH_KM);
+    fprintf(fp, "# Field %zu: dF (nT) at %.2f (km)\n", i++, r2 - R_EARTH_KM);
+
+    for (lat = -80.0; lat <= 80.0; lat += dlat)
+      {
+        double theta = M_PI / 2.0 - lat * M_PI / 180.0;
+        double B1[4], B2[4], B_core1[4], B_core2[4], J[4];
+        double tmp1[3], tmp2[3];
+        double dF1, dF2;
+
+        msynth_eval(epoch, r1, theta, phi, B_core1, core_p);
+        msynth_eval(epoch, r2, theta, phi, B_core2, core_p);
+
+        magfield_eval_B(r1 * 1.0e3, theta, phi, B1, w);
+        magfield_eval_B(r2 * 1.0e3, theta, phi, B2, w);
+        magfield_eval_J(r_J * 1.0e3, theta, phi, J, w);
+
+        /* tmp1 = B_core1 + B1 */
+        tmp1[0] = B_core1[0] - B1[1] * 1.0e9;
+        tmp1[1] = B_core1[1] + B1[2] * 1.0e9;
+        tmp1[2] = B_core1[2] - B1[0] * 1.0e9;
+
+        /* tmp2 = B_core2 + B2 */
+        tmp2[0] = B_core2[0] - B2[1] * 1.0e9;
+        tmp2[1] = B_core2[1] + B2[2] * 1.0e9;
+        tmp2[2] = B_core2[2] - B2[0] * 1.0e9;
+
+        /* dF = | B_core + B_EEJ | - | B_core | */
+        dF1 = gsl_hypot3(tmp1[0], tmp1[1], tmp1[2]) - B_core1[3];
+        dF2 = gsl_hypot3(tmp2[0], tmp2[1], tmp2[2]) - B_core2[3];
+
+        fprintf(fp, "%f %16.4e %16.4e %16.4e\n",
+                lat,
+                J[2],
+                dF1,
+                dF2);
+      }
+
+    fclose(fp);
+  }
+
+#endif
 
   return s;
 }
@@ -109,9 +187,10 @@ Inputs: data - tiegcm data
 */
 
 int
-print_alt(const char *filename, const tiegcm3d_data *data, const int it, const int ilon, magfield_workspace *w)
+print_alt(const char *filename, const tiegcm3d_data *data, const int it, const int ilon, magfield_eval_workspace *w)
 {
   int s = 0;
+  const double phi = data->glon[ilon] * M_PI / 180.0;
   FILE *fp;
   size_t i;
   size_t ir, ilat;
@@ -138,14 +217,14 @@ print_alt(const char *filename, const tiegcm3d_data *data, const int it, const i
 
   for (ilat = 0; ilat < data->nlat; ++ilat)
     {
-      double theta = w->theta[ilat];
+      double theta = M_PI / 2.0 - data->glat[ilat] * M_PI / 180.0;
 
-      for (ir = 0; ir < data->nr; ++ir)
+      for (ir = 0; ir < data->nr - 1; ++ir)
         {
           size_t idx = TIEGCM3D_IDX(it, ir, ilat, ilon, data);
           double B[4];
 
-          magfield_eval_B(w->r[ir], theta, w->phi[ilon], B, w);
+          magfield_eval_B(data->r[ir] * 1.0e3, theta, phi, B, w);
 
           fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glat[ilat],
@@ -486,10 +565,13 @@ main(int argc, char *argv[])
   char *outfile_map = "data_map.txt";
   char *outfile_alt = "data_alt.txt";
   int time_idx = 0;
+  size_t lmax = 60;
+  size_t mmax = 30;
   double lon = 150.0; /* desired longitude */
   int r_idx = 0;
   int lon_idx;
   magfield_workspace *magfield_p;
+  magfield_eval_workspace *magfield_eval_p;
   magfield_params params;
   size_t i, j, k;
 
@@ -499,10 +581,12 @@ main(int argc, char *argv[])
       int option_index = 0;
       static struct option long_options[] =
         {
+          { "lmax", required_argument, NULL, 'l' },
+          { "mmax", required_argument, NULL, 'm' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "i:o:r:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "i:l:m:o:r:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -510,6 +594,14 @@ main(int argc, char *argv[])
         {
           case 'i':
             infile = optarg;
+            break;
+
+          case 'l':
+            lmax = (size_t) atoi(optarg);
+            break;
+
+          case 'm':
+            mmax = (size_t) atoi(optarg);
             break;
 
           case 'r':
@@ -531,11 +623,13 @@ main(int argc, char *argv[])
 
   if (!infile)
     {
-      fprintf(stderr, "Usage: %s <-i tiegcm3d_nc_file> [-t time_idx] [-o output_file]\n", argv[0]);
+      fprintf(stderr, "Usage: %s <-i tiegcm3d_nc_file> [-t time_idx] [-r r_idx] [-l lmax] [-m mmax] [-o output_file]\n", argv[0]);
       exit(1);
     }
 
   fprintf(stderr, "input file = %s\n", infile);
+  fprintf(stderr, "lmax       = %zu\n", lmax);
+  fprintf(stderr, "mmax       = %zu\n", mmax);
 
   fprintf(stderr, "main: reading %s...", infile);
   gettimeofday(&tv0, NULL);
@@ -552,8 +646,8 @@ main(int argc, char *argv[])
           time_diff(tv0, tv1));
 
   params.lmin = 1;
-  params.lmax = 60;
-  params.mmax = 30;
+  params.lmax = lmax;
+  params.mmax = mmax;
   params.nr = data->nr;
   params.ntheta = data->nlat;
   params.nphi = data->nlon;
@@ -562,8 +656,12 @@ main(int argc, char *argv[])
   params.R = R_EARTH_M;
   params.grid_type = MAGFIELD_GAUSS;
 
+  fprintf(stderr, "rmin = %.1f [m]\n", params.rmin);
+  fprintf(stderr, "rmax = %.1f [m]\n", params.rmax);
+
   fprintf(stderr, "\t allocating magfield workspace...");
   magfield_p = magfield_alloc(&params);
+  magfield_eval_p = magfield_eval_alloc(&params);
   fprintf(stderr, "done\n");
 
   magfield_set_r(data->r, magfield_p);
@@ -601,12 +699,14 @@ main(int argc, char *argv[])
 #if 1
   fprintf(stderr, "main: lon_idx = %d (%.2f [deg])\n", lon_idx, data->glon[lon_idx]);
 
+  magfield_eval_init(magfield_p->qtcoeff, magfield_p->qcoeff, magfield_p->pcoeff, magfield_eval_p);
+
   fprintf(stderr, "main: writing grid data to %s (time idx = %d, r idx = %d)...", outfile_map, time_idx, r_idx);
-  print_data(outfile_map, data, time_idx, r_idx, magfield_p);
+  print_data(outfile_map, data, time_idx, r_idx, magfield_eval_p);
   fprintf(stderr, "done\n");
 
   fprintf(stderr, "main: writing altitude data to %s...", outfile_alt);
-  print_alt(outfile_alt, data, time_idx, lon_idx, magfield_p);
+  print_alt(outfile_alt, data, time_idx, lon_idx, magfield_eval_p);
   fprintf(stderr, "done\n");
 #endif
 
@@ -614,6 +714,7 @@ main(int argc, char *argv[])
 
   tiegcm3d_free(data);
   magfield_free(magfield_p);
+  magfield_eval_free(magfield_eval_p);
 
   return 0;
 }

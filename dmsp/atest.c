@@ -54,6 +54,9 @@ proc_att(satdata_mag * data, att_calc_workspace * w, gsl_vector * attitude)
       double B_model[4];
       gsl_vector_view v = gsl_vector_view_array(B_model, 3);
 
+      if (data->flags[i])
+        continue;
+
       if (fabs(data->qdlat[i]) > 50.0)
         continue;
 
@@ -156,7 +159,7 @@ main(int argc, char *argv[])
           case 'i':
             fprintf(stderr, "main: reading %s...", optarg);
             gettimeofday(&tv0, NULL);
-            data = satdata_dmsp_read_idx(optarg, 1);
+            data = satdata_swarm_read_idx(optarg, 1);
             gettimeofday(&tv1, NULL);
             fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
                     time_diff(tv0, tv1));

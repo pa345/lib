@@ -9,6 +9,8 @@
 #
 # Usage: ./stage1.sh [A|B|C] [year]
 
+export LD_LIBRARY_PATH="/home/palken/usr/lib:/usr/local/MATLAB/MATLAB_Runtime/v91/runtime/glnxa64:/usr/local/MATLAB/MATLAB_Runtime/v91/bin/glnxa64:/usr/local/MATLAB/MATLAB_Runtime/v91/sys/os/glnxa64:/usr/lib64:/usr/local/cdf/lib:"
+
 cdfdir="$DATAHOME/SWARM/MAG/Unzipped_Data"
 outdir="$DATAHOME/SWARM/MAG/Stage1"
 lpdir="$DATAHOME/SWARM/EFI/LP_Unzipped"

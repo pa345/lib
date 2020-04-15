@@ -80,8 +80,8 @@ do_transform(FILE *fp, const gsl_vector *knm, const size_t rowidx,
       size_t i;
 
       /* apply window to current time segment */
-      gsl_vector_memcpy(&vwork.vector, &vknm.vector);
-      apply_ps1(&vwork.vector);
+      /*apply_ps1(&vknm.vector, &vwork.vector);*/
+      apply_modsinsq(&vknm.vector, &vwork.vector);
 
       /* compute windowed FFT */
       plan = fftw_plan_dft_r2c_1d(n, vwork.vector.data, fft_out, FFTW_ESTIMATE);
@@ -299,8 +299,8 @@ main(int argc, char *argv[])
   green_workspace *green_p;
   char *infile = PCA_STAGE1_KNM;
   gsl_matrix *A;
-  double window_size = 2.0;       /* number of days in each time segment */
-  double window_shift = 1.0;      /* number of days to shift forward in time */
+  double window_size = 8.0;       /* number of days in each time segment */
+  double window_shift = 4.0;      /* number of days to shift forward in time */
   size_t nwindow = (size_t) (window_size * fs); /* number of samples per time window segment */
   size_t nfreq = nwindow / 2 + 1; /* number of frequencies returned from FFT */
   size_t nt, T, nnm;

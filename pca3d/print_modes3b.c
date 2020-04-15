@@ -96,7 +96,7 @@ fill_magfield(const gsl_vector_complex * u, magfield_eval_complex_workspace * w)
 }
 
 int
-print_modes(const char * prefix, const double freq, const double r, const double r_B, const gsl_matrix_complex *U, magfield_params * params)
+print_J_modes(const char * prefix, const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
 {
   const size_t T = GSL_MIN(U->size2, 20);
   magfield_eval_complex_workspace * w = magfield_eval_complex_alloc(params);
@@ -111,26 +111,87 @@ print_modes(const char * prefix, const double freq, const double r, const double
       char buf[2048];
       size_t i = 1;
 
-      sprintf(buf, "%s/%g_cpd/mode_%02zu.txt", prefix, freq, t + 1);
-      fprintf(stderr, "print_modes: writing %s...", buf);
+      sprintf(buf, "%s/%g_cpd/J_mode_%02zu.txt", prefix, freq, t + 1);
+      fprintf(stderr, "print_J_modes: writing %s...", buf);
 
       fp = fopen(buf, "w");
 
       fprintf(fp, "# Frequency: %g [cpd]\n", freq);
-#if !PRINT_B_ONLY
-      fprintf(fp, "# Altitude for J: %g [km]\n", r - R_EARTH_KM);
-#endif
-      fprintf(fp, "# Radius for B: %g [km]\n", r_B);
+      fprintf(fp, "# Radius:    %g [km]\n", r);
+      fprintf(fp, "# Altitude:  %g [km]\n", r - R_EARTH_KM);
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
-#if !PRINT_B_ONLY
       fprintf(fp, "# Field %zu: Re J_r\n", i++);
       fprintf(fp, "# Field %zu: Re J_t\n", i++);
       fprintf(fp, "# Field %zu: Re J_p\n", i++);
       fprintf(fp, "# Field %zu: Im J_r\n", i++);
       fprintf(fp, "# Field %zu: Im J_t\n", i++);
       fprintf(fp, "# Field %zu: Im J_p\n", i++);
-#endif
+
+      /* prepare magfield_eval_complex workspace for this singular vector */
+      fill_magfield(&v.vector, w);
+
+      for (lon = -180.0; lon <= 180.0; lon += 1.0)
+        {
+          double phi = lon * M_PI / 180.0;
+
+          for (lat = -89.5; lat <= 89.5; lat += 1.0)
+            {
+              double theta = M_PI / 2.0 - lat * M_PI / 180.0;
+              complex double J[3];
+
+              magfield_eval_complex_J(r, theta, phi, J, w);
+
+              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+                      lon,
+                      lat,
+                      creal(J[0]),
+                      creal(J[1]),
+                      creal(J[2]),
+                      cimag(J[0]),
+                      cimag(J[1]),
+                      cimag(J[2]));
+            }
+
+          fprintf(fp, "\n");
+        }
+
+      fclose(fp);
+
+      fprintf(stderr, "done\n");
+    }
+
+  magfield_eval_complex_free(w);
+
+  return 0;
+}
+
+int
+print_B_modes(const char * prefix, const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
+{
+  const size_t T = GSL_MIN(U->size2, 5);
+  magfield_eval_complex_workspace * w = magfield_eval_complex_alloc(params);
+  double lat, lon;
+  size_t t;
+
+  /* loop over modes t \in [0, T-1] */
+  for (t = 0; t < T; ++t)
+    {
+      gsl_vector_complex_const_view v = gsl_matrix_complex_const_column(U, t);
+      FILE *fp;
+      char buf[2048];
+      size_t i = 1;
+
+      sprintf(buf, "%s/%g_cpd/B_mode_%02zu.txt", prefix, freq, t + 1);
+      fprintf(stderr, "print_B_modes: writing %s...", buf);
+
+      fp = fopen(buf, "w");
+
+      fprintf(fp, "# Frequency: %g [cpd]\n", freq);
+      fprintf(fp, "# Radius:    %g [km]\n", r);
+      fprintf(fp, "# Altitude:  %g [km]\n", r - R_EARTH_KM);
+      fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
+      fprintf(fp, "# Field %zu: geocentric latitude (deg)\n", i++);
       fprintf(fp, "# Field %zu: Re B_r\n", i++);
       fprintf(fp, "# Field %zu: Re B_t\n", i++);
       fprintf(fp, "# Field %zu: Re B_p\n", i++);
@@ -148,29 +209,9 @@ print_modes(const char * prefix, const double freq, const double r, const double
           for (lat = -89.5; lat <= 89.5; lat += 1.0)
             {
               double theta = M_PI / 2.0 - lat * M_PI / 180.0;
-              complex double J[3], B[3];
+              complex double B[3];
 
-#if !PRINT_B_ONLY
-              magfield_eval_complex_J(r, theta, phi, J, w);
-              magfield_eval_complex_B(r_B, theta, phi, B, w);
-
-              fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
-                      lon,
-                      lat,
-                      creal(J[0]),
-                      creal(J[1]),
-                      creal(J[2]),
-                      cimag(J[0]),
-                      cimag(J[1]),
-                      cimag(J[2]),
-                      creal(B[0]),
-                      creal(B[1]),
-                      creal(B[2]),
-                      cimag(B[0]),
-                      cimag(B[1]),
-                      cimag(B[2]));
-#else
-              magfield_eval_complex_B(r_B, theta, phi, B, w);
+              magfield_eval_complex_B(r, theta, phi, B, w);
 
               fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
@@ -181,7 +222,6 @@ print_modes(const char * prefix, const double freq, const double r, const double
                       cimag(B[0]),
                       cimag(B[1]),
                       cimag(B[2]));
-#endif
             }
 
           fprintf(fp, "\n");
@@ -207,7 +247,7 @@ main(int argc, char *argv[])
   gsl_matrix_complex *U;
   magfield_params params;
   double alt = 110.0;
-  double alt_B = 0.0;
+  int print_J = 1;   /* print J or B */
   size_t ifreq;      /* index of desired frequency */
   char buf[2048];
   
@@ -218,10 +258,12 @@ main(int argc, char *argv[])
       static struct option long_options[] =
         {
           { "prefix", required_argument, NULL, 'p' },
+          { "modes_J", no_argument, NULL, 'J' },
+          { "modes_B", no_argument, NULL, 'B' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:b:f:p:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:BJf:p:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -231,8 +273,12 @@ main(int argc, char *argv[])
             alt = atof(optarg);
             break;
 
-          case 'b':
-            alt_B = atof(optarg);
+          case 'J':
+            print_J = 1;
+            break;
+
+          case 'B':
+            print_J = 0;
             break;
 
           case 'f':
@@ -244,15 +290,14 @@ main(int argc, char *argv[])
             break;
 
           default:
-            fprintf(stderr, "Usage: %s [-a J altitude (km)] [-b B altitudde (km)] [-f freq (cpd)] [-p dir_prefix]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-a altitude (km)] [-J (print J modes)] [-B (print B modes)] [-f freq (cpd)] [-p dir_prefix]\n", argv[0]);
             exit(1);
             break;
         }
     }
 
   fprintf(stderr, "main: frequency:  %g [cpd]\n", freq);
-  fprintf(stderr, "main: J altitude: %g [km]\n", alt);
-  fprintf(stderr, "main: B altitude: %g [km]\n", alt_B);
+  fprintf(stderr, "main: altitude: %g [km]\n", alt);
 
   fprintf(stderr, "main: reading %s...", PCA3D_STAGE2B_FFT_DATA_LIGHT);
   gettimeofday(&tv0, NULL);
@@ -275,7 +320,10 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  print_modes(prefix, freq, alt + R_EARTH_KM, alt_B + R_EARTH_KM, U, &params);
+  if (print_J)
+    print_J_modes(prefix, freq, alt + R_EARTH_KM, U, &params);
+  else
+    print_B_modes(prefix, freq, alt + R_EARTH_KM, U, &params);
 
   gsl_matrix_complex_free(U);
 

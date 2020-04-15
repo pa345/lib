@@ -231,7 +231,7 @@ main(int argc, char *argv[])
 
   if (!infile)
     {
-      fprintf(stderr, "Usage: %s <-i tiegcm3d_nc_file> [-t time_idx] [-o output_file]\n", argv[0]);
+      fprintf(stderr, "Usage: %s <-i tiegcm3d_nc_file> [-t time_idx] [-r r_idx] [-o output_file]\n", argv[0]);
       exit(1);
     }
 
@@ -257,6 +257,7 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: lat_idx = %d (%.2f [deg])\n", lat_idx, data->glat[lat_idx]);
   fprintf(stderr, "main: lon_idx = %d (%.2f [deg])\n", lon_idx, data->glon[lon_idx]);
+  fprintf(stderr, "main: r_idx   = %d (%.2f [km] / %.2f [km])\n", r_idx, data->r[r_idx], data->r[r_idx] - R_EARTH_KM);
 
   fprintf(stderr, "main: writing grid data to %s (time idx = %d, r idx = %d)...", outfile_map, time_idx, r_idx);
   print_data(outfile_map, data, time_idx, r_idx);

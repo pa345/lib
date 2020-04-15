@@ -17,8 +17,8 @@ static int invert_calc_nonlinear_multifit(const gsl_vector * c, invert_workspace
 static int invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_Wf(const gsl_vector *x, void *params, gsl_vector *f);
 static int invert_calc_df(const gsl_vector *x, void *params, gsl_matrix *J);
-static int invert_nonlinear_model(const gsl_vector * x, const magdata * mptr,
-                                  const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w);
+static int invert_nonlinear_model(const gsl_vector * x, const double t, const double r, const double theta, const double phi,
+                                  const int thread_id, double B_model[3], invert_workspace *w);
 static int invert_jacobian_vector(const int thread_id, const double t, const double r, const double theta, const double phi,
                                   gsl_vector * X, gsl_vector * Y, gsl_vector * Z,
                                   const invert_workspace *w);
@@ -226,7 +226,7 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           if (xzero)
             B_model[0] = B_model[1] = B_model[2] = 0.0;
           else
-            invert_nonlinear_model(x, mptr, j, thread_id, B_model, w);
+            invert_nonlinear_model(x, mptr->t[j], mptr->r[j], mptr->theta[j], mptr->phi[j], thread_id, B_model, w);
 
           /* compute vector SV model for this residual */
           if (MAGDATA_FitMF(mptr->flags[j]) && (mptr->flags[j] & (MAGDATA_FLG_DXDT | MAGDATA_FLG_DYDT | MAGDATA_FLG_DZDT)))
@@ -608,16 +608,18 @@ invert_nonlinear_model()
   Compute total B model vector for a given residual
 
 Inputs: x         - parameter vector
-        mptr      - magdata structure
-        data_idx  - index of datum in magdata
+        t         - timestamp (CDF_EPOCH)
+        r         - radius (km)
+        theta     - colatitude (radians)
+        phi       - longitude (radians)
         thread_id - OpenMP thread id
-        B_model   - (output) B_model (X,Y,Z) in NEC
+        B_model   - (output) B_model (X,Y,Z) in NEC (nT)
         w         - workspace
 */
 
 static int
-invert_nonlinear_model(const gsl_vector * x, const magdata * mptr,
-                       const size_t data_idx, const int thread_id, double B_model[3], invert_workspace *w)
+invert_nonlinear_model(const gsl_vector * x, const double t, const double r, const double theta, const double phi,
+                       const int thread_id, double B_model[3], invert_workspace *w)
 {
   int s = 0;
   gsl_matrix * JB = w->omp_B[thread_id];
@@ -627,8 +629,7 @@ invert_nonlinear_model(const gsl_vector * x, const magdata * mptr,
   gsl_vector_view out = gsl_vector_view_array(B_model, 3);
 
   /* compute 3 rows of Jacobian corresponding to X,Y,Z residuals */
-  s = invert_jacobian_vector(thread_id, mptr->t[data_idx], mptr->r[data_idx], mptr->theta[data_idx], mptr->phi[data_idx],
-                             &X.vector, &Y.vector, &Z.vector, w);
+  s = invert_jacobian_vector(thread_id, t, r, theta, phi, &X.vector, &Y.vector, &Z.vector, w);
   if (s)
     return s;
 

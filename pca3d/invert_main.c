@@ -225,11 +225,11 @@ void
 print_J_grid(const char * filename, const double t, invert_workspace * w)
 {
   FILE *fp = fopen(filename, "w");
-  const double r = R_EARTH_KM + 110.0;
+  const double r = R_EARTH_KM + 350.0;
   const double dlon = 2.0;
   const double dlat = 2.0;
-  const double lat_min = -89.9;
-  const double lat_max = 89.9;
+  const double lat_min = -89.5;
+  const double lat_max = 89.5;
   const size_t nlon = (size_t) (360.0 / dlon) + 1;
   const size_t nlat = (size_t) ((lat_max - lat_min) / dlat) + 1;
   gsl_matrix *Jr = gsl_matrix_alloc(nlon, nlat);
@@ -242,9 +242,9 @@ print_J_grid(const char * filename, const double t, invert_workspace * w)
   fprintf(fp, "# Timestamp: %ld\n", epoch2timet(t));
   fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
-  fprintf(fp, "# Field %zu: J_r (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_t (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_p (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_r (uA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_t (uA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: J_p (uA/m^2)\n", i++);
 
 #pragma omp parallel for private(i)
   for (i = 0; i < nlon; ++i)
@@ -262,9 +262,9 @@ print_J_grid(const char * filename, const double t, invert_workspace * w)
 
           invert_nonlinear_model_J(w->c, t, r, theta, phi, thread_id, J, w);
 
-          gsl_matrix_set(Jr, i, j, -J[2]);
-          gsl_matrix_set(Jt, i, j, -J[0]);
-          gsl_matrix_set(Jp, i, j, J[1]);
+          gsl_matrix_set(Jr, i, j, -J[2] * 1.0e-6);
+          gsl_matrix_set(Jt, i, j, -J[0] * 1.0e-6);
+          gsl_matrix_set(Jp, i, j, J[1] * 1.0e-6);
         }
     }
 
