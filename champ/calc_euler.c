@@ -158,7 +158,7 @@ main(int argc, char *argv[])
           case 'i':
             fprintf(stderr, "main: reading %s...", optarg);
             gettimeofday(&tv0, NULL);
-            data = satdata_champ_read_idx(optarg, 1);
+            data = satdata_swarm_read_idx(optarg, 1);
             gettimeofday(&tv1, NULL);
             fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
                     time_diff(tv0, tv1));

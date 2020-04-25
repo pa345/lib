@@ -284,7 +284,7 @@ read_champ(const char *filename)
 
   fprintf(stderr, "read_champ: reading %s...", optarg);
   gettimeofday(&tv0, NULL);
-  data = satdata_champ_read_idx(optarg, 0);
+  data = satdata_swarm_read_idx(optarg, 0);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%zu data read, %g seconds)\n",
           data->n, time_diff(tv0, tv1));

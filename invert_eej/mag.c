@@ -407,8 +407,8 @@ mag_preproc(const mag_params *params, track_workspace *track_p,
      *
      * The 22-23 June 2015 storm has scalar rms up to 140 nT
      */
-    /*const double thresh[] = { -1.0, -1.0, -1.0, 150.0 };*/
-    const double thresh[] = { 210.0, 170.0, 150.0, 160.0 };
+    const double thresh[] = { -1.0, -1.0, -1.0, 150.0 };
+    /*const double thresh[] = { 210.0, 170.0, 150.0, 160.0 };*/
     size_t nrms = track_flag_rms("rms.dat", thresh, NULL, data, track_p);
 
     log_proc(w->log_general, "mag_preproc: flagged %zu/%zu (%.1f%%) tracks due to high rms\n",
@@ -417,10 +417,10 @@ mag_preproc(const mag_params *params, track_workspace *track_p,
 
   /* last check: flag tracks with very few good data points left */
   {
-    size_t nflag = track_flag_n(2000, data, track_p);
+    size_t nflag = track_flag_n(500, data, track_p);
 
-    log_proc(w->log_general, "mag_preproc: flagged data due to low data points: %zu/%zu (%.1f%%) data flagged)\n",
-            nflag, data->n, (double)nflag / (double)data->n * 100.0);
+    log_proc(w->log_general, "mag_preproc: flagged %zu/%zu (%.1f%%) tracks due to low data points\n",
+            nflag, track_p->n, (double) nflag / (double) track_p->n * 100.0);
   }
 
   {
@@ -504,6 +504,9 @@ mag_proc(const mag_params *params, track_workspace *track_p,
 
       kp_get(unix_time, &kp, w->kp_workspace_p);
 
+      sprintf(buf, "%s", ctime(&unix_time));
+      buf[strlen(buf) - 1] = '\0';
+
       /* reject tracks with insufficient latitude coverage */
       if (fabs(data->qdlat[sidx]) < 35.0 || fabs(data->qdlat[eidx]) < 35.0)
         {
@@ -515,15 +518,13 @@ mag_proc(const mag_params *params, track_workspace *track_p,
       s = mag_track_datagap(params->dlat_max, sidx, eidx, data);
       if (s)
         {
+          fprintf(stderr, "mag_proc: track has large data gap [%s]\n", buf);
           ++nrejgap;
           continue;
         }
 
       ++ntrack;
       dir = tptr->satdir;
-
-      sprintf(buf, "%s", ctime(&unix_time));
-      buf[strlen(buf) - 1] = '\0';
 
       fprintf(stderr, "mag_proc: found track %zu, %s, lon = %g, lt = %g, kp = %g, dir = %d\n",
               ntrack, buf, lon_eq, lt_eq, kp, dir);

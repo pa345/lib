@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/stat.h>
 #include <getopt.h>
 #include <time.h>
 #include <libconfig.h>
@@ -116,6 +117,9 @@ print_help(char *argv[])
   fprintf(stderr, "\t --champ_file | -c file              - CHAMP index file\n");
   fprintf(stderr, "\t --swarm_file | -s file              - Swarm index file\n");
   fprintf(stderr, "\t --swarm_file2 | -r file             - Swarm index file 2\n");
+  fprintf(stderr, "\t --sacc_file | -S file               - SAC-C index file 2\n");
+  fprintf(stderr, "\t --cryosat_file | -R file            - Cryosat index file 2\n");
+  fprintf(stderr, "\t --oersted_f_file | -F file          - Oersted (f) index file 2\n");
   fprintf(stderr, "\t --output_file | -o file             - output file\n");
   fprintf(stderr, "\t --log_dir | -l dir                  - log directory\n");
   fprintf(stderr, "\t --lt_min | -a lt_min                - minimum local time (hours)\n");
@@ -131,6 +135,7 @@ print_help(char *argv[])
 int
 main(int argc, char *argv[])
 {
+  int status;
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   struct timeval tv0, tv1;
@@ -142,6 +147,7 @@ main(int argc, char *argv[])
   double lt_min = -1.0;
   double lt_max = -1.0;
   mag_params params;
+  size_t nflag;
 
   params.kp_max = 20.0;
   params.year = -1; /* filled in below */
@@ -190,6 +196,9 @@ main(int argc, char *argv[])
           { "champ_file", required_argument, NULL, 'c' },
           { "swarm_file", required_argument, NULL, 's' },
           { "swarm_file2", required_argument, NULL, 'r' },
+          { "oersted_f_file", required_argument, NULL, 'F' },
+          { "sacc_file", required_argument, NULL, 'S' },
+          { "cryosat_file", required_argument, NULL, 'R' },
           { "output_file", required_argument, NULL, 'o' },
           { "log_dir", required_argument, NULL, 'l' },
           { "lt_min", required_argument, NULL, 'a' },
@@ -201,7 +210,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:b:c:k:l:m:o:pq:r:s:zC:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:b:c:F:k:l:m:o:pq:r:R:s:S:zC:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -218,7 +227,7 @@ main(int argc, char *argv[])
           case 'c':
             fprintf(stderr, "main: reading %s...", optarg);
             gettimeofday(&tv0, NULL);
-            data = satdata_champ_read_idx(optarg, 0);
+            data = satdata_swarm_read_idx(optarg, 0);
             gettimeofday(&tv1, NULL);
             if (!data)
               exit(1);
@@ -226,14 +235,10 @@ main(int argc, char *argv[])
                     data->n, time_diff(tv0, tv1));
 
             /* check for instrument flags */
-            {
-              size_t nflag;
-
-              fprintf(stderr, "main: filtering for instrument flags...");
-              nflag = satdata_champ_filter_instrument(1, SATDATA_FLG_ONESC, data);
-              fprintf(stderr, "done (%zu/%zu (%.1f%%) data flagged)\n",
-                      nflag, data->n, (double)nflag / (double)data->n * 100.0);
-            }
+            fprintf(stderr, "main: filtering for instrument flags...");
+            nflag = satdata_champ_filter_instrument(1, SATDATA_FLG_ONESC, data);
+            fprintf(stderr, "done (%zu/%zu (%.1f%%) data flagged)\n",
+                    nflag, data->n, (double)nflag / (double)data->n * 100.0);
 
             break;
 
@@ -251,13 +256,9 @@ main(int argc, char *argv[])
             fprintf(stderr, "done (%zu points read, %g seconds)\n",
                     data->n, time_diff(tv0, tv1));
 
-            {
-              size_t nflag;
-
-              fprintf(stderr, "main: filtering instrument flags...");
-              nflag = satdata_swarm_filter_instrument(1, data);
-              fprintf(stderr, "done (%zu data flagged)\n", nflag);
-            }
+            fprintf(stderr, "main: filtering instrument flags...");
+            nflag = satdata_swarm_filter_instrument(1, data);
+            fprintf(stderr, "done (%zu data flagged)\n", nflag);
 
             break;
 
@@ -271,15 +272,42 @@ main(int argc, char *argv[])
             fprintf(stderr, "done (%zu points read, %g seconds)\n",
                     data2->n, time_diff(tv0, tv1));
 
-            {
-              size_t nflag;
-
-              fprintf(stderr, "main: filtering instrument flags...");
-              nflag = satdata_swarm_filter_instrument(1, data2);
-              fprintf(stderr, "done (%zu data flagged)\n", nflag);
-            }
+            fprintf(stderr, "main: filtering instrument flags...");
+            nflag = satdata_swarm_filter_instrument(1, data2);
+            fprintf(stderr, "done (%zu data flagged)\n", nflag);
 
             break;
+
+          case 'R':
+          case 'S':
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_swarm_read_idx(optarg, 0);
+            gettimeofday(&tv1, NULL);
+            if (!data)
+              exit(1);
+            fprintf(stderr, "done (%zu points read, %g seconds)\n",
+                    data->n, time_diff(tv0, tv1));
+
+            break;
+
+          case 'F':
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_swarm_read_idx(optarg, 0);
+            gettimeofday(&tv1, NULL);
+            if (!data)
+              exit(1);
+            fprintf(stderr, "done (%zu points read, %g seconds)\n",
+                    data->n, time_diff(tv0, tv1));
+
+            fprintf(stderr, "main: filtering for instrument flags...");
+            nflag = satdata_oersted_filter_instrument(1, data);
+            fprintf(stderr, "done (%zu/%zu (%.1f%%) data flagged)\n",
+                    nflag, data->n, (double)nflag / (double)data->n * 100.0);
+
+            break;
+
 
           case 'o':
             params.output_file = optarg;
@@ -331,6 +359,15 @@ main(int argc, char *argv[])
   if (log_dir != NULL)
     params.log_dir = log_dir;
 
+  fprintf(stderr, "main: creating output directory %s...", params.log_dir);
+  status = mkdir(params.log_dir, 0777);
+  if (status == -1 && errno != EEXIST)
+    {
+      fprintf(stderr, "error: unable to create %s: %s\n", params.log_dir, strerror(errno));
+      exit(1);
+    }
+  fprintf(stderr, "done\n");
+
   if (!data)
     {
       if (params.prev_day_file)
@@ -359,8 +396,6 @@ main(int argc, char *argv[])
 
       if (data != NULL)
         {
-          size_t nflag;
-
           fprintf(stderr, "main: filtering instrument flags...");
           nflag = satdata_swarm_filter_instrument(1, data);
           fprintf(stderr, "done (%zu data flagged)\n", nflag);

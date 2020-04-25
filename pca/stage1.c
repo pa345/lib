@@ -531,6 +531,16 @@ convert_qnm(const double b, gsl_vector * v, const green_workspace * green_p)
   return 0;
 }
 
+/*
+main_proc()
+  Do SH inversion of 2D TIEGCM sheet current grids
+
+Inputs: filename    - output file to write knm data
+        outfile_mat - output binary file of K matrix whose columns are k_{nm} for each timestep
+        outdir_mat  -
+        data        - TIE data
+*/
+
 int
 main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat, tiegcm_data *data)
 {

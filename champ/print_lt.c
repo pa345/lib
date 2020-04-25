@@ -63,7 +63,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "Reading %s...", infile);
   gettimeofday(&tv0, NULL);
 
-  data = satdata_champ_read_idx(infile, 1);
+  data = satdata_swarm_read_idx(infile, 1);
   if (!data)
     {
       fprintf(stderr, "main: error reading %s\n", infile);

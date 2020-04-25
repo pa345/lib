@@ -365,7 +365,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "Reading %s...", infile);
   gettimeofday(&tv0, NULL);
 
-  data = satdata_champ_read_idx(infile, 0);
+  data = satdata_swarm_read_idx(infile, 0);
   if (!data)
     {
       fprintf(stderr, "main: error reading %s\n", infile);
@@ -376,6 +376,7 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%zu records read, %g seconds)\n", data->n,
           time_diff(tv0, tv1));
 
+#if 0
   if (qfile)
     {
       fprintf(stderr, "main: reading quaternion data from %s...", qfile);
@@ -385,6 +386,7 @@ main(int argc, char *argv[])
       printq(data, qdata);
       exit(0);
     }
+#endif
 
   {
     size_t nkp;
