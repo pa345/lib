@@ -222,12 +222,9 @@ tiegcm3d_read(const char *filename, tiegcm3d_data *data)
         }
     }
 
-  /* convert heights to km radii */
+  /* convert heights to radii in m */
   for (i = 0; i < nr; ++i)
-    {
-      data->r[i] = 6371.2 + data->r[i] * 1.0e-3;
-      workr[i] = 6371.2 + workr[i] * 1.0e-3;
-    }
+    data->r[i] += R_EARTH_M;
 
   /* compute timestamps */
   putenv("TZ=GMT");

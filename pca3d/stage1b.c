@@ -25,17 +25,70 @@
 #include <gsl/gsl_complex.h>
 #include <gsl/gsl_complex_math.h>
 #include <gsl/gsl_test.h>
+#include <gsl/gsl_blas.h>
 
 #include <mainlib/ml_common.h>
+#include <mainlib/ml_oct.h>
 #include <mainlib/ml_bsearch.h>
 
 #include <magfield/magfield.h>
+#include <magfield/magfield_eval.h>
 
 #include "io.h"
 #include "pca3d.h"
 #include "tiegcm3d.h"
 
 #define MAX_T        100000
+
+#define TAPER_COEFFS 1
+
+/*
+taper_magfield()
+  Taper high degree SH coefficients to try to reduce ringing.
+We use a cosine taper set to 1 at lmin, and going to 0 at
+lmax + 1. Don't make it go to 0 at lmax or the spectrum will
+suddenly drop many orders of magnitude between lmax-1 and lmax
+*/
+int
+taper_magfield(const size_t lmin, magfield_workspace * w)
+{
+  const size_t lmax = w->lmax;
+  const double fac = M_PI / (2.0 * (lmax + 1 - lmin));
+  size_t l;
+
+  for (l = lmin + 1; l <= lmax; ++l)
+    {
+      double val = cos(fac * (l - lmin));
+      double wl = val * val;
+      int M = (int) GSL_MIN(l, w->mmax);
+      int m;
+
+      for (m = 0; m <= M; ++m)
+        {
+          size_t lmidx = magfield_lmidx(l, m, w->mmax);
+          gsl_complex * pbelowlm = gsl_vector_complex_ptr(w->pbelow, lmidx);
+          gsl_complex * pabovelm = gsl_vector_complex_ptr(w->pabove, lmidx);
+          size_t i;
+
+          GSL_REAL(*pbelowlm) *= wl; GSL_IMAG(*pbelowlm) *= wl;
+          GSL_REAL(*pabovelm) *= wl; GSL_IMAG(*pabovelm) *= wl;
+
+          for (i = 0; i < w->nr; ++i)
+            {
+              size_t idx = MAG_COEFIDX(i, lmidx, w);
+              gsl_complex * qtlm = gsl_vector_complex_ptr(w->qtcoeff, idx);
+              gsl_complex * qlm = gsl_vector_complex_ptr(w->qcoeff, idx);
+              gsl_complex * plm = gsl_vector_complex_ptr(w->pcoeff, idx);
+
+              GSL_REAL(*qtlm) *= wl; GSL_IMAG(*qtlm) *= wl;
+              GSL_REAL(*qlm) *= wl; GSL_IMAG(*qlm) *= wl;
+              GSL_REAL(*plm) *= wl; GSL_IMAG(*plm) *= wl;
+            }
+        }
+    }
+
+  return 0;
+}
 
 int
 main_fill_grid(const size_t it, const tiegcm3d_data * data, magfield_workspace * w)
@@ -69,7 +122,8 @@ Inputs: data - tiegcm data
 */
 
 int
-print_residual(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir, magfield_workspace *w)
+print_residual(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir,
+               magfield_workspace * w, magfield_eval_workspace *eval_p)
 {
   int s = 0;
   size_t i;
@@ -85,15 +139,15 @@ print_residual(const char *filename, const tiegcm3d_data *data, const int time_i
 
   i = 1;
   fprintf(fp, "# Time: %ld (%.6f DOY)\n", data->t[time_idx], data->doy[time_idx] + data->ut[time_idx] / 24.0);
-  fprintf(fp, "# Radius: %.2f (km) [%.2f km altitude]\n", data->r[ir], data->r[ir] - 6371.2);
+  fprintf(fp, "# Radius: %.2f (km) [%.2f km altitude]\n", data->r[ir] * 1.0e-3, data->r[ir] * 1.0e-3 - R_EARTH_KM);
   fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
-  fprintf(fp, "# Field %zu: TIEGCM J_r (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: TIEGCM J_t (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: TIEGCM J_p (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: magfield J_r (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: magfield J_t (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: magfield J_p (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: TIEGCM J_r (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: TIEGCM J_t (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: TIEGCM J_p (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: magfield J_r (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: magfield J_t (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: magfield J_p (nA/m^2)\n", i++);
 
   for (ilon = 0; ilon < data->nlon; ++ilon)
     {
@@ -105,17 +159,17 @@ print_residual(const char *filename, const tiegcm3d_data *data, const int time_i
           double theta = w->theta[ilat];
           double J[4];
 
-          magfield_eval_J(data->r[ir], theta, phi, J, w);
+          magfield_eval_J(data->r[ir], theta, phi, J, eval_p);
 
           fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glon[ilon],
                   data->glat[ilat],
-                  data->Jr[idx],
-                  data->Jt[idx],
-                  data->Jp[idx],
-                  J[0],
-                  J[1],
-                  J[2]);
+                  data->Jr[idx] * 1.0e9,
+                  data->Jt[idx] * 1.0e9,
+                  data->Jp[idx] * 1.0e9,
+                  J[0] * 1.0e9,
+                  J[1] * 1.0e9,
+                  J[2] * 1.0e9);
         }
 
       fprintf(fp, "\n");
@@ -138,22 +192,21 @@ Inputs: prefix        - output file prefix
         data          - TIEGCM data
         residual_file - (optional) write file of residuals between TIEGCM/magfield for first timestep
         w             - magfield workspace
+        eval_p        - magfield eval workspace
 
 Return: success/error
 */
 
 int
-main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_data * data, const char * residual_file, magfield_workspace * w)
+main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_data * data, const char * residual_file,
+          magfield_workspace * w, magfield_eval_workspace * eval_p)
 {
   int s = 0;
   const size_t ttot = *tidx + data->nt;
-  const double residual_alt = 110.0;
-  int residual_ir = 0;
+  const double residual_alt = 310.0;
+  int residual_ir = (int) bsearch_double(data->r, R_EARTH_M + residual_alt * 1.0e3, 0, data->nr - 1);
   char buf[2048];
   size_t i;
-
-  if (residual_file != NULL)
-    residual_ir = (int) bsearch_double(data->r, R_EARTH_KM + residual_alt, 0, data->nr - 1);
 
   /* ensure theta/phi grids from magfield match those from TIEGCM */
 
@@ -173,6 +226,10 @@ main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_da
       /* compute SH decomposition */
       magfield_decomp(w);
 
+#if TAPER_COEFFS
+      taper_magfield(30, w);
+#endif
+
       /* write output file */
       sprintf(buf, "%s_%03zu.dat", prefix, *tidx + 1);
       fprintf(stderr, "main_proc: writing %s...", buf);
@@ -184,8 +241,10 @@ main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_da
 
       if (i == 0 && residual_file != NULL)
         {
+          magfield_eval_init(w->qtcoeff, w->qcoeff, w->pcoeff, eval_p);
+
           fprintf(stderr, "main_proc: writing residual for time index %zu to %s...", i, residual_file);
-          print_residual(residual_file, data, i, residual_ir, w);
+          print_residual(residual_file, data, i, residual_ir, w, eval_p);
           fprintf(stderr, "done\n");
         }
     }
@@ -198,11 +257,13 @@ main(int argc, char *argv[])
 {
   const size_t lmin = 1;
   const size_t lmax = 60;
-  const double R = R_EARTH_KM;
+  const size_t mmax = 30;
+  const double R = R_EARTH_M;
   char *file_prefix = PCA3D_STAGE1B_SH_PREFIX;
   char *residual_file = NULL;
   struct timeval tv0, tv1;
   magfield_workspace *w = NULL;
+  magfield_eval_workspace * magfield_eval_p = NULL;
   size_t tidx = 0;
   time_t * tsteps = malloc(MAX_T * sizeof(time_t));
 
@@ -259,38 +320,38 @@ main(int argc, char *argv[])
 
       if (w == NULL)
         {
-          const size_t mmax = GSL_MIN(30, data->nlon / 2 - 1);
           const size_t nr = data->nr;
           const size_t ntheta = data->nlat;
           const size_t nphi = data->nlon;
-          const double rmin = data->r[0];
-          const double rmax = data->r[nr - 1];
           magfield_params params;
+          size_t i;
 
           params.lmin = lmin;
           params.lmax = lmax;
-          params.mmax = mmax;
+          params.mmax = GSL_MIN(mmax, data->nlon / 2 - 1);
           params.nr = nr;
           params.ntheta = ntheta;
           params.nphi = nphi;
-          params.rmin = rmin;
-          params.rmax = rmax;
           params.R = R;
           params.grid_type = MAGFIELD_GAUSS;
 
+          for (i = 0; i < nr; ++i)
+            params.r[i] = data->r[i];
+
           fprintf(stderr, "main: allocating magfield workspace...");
           w = magfield_alloc(&params);
+          magfield_eval_p = magfield_eval_alloc(&params);
           fprintf(stderr, "done\n");
 
-          /* set radial points which use non-fixed spacing */
-          magfield_set_r(data->r, w);
+          fprintf(stderr, "main: lmax       = %zu\n", params.lmax);
+          fprintf(stderr, "main: mmax       = %zu\n", params.mmax);
         }
 
       fprintf(stderr, "main: nr         = %zu\n", data->nr);
       fprintf(stderr, "main: nlat       = %zu\n", data->nlat);
       fprintf(stderr, "main: nlon       = %zu\n", data->nlon);
 
-      main_proc(file_prefix, &tidx, tsteps, data, residual_file, w);
+      main_proc(file_prefix, &tidx, tsteps, data, residual_file, w, magfield_eval_p);
 
       tiegcm3d_free(data);
 

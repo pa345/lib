@@ -28,15 +28,15 @@
 
 int
 compute_rms(const char *outfile, const double tmin, const double tmax, msynth_workspace *w,
-            const magdata *data, double rms[4])
+            const magdata *data)
 {
   size_t i;
-  size_t n = 0;
   FILE *fp = fopen(outfile, "w");
   msynth_workspace *msynth_p;
   gsl_rstat_workspace * rstat_x = gsl_rstat_alloc();
   gsl_rstat_workspace * rstat_y = gsl_rstat_alloc();
   gsl_rstat_workspace * rstat_z = gsl_rstat_alloc();
+  gsl_rstat_workspace * rstat_f = gsl_rstat_alloc();
   struct timeval tv0, tv1;
 
   i = 1;
@@ -46,8 +46,13 @@ compute_rms(const char *outfile, const double tmin, const double tmax, msynth_wo
   fprintf(fp, "# Field %zu: residual X (nT)\n", i++);
   fprintf(fp, "# Field %zu: residual Y (nT)\n", i++);
   fprintf(fp, "# Field %zu: residual Z (nT)\n", i++);
+  fprintf(fp, "# Field %zu: residual F (nT)\n", i++);
 
+#if 1
   msynth_p = msynth_copy(w);
+#else
+  msynth_p = msynth_shc_read(MSYNTH_CHAOS_FILE);
+#endif
 
   msynth_set(1, 15, msynth_p);
 
@@ -56,18 +61,14 @@ compute_rms(const char *outfile, const double tmin, const double tmax, msynth_wo
 
   for (i = 0; i < data->n; ++i)
     {
-      size_t j;
       double t;
       double r = data->r[i];
       double theta = data->theta[i];
       double phi = data->phi[i];
-      double B_int[4], B[4];
+      double B_NEC[3], B_core[4], B_model[4], F;
 
       /* ignore flagged data */
-      if (!MAGDATA_ExistVector(data->flags[i]))
-        continue;
-
-      if (fabs(data->qdlat[i]) > 55.0)
+      if (!MAGDATA_ExistVector(data->flags[i]) || !MAGDATA_ExistScalar(data->flags[i]))
         continue;
 
       t = satdata_epoch2year(data->t[i]);
@@ -76,24 +77,35 @@ compute_rms(const char *outfile, const double tmin, const double tmax, msynth_wo
       if (tmax > 0.0 && t > tmax)
         continue;
 
-      msynth_eval(t, r, theta, phi, B_int, msynth_p);
-      magdata_residual(i, B, data);
+      msynth_eval(t, r, theta, phi, B_core, msynth_p);
 
-      gsl_rstat_add(B[0] - B_int[0], rstat_x);
-      gsl_rstat_add(B[1] - B_int[1], rstat_y);
-      gsl_rstat_add(B[2] - B_int[2], rstat_z);
+      B_model[0] = B_core[0] + data->Bx_model[i];
+      B_model[1] = B_core[1] + data->By_model[i];
+      B_model[2] = B_core[2] + data->Bz_model[i];
+      B_model[3] = gsl_hypot3(B_model[0], B_model[1], B_model[2]);
 
-      fprintf(fp, "%f %f %f %.12e %.12e %.12e\n",
+      B_NEC[0] = data->Bx_nec[i];
+      B_NEC[1] = data->By_nec[i];
+      B_NEC[2] = data->Bz_nec[i];
+      F = data->F[i];
+
+      if (fabs(data->qdlat[i]) < 55.0)
+        {
+          gsl_rstat_add(B_NEC[0] - B_model[0], rstat_x);
+          gsl_rstat_add(B_NEC[1] - B_model[1], rstat_y);
+          gsl_rstat_add(B_NEC[2] - B_model[2], rstat_z);
+          gsl_rstat_add(F - B_model[3], rstat_f);
+        }
+
+      fprintf(fp, "%f %f %f %.12e %.12e %.12e %.12e\n",
               data->phi[i] * 180.0 / M_PI,
               90.0 - data->theta[i] * 180.0 / M_PI,
               data->qdlat[i],
-              B[0] - B_int[0],
-              B[1] - B_int[1],
-              B[2] - B_int[2]);
+              B_NEC[0] - B_model[0],
+              B_NEC[1] - B_model[1],
+              B_NEC[2] - B_model[2],
+              F - B_model[3]);
     }
-
-  for (i = 0; i < 4; ++i)
-    rms[i] = sqrt(rms[i] / n);
 
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
@@ -121,6 +133,13 @@ compute_rms(const char *outfile, const double tmin, const double tmax, msynth_wo
           gsl_rstat_sd(rstat_z),
           gsl_rstat_rms(rstat_z));
 
+  fprintf(stderr, "%20s %20zu %20.2f %20.2f %20.2f\n",
+          "F",
+          gsl_rstat_n(rstat_f),
+          gsl_rstat_mean(rstat_f),
+          gsl_rstat_sd(rstat_f),
+          gsl_rstat_rms(rstat_f));
+
   fprintf(stderr, "\t residual file = %s\n", outfile);
 
   fclose(fp);
@@ -143,8 +162,8 @@ main(int argc, char *argv[])
   double tmin = -1.0;
   double tmax = -1.0;
 #elif 1
-  double tmin = get_year(1417392000); /* Dec 1 2014 00:00:00 UTC */
-  double tmax = get_year(1422576000); /* Jan 30 2015 00:00:00 UTC */
+  double tmin = get_year(1418601600); /* Dec 15 2014 00:00:00 UTC */
+  double tmax = get_year(1421280000); /* Jan 15 2015 00:00:00 UTC */
 #elif 0
   double tmin = get_year(1416009600); /* Nov 15 2014 00:00:00 UTC */
   double tmax = get_year(1423958400); /* Feb 15 2015 00:00:00 UTC */
@@ -224,12 +243,11 @@ main(int argc, char *argv[])
     fprintf(stderr, "main: tmax = %g\n", tmax);
 
   {
-    double rms[4];
     struct timeval tv0, tv1;
 
     fprintf(stderr, "main: computing rms of Model/Swarm...");
     gettimeofday(&tv0, NULL);
-    compute_rms(outfile, tmin, tmax, msynth_p, data, rms);
+    compute_rms(outfile, tmin, tmax, msynth_p, data);
     gettimeofday(&tv1, NULL);
     fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
   }

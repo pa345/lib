@@ -10,6 +10,13 @@
 
 #include <mainlib/ml_magdata.h>
 
+/* indices for each residual type */
+#define INVERT_DATA_IDX_X              0
+#define INVERT_DATA_IDX_Y              1
+#define INVERT_DATA_IDX_Z              2
+#define INVERT_DATA_IDX_F              3
+#define INVERT_DATA_IDX_END            4
+
 typedef struct
 {
   double epoch;          /* model epoch in decimal years */
@@ -58,8 +65,6 @@ typedef struct
   double *t0;        /* array of size nsources for first time of each satellite (CDF_EPOCH) */
   double *t1;        /* array of size nsources for last time of each satellite (CDF_EPOCH) */
 
-  double t_mu;       /* mean of timestamps (years) */
-  double t_sigma;    /* stddev of timestamps (years) */
   double t0_data;    /* timestamp of first data point (CDF_EPOCH) */
   double t1_data;    /* timestamp of last data point (CDF_EPOCH) */
 
@@ -83,10 +88,10 @@ size_t invert_data_filter_comp(invert_data_workspace *w);
 size_t invert_data_filter_observatory(invert_data_workspace *w);
 int invert_data_compact(invert_data_workspace * w);
 int invert_data_init(invert_data_workspace *w);
-double invert_data_epoch(invert_data_workspace *w);
 int invert_data_map(const char *dir_prefix, const invert_data_workspace *w);
 int invert_data_print(const char *dir_prefix, const gsl_vector *wts_spatial, const invert_data_workspace *w);
 magdata *invert_data_ptr(const size_t idx, const invert_data_workspace *w);
 int invert_data_t(double *t0, double *t1, const magdata *data);
+int invert_data_weights(gsl_vector * wts, const double weightfac[], const invert_data_workspace * w);
 
 #endif /* INCLUDED_invert_data_h */

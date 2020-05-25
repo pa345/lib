@@ -200,6 +200,7 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
   struct timeval tv0, tv1;
   double xnorm = gsl_blas_dnrm2(x);
   int xzero = xnorm == 0.0 ? 1 : 0;
+  size_t ndata_completed = 0;
 
   invert_debug("invert_calc_f: entering function...\n");
   gettimeofday(&tv0, NULL);
@@ -300,6 +301,15 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
           if (mptr->flags[j] & (MAGDATA_FLG_DZ_NS | MAGDATA_FLG_DZ_EW))
             {
               ++ridx;
+            }
+
+#pragma omp atomic
+          ndata_completed++;
+
+#pragma omp critical
+          if (ndata_completed % 1000 == 0)
+            {
+              progress_bar(stderr, (double) ndata_completed / (double) w->ndata, 70);
             }
         } /* for (j = 0; j < mptr->n; ++j) */
     }

@@ -170,6 +170,16 @@ apply_modsinsq(const gsl_vector *in, gsl_vector *out)
           *wNi /= scale;
         }
 
+      if (in != NULL)
+        {
+          for (i = 0; i < N; ++i)
+            {
+              double in_i = gsl_vector_get(in, i);
+              double * out_i = gsl_vector_ptr(out, i);
+              *out_i *= in_i;
+            }
+        }
+
       gsl_vector_free(a);
 
       return GSL_SUCCESS;

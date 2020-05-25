@@ -27,12 +27,6 @@ static int invert_residual_print_observatory(const char *prefix, const size_t it
                                              size_t * index, gsl_rstat_workspace ** rstat_X,
                                              gsl_rstat_workspace ** rstat_Y, gsl_rstat_workspace ** rstat_Z,
                                              invert_workspace * w);
-static int invert_residual_print_observatory_SV(const char *prefix, const size_t iter,
-                                                size_t * index, magdata * mptr,
-                                                gsl_rstat_workspace ** rstat_DXDT,
-                                                gsl_rstat_workspace ** rstat_DYDT,
-                                                gsl_rstat_workspace ** rstat_DZDT,
-                                                invert_workspace * w);
 
 int
 invert_residual_print(const char *prefix, const size_t iter, invert_workspace *w)
@@ -70,6 +64,9 @@ invert_residual_print(const char *prefix, const size_t iter, invert_workspace *w
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, || f || = %.12e)\n", time_diff(tv0, tv1), gsl_blas_dnrm2(f));
 
+  /*XXX*/
+  printv_octave(w->c, "c0");
+
   for (i = 0; i < data_p->nsources; ++i)
     {
       magdata *mptr = invert_data_ptr(i, data_p);
@@ -78,10 +75,6 @@ invert_residual_print(const char *prefix, const size_t iter, invert_workspace *w
         invert_residual_print_satellite(prefix, iter, i, f, &idx, mptr, w);
       else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
         invert_residual_print_observatory(prefix, iter, i, &idx, rstat_X, rstat_Y, rstat_Z, w);
-#if 0/*XXX*/
-      else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
-        invert_residual_print_observatory_SV(prefix, iter, &idx, mptr, rstat_DXDT, rstat_DYDT, rstat_DZDT, w);
-#endif
 
       if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
         print_obs_stat = 1;
@@ -204,23 +197,18 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
   size_t idx = *index;
   size_t j, k;
   char buf[2048];
-  gsl_rstat_workspace *rstat_x = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_y = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_z = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_f = gsl_rstat_alloc();
+  gsl_rstat_workspace *rstat_lowx = gsl_rstat_alloc();
+  gsl_rstat_workspace *rstat_lowy = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_lowz = gsl_rstat_alloc();
+  gsl_rstat_workspace *rstat_highx = gsl_rstat_alloc();
+  gsl_rstat_workspace *rstat_highy = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_highz = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_lowf = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_highf = gsl_rstat_alloc();
+  gsl_rstat_workspace *rstat_f = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_dx_ns = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_dy_ns = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_low_dz_ns = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_high_dz_ns = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_df_ns = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_dx_ew = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_dy_ew = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_low_dz_ew = gsl_rstat_alloc();
-  gsl_rstat_workspace *rstat_high_dz_ew = gsl_rstat_alloc();
   gsl_rstat_workspace *rstat_df_ew = gsl_rstat_alloc();
 
   sprintf(buf, "%s/res%zu_X_iter%zu.dat", prefix, nsource, iter);
@@ -277,7 +265,7 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
     {
       k = 1;
       fprintf(fp[j], "# Field %zu: timestamp (UT seconds since 1970-01-01)\n", k++);
-      fprintf(fp[j], "# Field %zu: local time (hours)\n", k++);
+      fprintf(fp[j], "# Field %zu: magnetic local time (hours)\n", k++);
       fprintf(fp[j], "# Field %zu: longitude (degrees)\n", k++);
       fprintf(fp[j], "# Field %zu: geocentric latitude (degrees)\n", k++);
       fprintf(fp[j], "# Field %zu: QD latitude (degrees)\n", k++);
@@ -373,7 +361,7 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
   for (j = 0; j < mptr->n; ++j)
     {
       time_t unix_time = satdata_epoch2timet(mptr->t[j]);
-      double lt = get_localtime(unix_time, mptr->phi[j]);
+      double MLT = mptr->MLT[j];
       double r = mptr->r[j];
       double theta = mptr->theta[j];
       double phi = mptr->phi[j] * 180.0 / M_PI;
@@ -408,8 +396,12 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[0], fmtstr, unix_time, lt, phi, lat, qdlat, r, ws, wr, wf, B_nec[0], B_model[0], X_fit, X_res);
-          gsl_rstat_add(X_res, rstat_x);
+          fprintf(fp[0], fmtstr, unix_time, MLT, phi, lat, qdlat, r, ws, wr, wf, B_nec[0], B_model[0], X_fit, X_res);
+
+          if (fabs(mptr->qdlat[j]) <= qdlat_cutoff)
+            gsl_rstat_add(X_res, rstat_lowx);
+          else
+            gsl_rstat_add(X_res, rstat_highx);
 
           ++idx;
         }
@@ -422,8 +414,12 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[1], fmtstr, unix_time, lt, phi, lat, qdlat, r, ws, wr, wf, B_nec[1], B_model[1], Y_fit, Y_res);
-          gsl_rstat_add(Y_res, rstat_y);
+          fprintf(fp[1], fmtstr, unix_time, MLT, phi, lat, qdlat, r, ws, wr, wf, B_nec[1], B_model[1], Y_fit, Y_res);
+
+          if (fabs(mptr->qdlat[j]) <= qdlat_cutoff)
+            gsl_rstat_add(Y_res, rstat_lowy);
+          else
+            gsl_rstat_add(Y_res, rstat_highy);
 
           ++idx;
         }
@@ -436,9 +432,7 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[2], fmtstr, unix_time, lt, phi, lat, qdlat, r, ws, wr, wf, B_nec[2], B_model[2], Z_fit, Z_res);
-
-          gsl_rstat_add(Z_res, rstat_z);
+          fprintf(fp[2], fmtstr, unix_time, MLT, phi, lat, qdlat, r, ws, wr, wf, B_nec[2], B_model[2], Z_fit, Z_res);
 
           if (fabs(mptr->qdlat[j]) <= qdlat_cutoff)
             gsl_rstat_add(Z_res, rstat_lowz);
@@ -455,42 +449,32 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
           double wr = gsl_vector_get(w->wts_robust, idx);
           double wf = gsl_vector_get(w->wts_final, idx);
 
-          fprintf(fp[3], fmtstr_F, unix_time, lt, phi, lat, qdlat, r, ws, wr, wf, B_nec[3], B_nec[3] - F_res, F_res);
+          fprintf(fp[3], fmtstr_F, unix_time, MLT, phi, lat, qdlat, r, ws, wr, wf, B_nec[3], B_nec[3] - F_res, F_res);
           gsl_rstat_add(F_res, rstat_f);
-
-          if (fabs(mptr->qdlat[j]) <= qdlat_cutoff)
-            gsl_rstat_add(F_res, rstat_lowf);
-          else
-            gsl_rstat_add(F_res, rstat_highf);
 
           ++idx;
         }
     }
 
-  fprintf(stderr, "=== FIT STATISTICS SATELLITE %zu ===\n", nsource);
+  fprintf(stderr, "=== FIT STATISTICS SATELLITE %zu [%s] ===\n", nsource, mptr->name);
 
   /* print header */
   invert_residual_print_stat(NULL, NULL);
 
-  invert_residual_print_stat("X", rstat_x);
-  invert_residual_print_stat("Y", rstat_y);
-  invert_residual_print_stat("Z", rstat_z);
-  invert_residual_print_stat("F", rstat_f);
+  invert_residual_print_stat("low X", rstat_lowx);
+  invert_residual_print_stat("low Y", rstat_lowy);
   invert_residual_print_stat("low Z", rstat_lowz);
+  invert_residual_print_stat("high X", rstat_highx);
+  invert_residual_print_stat("high Y", rstat_highy);
   invert_residual_print_stat("high Z", rstat_highz);
-  invert_residual_print_stat("low F", rstat_lowf);
-  invert_residual_print_stat("high F", rstat_highf);
+  invert_residual_print_stat("F", rstat_f);
 
   invert_residual_print_stat("N/S DX", rstat_dx_ns);
   invert_residual_print_stat("N/S DY", rstat_dy_ns);
-  invert_residual_print_stat("low N/S DZ", rstat_low_dz_ns);
-  invert_residual_print_stat("high N/S DZ", rstat_high_dz_ns);
   invert_residual_print_stat("N/S DF", rstat_df_ns);
 
   invert_residual_print_stat("E/W DX", rstat_dx_ew);
   invert_residual_print_stat("E/W DY", rstat_dy_ew);
-  invert_residual_print_stat("low E/W DZ", rstat_low_dz_ew);
-  invert_residual_print_stat("high E/W DZ", rstat_high_dz_ew);
   invert_residual_print_stat("E/W DF", rstat_df_ew);
 
   *index = idx;
@@ -498,23 +482,15 @@ invert_residual_print_satellite(const char *prefix, const size_t iter, const siz
   for (j = 0; j < n; ++j)
     fclose(fp[j]);
 
-  gsl_rstat_free(rstat_x);
-  gsl_rstat_free(rstat_y);
-  gsl_rstat_free(rstat_z);
-  gsl_rstat_free(rstat_f);
-  gsl_rstat_free(rstat_lowf);
-  gsl_rstat_free(rstat_highf);
+  gsl_rstat_free(rstat_lowx);
+  gsl_rstat_free(rstat_lowy);
   gsl_rstat_free(rstat_lowz);
-  gsl_rstat_free(rstat_highz);
+  gsl_rstat_free(rstat_f);
   gsl_rstat_free(rstat_dx_ns);
   gsl_rstat_free(rstat_dy_ns);
-  gsl_rstat_free(rstat_low_dz_ns);
-  gsl_rstat_free(rstat_high_dz_ns);
   gsl_rstat_free(rstat_df_ns);
   gsl_rstat_free(rstat_dx_ew);
   gsl_rstat_free(rstat_dy_ew);
-  gsl_rstat_free(rstat_low_dz_ew);
-  gsl_rstat_free(rstat_high_dz_ew);
   gsl_rstat_free(rstat_df_ew);
 
   return s;
@@ -697,171 +673,3 @@ invert_residual_print_observatory(const char *prefix, const size_t iter, const s
 
   return s;
 }
-
-/*
-invert_residual_print_observatory_SV()
-  Print residuals for observatory data
-
-Inputs: prefix  - directory prefix for output files
-        iter    - robust iteration number
-        index   - (input/output)
-        mptr    - magdata
-        rstat_DXDT - array of 3 rstat workspaces for dX/dt component
-                     index 0: north pole stats
-                     index 1: south pole stats
-                     index 2: mid latitude stats
-        rstat_DYDT - array of 3 rstat workspaces for dY/dt component
-                     index 0: north pole stats
-                     index 1: south pole stats
-                     index 2: mid latitude stats
-        rstat_DZDT - array of 3 rstat workspaces for dZ/dt component
-                     index 0: north pole stats
-                     index 1: south pole stats
-                     index 2: mid latitude stats
-        w       - invert workspace
-*/
-
-#if 0 /*XXX*/
-static int
-invert_residual_print_observatory_SV(const char *prefix, const size_t iter,
-                                     size_t * index, magdata * mptr,
-                                     gsl_rstat_workspace ** rstat_DXDT,
-                                     gsl_rstat_workspace ** rstat_DYDT,
-                                     gsl_rstat_workspace ** rstat_DZDT,
-                                     invert_workspace * w)
-{
-  int s = 0;
-  const double qdlat_cutoff = w->params.qdlat_fit_cutoff; /* cutoff latitude for high/low statistics */
-  const char *fmtstr = "%ld %8.4f %6.3f %6.3f %6.3f %10.4f %10.4f %10.4f\n";
-  const size_t n = 3; /* number of components to write to disk */
-  const double r = mptr->r[0];
-  const double theta = mptr->theta[0];
-  const double phi = mptr->phi[0];
-  FILE *fp[3];
-  size_t idx = *index;
-  size_t j, k;
-  char buf[2048];
-
-  sprintf(buf, "%s/obs/res_%s_DXDT_iter%zu.dat", prefix, mptr->name, iter);
-  fp[0] = fopen(buf, "w");
-
-  sprintf(buf, "%s/obs/res_%s_DYDT_iter%zu.dat", prefix, mptr->name, iter);
-  fp[1] = fopen(buf, "w");
-
-  sprintf(buf, "%s/obs/res_%s_DZDT_iter%zu.dat", prefix, mptr->name, iter);
-  fp[2] = fopen(buf, "w");
-
-  for (j = 0; j < n; ++j)
-    {
-      if (fp[j] == NULL)
-        {
-          fprintf(stderr, "invert_residual_print_observatory: fp[%zu] is NULL\n", j);
-          return -1;
-        }
-    }
-
-  /* print header */
-  fprintf(fp[0], "# %s observatory\n# dX/dt vector data for MF modeling\n", mptr->name);
-  fprintf(fp[1], "# %s observatory\n# dY/dt vector data for MF modeling\n", mptr->name);
-  fprintf(fp[2], "# %s observatory\n# dZ/dt vector data for MF modeling\n", mptr->name);
-
-  for (j = 0; j < n; ++j)
-    {
-      fprintf(fp[j], "# Radius:    %.4f [km]\n", r);
-      fprintf(fp[j], "# Longitude: %.4f [deg]\n", phi * 180.0 / M_PI);
-      fprintf(fp[j], "# Latitude:  %.4f [deg]\n", 90.0 - theta * 180.0 / M_PI);
-
-      k = 1;
-      fprintf(fp[j], "# Field %zu: timestamp (UT seconds since 1970-01-01)\n", k++);
-      fprintf(fp[j], "# Field %zu: QD latitude (degrees)\n", k++);
-      fprintf(fp[j], "# Field %zu: spatial weight factor\n", k++);
-      fprintf(fp[j], "# Field %zu: robust weight factor\n", k++);
-      fprintf(fp[j], "# Field %zu: total weight factor\n", k++);
-    }
-
-  fprintf(fp[0], "# Field %zu: dX/dt vector measurement (nT/year)\n", k);
-  fprintf(fp[1], "# Field %zu: dY/dt vector measurement (nT/year)\n", k);
-  fprintf(fp[2], "# Field %zu: dZ/dt vector measurement (nT/year)\n", k);
-  ++k;
-
-  fprintf(fp[0], "# Field %zu: dX/dt fitted model (nT/year)\n", k);
-  fprintf(fp[1], "# Field %zu: dY/dt fitted model (nT/year)\n", k);
-  fprintf(fp[2], "# Field %zu: dZ/dt fitted model (nT/year)\n", k);
-  ++k;
-
-  fprintf(fp[0], "# Field %zu: dX/dt residual (nT/year)\n", k);
-  fprintf(fp[1], "# Field %zu: dY/dt residual (nT/year)\n", k);
-  fprintf(fp[2], "# Field %zu: dZ/dt residual (nT/year)\n", k);
-  ++k;
-
-  for (j = 0; j < mptr->n; ++j)
-    {
-      time_t unix_time = satdata_epoch2timet(mptr->t[j]);
-      double dBdt_fit[4], res_dBdt[3];
-      size_t rstat_idx;
-
-      if (MAGDATA_Discarded(mptr->flags[j]))
-        continue;
-
-      if (!MAGDATA_FitMF(mptr->flags[j]))
-        continue;
-
-      if (mptr->qdlat[j] > qdlat_cutoff)
-        rstat_idx = 0; /* north pole latitudes */
-      else if (mptr->qdlat[j] < -qdlat_cutoff)
-        rstat_idx = 1; /* south pole latitudes */
-      else
-        rstat_idx = 2; /* mid latitudes */
-
-      /* evaluate internal field models */
-      invert_eval_dBdt(mptr->t[j], r, theta, phi, dBdt_fit, w);
-
-      res_dBdt[0] = mptr->dXdt_nec[j] - dBdt_fit[0];
-      res_dBdt[1] = mptr->dYdt_nec[j] - dBdt_fit[1];
-      res_dBdt[2] = mptr->dZdt_nec[j] - dBdt_fit[2];
-
-      if (MAGDATA_ExistDXDT(mptr->flags[j]))
-        {
-          double ws = gsl_vector_get(w->wts_spatial, idx);
-          double wr = gsl_vector_get(w->wts_robust, idx);
-          double wf = gsl_vector_get(w->wts_final, idx);
-
-          fprintf(fp[0], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->dXdt_nec[j], dBdt_fit[0], res_dBdt[0]);
-          gsl_rstat_add(res_dBdt[0], rstat_DXDT[rstat_idx]);
-
-          ++idx;
-        }
-
-      if (MAGDATA_ExistDYDT(mptr->flags[j]))
-        {
-          double ws = gsl_vector_get(w->wts_spatial, idx);
-          double wr = gsl_vector_get(w->wts_robust, idx);
-          double wf = gsl_vector_get(w->wts_final, idx);
-
-          fprintf(fp[1], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->dYdt_nec[j], dBdt_fit[1], res_dBdt[1]);
-          gsl_rstat_add(res_dBdt[1], rstat_DYDT[rstat_idx]);
-
-          ++idx;
-        }
-
-      if (MAGDATA_ExistDZDT(mptr->flags[j]))
-        {
-          double ws = gsl_vector_get(w->wts_spatial, idx);
-          double wr = gsl_vector_get(w->wts_robust, idx);
-          double wf = gsl_vector_get(w->wts_final, idx);
-
-          fprintf(fp[2], fmtstr, unix_time, mptr->qdlat[j], ws, wr, wf, mptr->dZdt_nec[j], dBdt_fit[2], res_dBdt[2]);
-          gsl_rstat_add(res_dBdt[2], rstat_DZDT[rstat_idx]);
-
-          ++idx;
-        }
-    }
-
-  *index = idx;
-
-  for (j = 0; j < n; ++j)
-    fclose(fp[j]);
-
-  return s;
-}
-#endif

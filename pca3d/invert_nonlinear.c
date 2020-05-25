@@ -307,6 +307,18 @@ invert_init_nonlinear(invert_workspace *w)
   w->wfvec = gsl_vector_alloc(w->nres_tot);
 
   /* calculate spatial weights */
+#if 1 /*XXX*/
+  {
+    double weightfac[INVERT_DATA_IDX_END];
+
+    weightfac[INVERT_DATA_IDX_X] = w->params.weight_X;
+    weightfac[INVERT_DATA_IDX_Y] = w->params.weight_Y;
+    weightfac[INVERT_DATA_IDX_Z] = w->params.weight_Z;
+    weightfac[INVERT_DATA_IDX_F] = w->params.weight_F;
+
+    invert_data_weights(w->wts_spatial, weightfac, w->data_workspace_p);
+  }
+#else
   {
     size_t idx = 0;
     size_t j;
@@ -388,6 +400,7 @@ invert_init_nonlinear(invert_workspace *w)
 
     assert(idx == w->nres);
   }
+#endif
 
   /* precompute regularization matrix */
   if (params->regularize && !params->synth_data)

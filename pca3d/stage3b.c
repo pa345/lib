@@ -129,56 +129,86 @@ build_X(const size_t ifreq, const pca3d_fft_data * data, gsl_matrix_complex * X)
   return s;
 }
 
+/*
+proc_svd()
+  Compute SVD of spectral density matrix, combining a set of frequencies
+
+Inputs iband       - number of this frequency band for output file
+       idx_start   - starting index corresponding to first frequency in [0,nfreq-1]
+       idx_end     - end index corresponding to last frequency in [0,nfreq-1]
+       data        - pca3d data
+       nominalFreq - (output) frequency of center of band (cpd)
+*/
+
 int
-proc_svd(const size_t ifreq, const pca3d_fft_data * data)
+proc_svd(const size_t iband, const size_t idx_start, const size_t idx_end,
+         const pca3d_fft_data * data, double * nominalFreq)
 {
-  int status;
+  int status = 0;
   const double window_size = data->window_size;
   const double window_shift = data->window_shift;
-  const double freq = ifreq / window_size;                   /* desired frequency in cpd */
+  const size_t nfreq = idx_end - idx_start + 1;              /* number of frequencies to combine */
   const size_t N = data->nr * data->nlm_complex;             /* spatial grid size */
   const size_t T = data->T;                                  /* number of time window segments */
-  gsl_matrix_complex *X = gsl_matrix_complex_alloc(3 * N, T);
-  gsl_vector *S = gsl_vector_alloc(T);
-  gsl_matrix_complex *U = gsl_matrix_complex_alloc(3 * N, T);
-  gsl_matrix_complex *V = gsl_matrix_complex_alloc(T, T);
+  gsl_matrix_complex *X, *U, *V;
+  gsl_vector *S;
+  size_t i;
   struct timeval tv0, tv1;
   char buf[2048];
 
-  fprintf(stderr, "proc_svd: === PROCESSING frequency %.3f [cpd] [index: %zu/%zu] ===\n", freq, ifreq, data->nfreq);
+  *nominalFreq = 0.0;
 
-  fprintf(stderr, "proc_svd: building matrix X (%zu-by-%zu) for frequency %.3f [cpd] (index = %zu)...",
-          X->size1, X->size2, freq, ifreq);
-  gettimeofday(&tv0, NULL);
-  build_X(ifreq, data, X);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+  /* X = [ Q[start] ... Q[end] ] */
+  X = gsl_matrix_complex_alloc(3 * N, nfreq * T);
 
-  fprintf(stderr, "proc_svd: performing SVD of X for frequency %g [cpd]...", freq);
+  S = gsl_vector_alloc(GSL_MIN(X->size1, X->size2));
+  U = gsl_matrix_complex_alloc(X->size1, X->size2);
+  V = gsl_matrix_complex_alloc(X->size2, X->size2);
+
+  for (i = 0; i < nfreq; ++i)
+    {
+      gsl_matrix_complex_view Xv = gsl_matrix_complex_submatrix(X, 0, i * T, 3 * N, T);
+      size_t ifreq = i + idx_start;
+      double freq = ifreq / window_size;
+
+      /* build Q[ifreq] and store in X */
+      fprintf(stderr, "proc_svd: building matrix X (%zu-by-%zu) for frequency %.3f [cpd] (index = %zu)...",
+              N, T, freq, ifreq);
+      gettimeofday(&tv0, NULL);
+      build_X(ifreq, data, &Xv.matrix);
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+      *nominalFreq += freq;
+    }
+
+  *nominalFreq /= (double) nfreq;
+
+  fprintf(stderr, "proc_svd: performing SVD of X for nominal frequency %g [cpd]...", *nominalFreq);
   gettimeofday(&tv0, NULL);
   status = lapack_complex_svd_thin(X, S, U, V);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, condition number = %g, status = %d)\n",
           time_diff(tv0, tv1), gsl_vector_get(S, 0) / gsl_vector_get(S, T - 1), status);
 
-  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_SVAL_TXT, ifreq);
-  fprintf(stderr, "proc_svd: writing singular values for frequency %g [cpd] in text format to %s...", freq, buf);
-  pca3d_write_S(buf, data->lmax, data->mmax, freq, window_size, window_shift, S);
+  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_SVAL_TXT, iband);
+  fprintf(stderr, "proc_svd: writing singular values for nominal frequency %g [cpd] in text format to %s...", *nominalFreq, buf);
+  pca3d_write_S(buf, data->lmax, data->mmax, *nominalFreq, window_size, window_shift, S);
   fprintf(stderr, "done\n");
 
-  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_SVAL_DAT, ifreq);
-  fprintf(stderr, "proc_svd: writing singular values for frequency %g [cpd] in binary format to %s...", freq, buf);
+  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_SVAL_DAT, iband);
+  fprintf(stderr, "proc_svd: writing singular values for nominal frequency %g [cpd] in binary format to %s...", *nominalFreq, buf);
   pca3d_write_vector(buf, S);
   fprintf(stderr, "done\n");
 
-  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_U, ifreq);
-  fprintf(stderr, "proc_svd: writing U matrix for frequency %g [cpd] in binary format to %s...", freq, buf);
+  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_U, iband);
+  fprintf(stderr, "proc_svd: writing U matrix for nominal frequency %g [cpd] in binary format to %s...", *nominalFreq, buf);
   pca3d_write_matrix_complex(buf, U);
   fprintf(stderr, "done\n");
 
-  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_V_TXT, ifreq);
-  fprintf(stderr, "main: writing right singular vectors for frequency %g [cpd] in text format to %s...", freq, buf);
-  pca3d_write_complex_V(buf, data->lmax, data->mmax, freq, window_size, window_shift, V);
+  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_V_TXT, iband);
+  fprintf(stderr, "main: writing right singular vectors for nominal frequency %g [cpd] in text format to %s...", *nominalFreq, buf);
+  pca3d_write_complex_V(buf, data->lmax, data->mmax, *nominalFreq, window_size, window_shift, V);
   fprintf(stderr, "done\n");
 
   gsl_matrix_complex_free(X);
@@ -186,28 +216,17 @@ proc_svd(const size_t ifreq, const pca3d_fft_data * data)
   gsl_matrix_complex_free(V);
   gsl_vector_free(S);
 
-  return 0;
+  return status;
 }
 
 int
 main(int argc, char *argv[])
 {
-  /*
-   * For the PCA project, Gary provided temporal modes with the frequencies (in cpd):
-   * , 0.625, 1, 1.5, 2, 2.5, ..., 5.5, 6
-   *
-   * These frequency bands correspond to the following indices in the FFT output array, where
-   *
-   * Freq[idx] = idx * Fs / N
-   *
-   * where Fs = 24 samples/day is the sampling rate, and N = 192 samples/window (8 days) in the window size
-   */
-  const size_t indices[] = { 3, 5, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48 };
-  const size_t nidx = 13;
   pca3d_fft_data data;
   struct timeval tv0, tv1;
   char *infile = PCA3D_STAGE2B_FFT_DATA;
-  size_t i;
+  double bandFreqs[50]; /* band center frequencies (cpd) */
+  gsl_vector_view v;
 
   while (1)
     {
@@ -244,8 +263,25 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: nr  = %zu\n", data.nr);
   fprintf(stderr, "main: nlm = %zu\n", data.nlm_complex);
 
-  for (i = 0; i < nidx; ++i)
-    proc_svd(indices[i], &data);
+  proc_svd(1, 47, 49, &data, &bandFreqs[0]);
+  proc_svd(2, 42, 46, &data, &bandFreqs[1]);
+  proc_svd(3, 39, 41, &data, &bandFreqs[2]);
+  proc_svd(4, 34, 38, &data, &bandFreqs[3]);
+  proc_svd(5, 31, 33, &data, &bandFreqs[4]);
+  proc_svd(6, 26, 30, &data, &bandFreqs[5]);
+  proc_svd(7, 23, 25, &data, &bandFreqs[6]);
+  proc_svd(8, 18, 22, &data, &bandFreqs[7]);
+  proc_svd(9, 15, 17, &data, &bandFreqs[8]);
+  proc_svd(10, 10, 14, &data, &bandFreqs[9]);
+  proc_svd(11, 7, 9, &data, &bandFreqs[10]);
+  proc_svd(12, 4, 6, &data, &bandFreqs[11]);
+  proc_svd(13, 2, 3, &data, &bandFreqs[12]);
+
+  /* write band center frequencies to output */
+  fprintf(stderr, "main: writing band center frequencies to %s...", PCA3D_STAGE3B_BANDS);
+  v = gsl_vector_view_array(bandFreqs, 13);
+  pca3d_write_vector(PCA3D_STAGE3B_BANDS, &v.vector);
+  fprintf(stderr, "done\n");
 
   free(data.t);
   free(data.r);

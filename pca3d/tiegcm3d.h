@@ -24,7 +24,7 @@ typedef struct
   double *year; /* year, size nt */
   double *doy;  /* day of year, size nt */
   double *ut;   /* UT (hours), size nt */
-  double *r;    /* radius (km), size nr */
+  double *r;    /* radius (m), size nr */
   double *glon; /* geodetic longitude (degrees), size nlon */
   double *glat; /* geodetic latitude (degrees), size nlat */
 

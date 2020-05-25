@@ -71,8 +71,6 @@ invert_data_alloc(const size_t nsources, const invert_data_parameters *params)
       return 0;
     }
 
-  w->t_mu = -1.0;
-  w->t_sigma = -1.0;
   w->t0_data = -1.0;
   w->t1_data = -1.0;
 
@@ -164,7 +162,6 @@ size_t
 invert_data_filter_comp(invert_data_workspace *w)
 {
   const invert_data_parameters *params = &(w->params);
-  const double qdlat_cutoff = params->fit_seplat ? params->qdlat_fit_cutoff : 100.0;
   size_t cnt = 0;
   size_t i, j;
 
@@ -172,103 +169,43 @@ invert_data_filter_comp(invert_data_workspace *w)
     {
       magdata *mptr = invert_data_ptr(i, w);
 
-      /* if this dataset is EEJ measurements of the magnetic equator, don't filter components */
-      if (mptr->global_flags & MAGDATA_GLOBFLG_EEJ_MAGEQ)
-        continue;
-
       for (j = 0; j < mptr->n; ++j)
         {
-          double qdlat = mptr->qdlat[j];
+          if (!params->fit_X)
+            mptr->flags[j] &= ~MAGDATA_FLG_X;
 
-          if (fabs(qdlat) <= qdlat_cutoff)
-            {
-              /* select components for mid/low latitudes */
+          if (!params->fit_Y)
+            mptr->flags[j] &= ~MAGDATA_FLG_Y;
 
-              if (!params->fit_X)
-                mptr->flags[j] &= ~MAGDATA_FLG_X;
+          if (!params->fit_Z)
+            mptr->flags[j] &= ~MAGDATA_FLG_Z;
 
-              if (!params->fit_Y)
-                mptr->flags[j] &= ~MAGDATA_FLG_Y;
+          if (!params->fit_F)
+            mptr->flags[j] &= ~MAGDATA_FLG_F;
 
-              if (!params->fit_Z)
-                mptr->flags[j] &= ~MAGDATA_FLG_Z;
+          if (!params->fit_DX_NS)
+            mptr->flags[j] &= ~MAGDATA_FLG_DX_NS;
 
-              if (!params->fit_F)
-                mptr->flags[j] &= ~MAGDATA_FLG_F;
+          if (!params->fit_DY_NS)
+            mptr->flags[j] &= ~MAGDATA_FLG_DY_NS;
 
-              if (!params->fit_DXDT)
-                mptr->flags[j] &= ~MAGDATA_FLG_DXDT;
+          if (!params->fit_DZ_NS)
+            mptr->flags[j] &= ~MAGDATA_FLG_DZ_NS;
 
-              if (!params->fit_DYDT)
-                mptr->flags[j] &= ~MAGDATA_FLG_DYDT;
+          if (!params->fit_DF_NS)
+            mptr->flags[j] &= ~MAGDATA_FLG_DF_NS;
 
-              if (!params->fit_DZDT)
-                mptr->flags[j] &= ~MAGDATA_FLG_DZDT;
+          if (!params->fit_DX_EW)
+            mptr->flags[j] &= ~MAGDATA_FLG_DX_EW;
 
-              if (!params->fit_DX_NS)
-                mptr->flags[j] &= ~MAGDATA_FLG_DX_NS;
+          if (!params->fit_DY_EW)
+            mptr->flags[j] &= ~MAGDATA_FLG_DY_EW;
 
-              if (!params->fit_DY_NS)
-                mptr->flags[j] &= ~MAGDATA_FLG_DY_NS;
+          if (!params->fit_DZ_EW)
+            mptr->flags[j] &= ~MAGDATA_FLG_DZ_EW;
 
-              if (!params->fit_DZ_NS)
-                mptr->flags[j] &= ~MAGDATA_FLG_DZ_NS;
-
-              if (!params->fit_DF_NS)
-                mptr->flags[j] &= ~MAGDATA_FLG_DF_NS;
-
-              if (!params->fit_DX_EW)
-                mptr->flags[j] &= ~MAGDATA_FLG_DX_EW;
-
-              if (!params->fit_DY_EW)
-                mptr->flags[j] &= ~MAGDATA_FLG_DY_EW;
-
-              if (!params->fit_DZ_EW)
-                mptr->flags[j] &= ~MAGDATA_FLG_DZ_EW;
-
-              if (!params->fit_DF_EW)
-                mptr->flags[j] &= ~MAGDATA_FLG_DF_EW;
-            }
-          else
-            {
-              /* select components for high-latitudes */
-
-              /* don't fit X/Y at high-latitudes, including gradients */
-              mptr->flags[j] &= ~(MAGDATA_FLG_X | MAGDATA_FLG_Y);
-              mptr->flags[j] &= ~(MAGDATA_FLG_DX_NS | MAGDATA_FLG_DY_NS);
-              mptr->flags[j] &= ~(MAGDATA_FLG_DX_EW | MAGDATA_FLG_DY_EW);
-
-              if (!params->fit_Z_highlat)
-                mptr->flags[j] &= ~MAGDATA_FLG_Z;
-
-              if (!params->fit_F_highlat)
-                mptr->flags[j] &= ~MAGDATA_FLG_F;
-
-              /*
-               * dX/dt and dY/dt we still fit at high-latitudes (unless toggled off), since the observatory
-               * time series data are still relatively clean
-               */
-              if (!params->fit_DXDT)
-                mptr->flags[j] &= ~MAGDATA_FLG_DXDT;
-
-              if (!params->fit_DYDT)
-                mptr->flags[j] &= ~MAGDATA_FLG_DYDT;
-
-              if (!params->fit_DZDT)
-                mptr->flags[j] &= ~MAGDATA_FLG_DZDT;
-
-              if (!params->fit_DZ_NS_highlat)
-                mptr->flags[j] &= ~MAGDATA_FLG_DZ_NS;
-
-              if (!params->fit_DF_NS_highlat)
-                mptr->flags[j] &= ~MAGDATA_FLG_DF_NS;
-
-              if (!params->fit_DZ_EW_highlat)
-                mptr->flags[j] &= ~MAGDATA_FLG_DZ_EW;
-
-              if (!params->fit_DF_EW_highlat)
-                mptr->flags[j] &= ~MAGDATA_FLG_DF_EW;
-            }
+          if (!params->fit_DF_EW)
+            mptr->flags[j] &= ~MAGDATA_FLG_DF_EW;
         }
     }
 
@@ -361,20 +298,14 @@ invert_data_init()
   Compute mean and stddev of timestamps minus epoch for later time scaling
 
 w_i = t_i - epoch
-t_mu = mean(w_i)
-t_sigma = stddev(w_i)
 
 Inputs: w - workspace
 
 Return: success/error
 
 Notes:
-1) w->t_mu and w->t_sigma are updated with timestamp mean/stddev in years
-
-2) w->t0_data is initialized to the timestamp of the first data point (CDF_EPOCH)
-
-3) w->t1_data is initialized to the timestamp of the last data point (CDF_EPOCH)
-
+1) w->t0_data is initialized to the timestamp of the first data point (CDF_EPOCH)
+2) w->t1_data is initialized to the timestamp of the last data point (CDF_EPOCH)
 3) w->t0 and w->t1 are initialized to the first/last timestamps of each satellite
 */
 
@@ -382,7 +313,7 @@ int
 invert_data_init(invert_data_workspace *w)
 {
   int s = 0;
-  size_t i, j;
+  size_t i;
 
   gsl_rstat_reset(w->rstat_workspace_p);
 
@@ -402,45 +333,10 @@ invert_data_init(invert_data_workspace *w)
           if (w->t1[i] > 0.0)
             w->t1_data = GSL_MAX(w->t1_data, w->t1[i]);
         }
-
-      for (j = 0; j < mptr->n; ++j)
-        {
-          double t;
-
-          if (mptr->flags[j] & MAGDATA_FLG_DISCARD)
-            continue;
-
-          t = satdata_epoch2year(mptr->t[j]) - w->params.epoch;
-          gsl_rstat_add(t, w->rstat_workspace_p);
-        }
-    }
-
-  w->t_mu = gsl_rstat_mean(w->rstat_workspace_p);
-  w->t_sigma = gsl_rstat_sd(w->rstat_workspace_p);
-
-  if (w->t_sigma == 0.0)
-    {
-      /* this can happen for a fixed time grid like EMAG2 */
-      w->t_mu = 0.0;
-      w->t_sigma = 1.0;
     }
 
   return s;
 } /* invert_data_init() */
-
-/*
-invert_data_epoch()
-  Compute epoch of input data by averaging all timestamps
-*/
-
-double
-invert_data_epoch(invert_data_workspace *w)
-{
-  /* initialize t_mu and t_sigma */
-  invert_data_init(w);
-
-  return w->t_mu + w->params.epoch;
-} /* invert_data_epoch() */
 
 int
 invert_data_map(const char *dir_prefix, const invert_data_workspace *w)
@@ -504,6 +400,78 @@ invert_data_ptr(const size_t idx, const invert_data_workspace *w)
     }
 
   return w->mdata[idx];
+}
+
+/*
+invert_data_weights()
+  Compute spatial weights for dataset
+
+Inputs: wts         - (output) spatial weights
+        weightfac[] - factors multiplying weights
+        w           - workspace
+*/
+
+int
+invert_data_weights(gsl_vector * wts, const double weightfac[], const invert_data_workspace * w)
+{
+  size_t idx = 0;
+  size_t i, j;
+
+  fprintf(stderr, "invert_data_weights: calculating spatial weights...");
+
+  for (i = 0; i < w->nsources; ++i)
+    {
+      magdata *mptr = invert_data_ptr(i, w);
+      double global_weight = 1.0; /* global weight for this data source */
+
+      if (mptr->global_flags & (MAGDATA_GLOBFLG_OBSERVATORY | MAGDATA_GLOBFLG_OBSERVATORY_SV))
+        global_weight = 2.0;
+
+      for (j = 0; j < mptr->n; ++j)
+        {
+          double wt; /* spatial weight */
+          double qdlat = mptr->qdlat[j];
+          double thetaq = M_PI / 2.0 - qdlat * M_PI / 180.0;
+
+          if (MAGDATA_Discarded(mptr->flags[j]))
+            continue;
+
+#if 0
+          if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY)
+            spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtMF_workspace_p);
+          else if (mptr->global_flags & MAGDATA_GLOBFLG_OBSERVATORY_SV)
+            spatwt_get(mptr->theta[j], mptr->phi[j], &wt, w->spatwtSV_workspace_p);
+          else if (mptr->global_flags & MAGDATA_GLOBFLG_EEJ_MAGEQ)
+            wt = 1.0;
+          else /* satellite data */
+            track_weight_get(mptr->phi[j], mptr->theta[j], &wt, w->weight_workspace_p);
+#endif
+
+          /* satellite data */
+          wt = sin(thetaq);
+
+          /* include global weight factor for this satellite / observatory */
+          wt *= global_weight;
+
+          if (MAGDATA_ExistX(mptr->flags[j]))
+            gsl_vector_set(wts, idx++, weightfac[INVERT_DATA_IDX_X] * wt);
+
+          if (MAGDATA_ExistY(mptr->flags[j]))
+            gsl_vector_set(wts, idx++, weightfac[INVERT_DATA_IDX_Y] * wt);
+
+          if (MAGDATA_ExistZ(mptr->flags[j]))
+            gsl_vector_set(wts, idx++, weightfac[INVERT_DATA_IDX_Z] * wt);
+
+          if (MAGDATA_ExistScalar(mptr->flags[j]) && MAGDATA_FitMF(mptr->flags[j]))
+            gsl_vector_set(wts, idx++, weightfac[INVERT_DATA_IDX_F] * wt);
+        }
+    }
+
+  fprintf(stderr, "done\n");
+
+  assert(idx == wts->size);
+
+  return 0;
 }
 
 /*

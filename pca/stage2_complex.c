@@ -422,6 +422,12 @@ output_modes(const stage2_params * params,
   pca_write_complex_U(buf, params->nmax, params->mmax, nominalFreq, params->window_size, params->window_shift, nmodes, U);
   fprintf(stderr, "done\n");
 
+  sprintf(buf, "%s/U_%02zu.bin", params->output_dir, mode_num);
+  fprintf(stderr, "main: writing left singular vectors for frequency %g [cpd] in binary format to %s...",
+          nominalFreq, buf);
+  pca_write_matrix_complex(buf, U);
+  fprintf(stderr, "done\n");
+
   sprintf(buf, "%s/V_%02zu", params->output_dir, mode_num);
   fprintf(stderr, "main: writing right singular vectors for frequency %g [cpd] in text format to %s...",
           nominalFreq, buf);
@@ -531,6 +537,10 @@ main(int argc, char *argv[])
   B = gsl_matrix_complex_alloc(A->size1, A->size2);
   fprintf(stderr, "main: converting knm to qnm...");
   convert_qnm(A, B, green_p);
+  fprintf(stderr, "done\n");
+
+  fprintf(stderr, "main: writing qnm matrix to %s...", PCA_STAGE2_COMPLEX_QNM);
+  pca_write_matrix_complex(PCA_STAGE2_COMPLEX_QNM, B);
   fprintf(stderr, "done\n");
 
   {

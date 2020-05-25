@@ -17,6 +17,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #include <math.h>
 #include <assert.h>
 #include <omp.h>
@@ -41,15 +42,13 @@
 #include "invert.h"
 #include "invert_residual.h"
 #include "invert_multifit.c"
+#include "invert_synth.h"
 
 #define MAX_BUFFER           2048
 
 /*
 initial_guess()
-  Construct initial guess for main field coefficients. These
-are based on the relevant IGRF coefficients, extrapolated forward
-to the desired epoch using the SV coefficients. Initial SA coefficients
-are set to 0.
+  Construct initial guess for model coefficients
 */
 
 int
@@ -69,12 +68,6 @@ check_parameters(const invert_parameters * invert_params,
   if (data_params->qdlat_fit_cutoff < 0.0)
     {
       fprintf(stderr, "check_parameters: qdlat_fit_cutoff must be > 0\n");
-      ++s;
-    }
-
-  if (invert_params->epoch < 0.0)
-    {
-      fprintf(stderr, "check_parameters: epoch must be > 0\n");
       ++s;
     }
 
@@ -116,8 +109,6 @@ parse_config_file(const char *filename, invert_parameters *invert_params,
       return -1;
     }
 
-  if (config_lookup_float(&cfg, "epoch", &fval))
-    invert_params->epoch = fval;
   if (config_lookup_float(&cfg, "R", &fval))
     invert_params->R = fval;
   if (config_lookup_int(&cfg, "nfreq", &ival))
@@ -327,28 +318,22 @@ print_help(char *argv[])
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "\t --maxit | -n num_iterations     - number of robust iterations\n");
   fprintf(stderr, "\t --output_file | -o file         - coefficient output file (ASCII)\n");
-  fprintf(stderr, "\t --epoch | -e epoch              - model epoch in decimal years\n");
   fprintf(stderr, "\t --print_residuals | -r          - write residuals at each iteration\n");
   fprintf(stderr, "\t --tmin | -b min_time            - minimum data period time in decimal years\n");
   fprintf(stderr, "\t --tmax | -c max_time            - maximum data period time in decimal years\n");
   fprintf(stderr, "\t --print_data | -d               - print data used for MF modeling to output directory\n");
   fprintf(stderr, "\t --print_map | -m                - print spatial data map files to output directory\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
-  fprintf(stderr, "\t --output_coef_file | -x file    - output coefficient file (binary)\n");
   fprintf(stderr, "\t --input_coef_file | -y file     - input coefficient file (binary)\n");
+  fprintf(stderr, "\t --output_dir | -O dir           - output directory\n");
 } /* print_help() */
 
 int
 main(int argc, char *argv[])
 {
   int status;
-  const char *error_file = "error.txt";
-  char *outfile = NULL;
-  char *datamap_prefix = "output";
-  char *data_prefix = "output";
-  char *residual_prefix = "output";
+  char *output_dir = "output";
   char *config_file = "INVERT.cfg"; /* default config file */
-  char *output_coef_file = NULL;
   char *input_coef_file = NULL;
   invert_workspace *invert_workspace_p;
   invert_parameters invert_params;
@@ -357,7 +342,6 @@ main(int argc, char *argv[])
   gsl_vector *coeffs; /* model coefficients */
   size_t iter = 0;
   size_t maxit = 0;
-  double epoch = -1.0;        /* model epoch */
   double tmin = -1.0;         /* minimum time for data in years */
   double tmax = -1.0;         /* maximum time for data in years */
   int nsource = 0;            /* number of data sources (satellites/observatories) */
@@ -378,20 +362,18 @@ main(int argc, char *argv[])
       static struct option long_options[] =
         {
           { "print_residuals", no_argument, NULL, 'r' },
-          { "output_file", required_argument, NULL, 'o' },
-          { "epoch", required_argument, NULL, 'e' },
           { "maxit", required_argument, NULL, 'n' },
           { "tmin", required_argument, NULL, 'b' },
           { "tmax", required_argument, NULL, 'c' },
           { "print_data", required_argument, NULL, 'd' },
           { "print_map", required_argument, NULL, 'm' },
           { "config_file", required_argument, NULL, 'C' },
-          { "output_coef_file", required_argument, NULL, 'x' },
           { "input_coef_file", required_argument, NULL, 'y' },
+          { "output_dir", required_argument, NULL, 'O' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:c:C:de:l:mn:o:r", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:dl:mn:O:ry:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -417,28 +399,20 @@ main(int argc, char *argv[])
             print_map = 1;
             break;
 
-          case 'o':
-            outfile = optarg;
-            break;
-
           case 'n':
             maxit = (size_t) atoi(optarg);
-            break;
-
-          case 'e':
-            epoch = atof(optarg);
             break;
 
           case 'r':
             print_residuals = 1;
             break;
 
-          case 'x':
-            output_coef_file = optarg;
-            break;
-
           case 'y':
             input_coef_file = optarg;
+            break;
+
+          case 'O':
+            output_dir = optarg;
             break;
 
           default:
@@ -461,8 +435,6 @@ main(int argc, char *argv[])
   fprintf(stderr, "done\n");
 
   /* check if any command-line arguments should override config file values */
-  if (epoch > 0.0)
-    invert_params.epoch = epoch;
   if (maxit > 0)
     invert_params.max_iter = maxit;
 
@@ -470,7 +442,6 @@ main(int argc, char *argv[])
   if (status)
     exit(1);
 
-  fprintf(stderr, "main: epoch             = %.2f\n", invert_params.epoch);
   fprintf(stderr, "main: radius            = %g [km]\n", invert_params.R);
   fprintf(stderr, "main: nfreq             = %zu\n", invert_params.nfreq);
 
@@ -480,11 +451,8 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of data sources = %d\n", nsource);
   fprintf(stderr, "main: number of threads = %d\n", omp_get_max_threads());
   fprintf(stderr, "main: print_residuals = %d\n", print_residuals);
-  if (outfile)
-    fprintf(stderr, "main: output coefficient file = %s\n", outfile);
 
   /* allocate data workspace */
-  data_params.epoch = invert_params.epoch;
   invert_data_p = invert_data_alloc(nsource, &data_params);
 
   {
@@ -535,19 +503,22 @@ main(int argc, char *argv[])
     fprintf(stderr, "done\n");
   }
 
-  fprintf(stderr, "main: data epoch = %.4f\n", invert_data_epoch(invert_data_p));
-  fprintf(stderr, "main: data tmin  = %.4f\n", satdata_epoch2year(invert_data_p->t0_data));
-  fprintf(stderr, "main: data tmax  = %.4f\n", satdata_epoch2year(invert_data_p->t1_data));
-
   if (input_coef_file)
     fprintf(stderr, "main: input coef file  = %s\n", input_coef_file);
-  if (output_coef_file)
-    fprintf(stderr, "main: output coef file = %s\n", output_coef_file);
+
+  fprintf(stderr, "main: creating output directory %s...", output_dir);
+  status = mkdir(output_dir, 0777);
+  if (status == -1 && errno != EEXIST)
+    {
+      fprintf(stderr, "error: unable to create %s: %s\n", output_dir, strerror(errno));
+      exit(1);
+    }
+  fprintf(stderr, "done\n");
 
   if (print_map)
     {
       /* print spatial coverage maps for each satellite */
-      invert_data_map(datamap_prefix, invert_data_p);
+      invert_data_map(output_dir, invert_data_p);
     }
 
   invert_params.nsat = nsource;
@@ -563,7 +534,6 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: number of total parameters:                %zu\n", invert_workspace_p->p);
 
-#if 0 /*XXX*/
   if (invert_params.synth_data)
     {
       fprintf(stderr, "main: replacing with synthetic data...");
@@ -572,30 +542,31 @@ main(int argc, char *argv[])
       gettimeofday(&tv1, NULL);
       fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
     }
-#endif
 
   /* initialize model parameters */
   invert_init(invert_workspace_p);
+
+  fprintf(stderr, "main: data tmin  = %.4f\n", satdata_epoch2year(invert_data_p->t0_data));
+  fprintf(stderr, "main: data tmax  = %.4f\n", satdata_epoch2year(invert_data_p->t1_data));
 
   /* print out dataset if requested - do this after invert_init() so
    * spatial weights are computed */
   if (print_data)
     {
       /* print data used for MF modeling for each satellite */
-      fprintf(stderr, "main: printing data for MF modeling to %s...", data_prefix);
-      invert_data_print(data_prefix, invert_workspace_p->wts_spatial, invert_data_p);
+      fprintf(stderr, "main: printing data for MF modeling to %s...", output_dir);
+      invert_data_print(output_dir, invert_workspace_p->wts_spatial, invert_data_p);
       fprintf(stderr, "done\n");
 
-      fprintf(stderr, "main: printing temporal modes to %s...", data_prefix);
-      invert_tmode_print(data_prefix, invert_workspace_p->tmode_workspace_p);
+      fprintf(stderr, "main: printing temporal modes to %s...", output_dir);
+      invert_tmode_print(output_dir, invert_workspace_p->tmode_workspace_p);
       fprintf(stderr, "done\n");
 
-      fprintf(stderr, "main: printing spatial modes to %s...", data_prefix);
-      invert_smode_print(data_prefix, invert_workspace_p->smode_workspace_p);
+      fprintf(stderr, "main: printing spatial modes to %s...", output_dir);
+      invert_smode_print(output_dir, invert_workspace_p->smode_workspace_p);
       fprintf(stderr, "done\n");
     }
 
-  /* construct initial guess vector from IGRF */
   coeffs = gsl_vector_alloc(invert_workspace_p->p);
 
   if (input_coef_file)
@@ -640,9 +611,9 @@ main(int argc, char *argv[])
   if (print_residuals)
     {
       /* print residuals with initial guess vector */
-      fprintf(stderr, "main: printing initial residuals to %s...", residual_prefix);
+      fprintf(stderr, "main: printing initial residuals to %s...", output_dir);
       gsl_vector_memcpy(invert_workspace_p->c, coeffs);
-      invert_residual_print(residual_prefix, 0, invert_workspace_p);
+      invert_residual_print(output_dir, 0, invert_workspace_p);
       fprintf(stderr, "done\n");
     }
 
@@ -655,10 +626,30 @@ main(int argc, char *argv[])
 
       status = invert_calc_nonlinear(coeffs, invert_workspace_p);
 
+      sprintf(buf, "%s/coef_iter%zu.dat", output_dir, iter);
+      fprintf(stderr, "main: writing binary coefficients to %s...", buf);
+      invert_write(buf, invert_workspace_p);
+      fprintf(stderr, "done\n");
+
+      sprintf(buf, "%s/coef_iter%zu.txt", output_dir, iter);
+      fprintf(stderr, "main: writing ascii coefficients to %s...", buf);
+      invert_write_ascii(buf, invert_workspace_p->c, invert_workspace_p);
+      fprintf(stderr, "done\n");
+
+      sprintf(buf, "%s/matrix_iter%zu.dat", output_dir, iter);
+      fprintf(stderr, "main: writing LS matrix to %s...", buf);
+      invert_write_matrix(buf, invert_workspace_p);
+      fprintf(stderr, "done\n");
+
+      sprintf(buf, "%s/rhs_iter%zu.dat", output_dir, iter);
+      fprintf(stderr, "main: writing LS rhs to %s...", buf);
+      invert_write_rhs(buf, invert_workspace_p);
+      fprintf(stderr, "done\n");
+
       if (print_residuals)
         {
-          fprintf(stderr, "main: printing residuals to %s...", residual_prefix);
-          invert_residual_print(residual_prefix, iter, invert_workspace_p);
+          fprintf(stderr, "main: printing residuals to %s...", output_dir);
+          invert_residual_print(output_dir, iter, invert_workspace_p);
           fprintf(stderr, "done\n");
         }
 
@@ -670,16 +661,16 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: total time for inversion: %.2f seconds\n", time_diff(tv0, tv1));
 
-  if (output_coef_file)
-    {
-      fprintf(stderr, "main: writing binary coefficients to %s...", output_coef_file);
-      invert_write(output_coef_file, invert_workspace_p);
-      fprintf(stderr, "done\n");
-    }
+  sprintf(buf, "%s/coef.dat", output_dir);
+  fprintf(stderr, "main: writing binary coefficients to %s...", buf);
+  invert_write(buf, invert_workspace_p);
+  fprintf(stderr, "done\n");
 
+#if 0
   fprintf(stderr, "main: printing J grid...");
   print_J_grid("grid.txt", invert_workspace_p->t0_data, invert_workspace_p);
   fprintf(stderr, "done\n");
+#endif
 
 #if 0
   /* calculate covariance matrix */
@@ -708,11 +699,6 @@ main(int argc, char *argv[])
       printsym_octave(invert_workspace_p->covar, "corr");
     }
 #endif
-
-  sprintf(buf, "invert_coeffs.txt");
-  fprintf(stderr, "main: writing coefficients to %s...", buf);
-  invert_write_ascii(buf, invert_workspace_p->epoch, coeffs, invert_workspace_p);
-  fprintf(stderr, "done\n");
 
 #if 0/*XXX*/
   /* print residual norm between synthetic and computed coefficients */

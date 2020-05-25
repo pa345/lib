@@ -10,6 +10,8 @@ stage1b       - read TIEGCM 3D current grids, perform Mie decomposition to repre
 stage2b       - read SH coefficients from previous stage1b, perform windowed FFTs and store FFT data to disk
 stage3b       - use FFT data to build spectral density matrix and compute SVD
 
+print_SH1b    - print SH time series from stage1b results
+print_map1b   - print lat/lon and r/lon maps from SH coefficients from stage1b results
 print_fft2b   - print result of stage2b windowed FFT data to files suitable for plotting
 spectrogram2b - print spectrogram of stage2b windowed FFT data
 print_modes3b - print 3D spatial modes to files suitable for plotting

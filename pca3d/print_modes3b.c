@@ -12,6 +12,7 @@
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -96,27 +97,38 @@ fill_magfield(const gsl_vector_complex * u, magfield_eval_complex_workspace * w)
 }
 
 int
-print_J_modes(const char * prefix, const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
+print_J_modes(const char * prefix, const size_t iband, const double r, const gsl_matrix_complex *U, magfield_params * params)
 {
+  int status;
   const size_t T = GSL_MIN(U->size2, 20);
   magfield_eval_complex_workspace * w = magfield_eval_complex_alloc(params);
   double lat, lon;
   size_t t;
+  char buf[2048];
+
+  sprintf(buf, "%s/band_%zu", prefix, iband);
+  fprintf(stderr, "print_J_modes: creating output directory %s...", buf);
+  status = mkdir(buf, 0777);
+  if (status == -1 && errno != EEXIST)
+    {
+      fprintf(stderr, "error: unable to create %s: %s\n", buf, strerror(errno));
+      exit(1);
+    }
+  fprintf(stderr, "done\n");
 
   /* loop over modes t \in [0, T-1] */
   for (t = 0; t < T; ++t)
     {
       gsl_vector_complex_const_view v = gsl_matrix_complex_const_column(U, t);
       FILE *fp;
-      char buf[2048];
       size_t i = 1;
 
-      sprintf(buf, "%s/%g_cpd/J_mode_%02zu.txt", prefix, freq, t + 1);
+      sprintf(buf, "%s/band_%zu/J_mode_%02zu.txt", prefix, iband, t + 1);
       fprintf(stderr, "print_J_modes: writing %s...", buf);
 
       fp = fopen(buf, "w");
 
-      fprintf(fp, "# Frequency: %g [cpd]\n", freq);
+      fprintf(fp, "# Freq band: %zu\n", iband);
       fprintf(fp, "# Radius:    %g [km]\n", r);
       fprintf(fp, "# Altitude:  %g [km]\n", r - R_EARTH_KM);
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
@@ -140,7 +152,7 @@ print_J_modes(const char * prefix, const double freq, const double r, const gsl_
               double theta = M_PI / 2.0 - lat * M_PI / 180.0;
               complex double J[3];
 
-              magfield_eval_complex_J(r, theta, phi, J, w);
+              magfield_eval_complex_J(r * 1.0e3, theta, phi, J, w);
 
               fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
@@ -167,27 +179,38 @@ print_J_modes(const char * prefix, const double freq, const double r, const gsl_
 }
 
 int
-print_B_modes(const char * prefix, const double freq, const double r, const gsl_matrix_complex *U, magfield_params * params)
+print_B_modes(const char * prefix, const size_t iband, const double r, const gsl_matrix_complex *U, magfield_params * params)
 {
+  int status;
   const size_t T = GSL_MIN(U->size2, 5);
   magfield_eval_complex_workspace * w = magfield_eval_complex_alloc(params);
   double lat, lon;
   size_t t;
+  char buf[2048];
+
+  sprintf(buf, "%s/band_%zu", prefix, iband);
+  fprintf(stderr, "print_B_modes: creating output directory %s...", buf);
+  status = mkdir(buf, 0777);
+  if (status == -1 && errno != EEXIST)
+    {
+      fprintf(stderr, "error: unable to create %s: %s\n", buf, strerror(errno));
+      exit(1);
+    }
+  fprintf(stderr, "done\n");
 
   /* loop over modes t \in [0, T-1] */
   for (t = 0; t < T; ++t)
     {
       gsl_vector_complex_const_view v = gsl_matrix_complex_const_column(U, t);
       FILE *fp;
-      char buf[2048];
       size_t i = 1;
 
-      sprintf(buf, "%s/%g_cpd/B_mode_%02zu.txt", prefix, freq, t + 1);
+      sprintf(buf, "%s/band_%zu/B_mode_%02zu.txt", prefix, iband, t + 1);
       fprintf(stderr, "print_B_modes: writing %s...", buf);
 
       fp = fopen(buf, "w");
 
-      fprintf(fp, "# Frequency: %g [cpd]\n", freq);
+      fprintf(fp, "# Freq band: %zu\n", iband);
       fprintf(fp, "# Radius:    %g [km]\n", r);
       fprintf(fp, "# Altitude:  %g [km]\n", r - R_EARTH_KM);
       fprintf(fp, "# Field %zu: geocentric longitude (deg)\n", i++);
@@ -211,7 +234,7 @@ print_B_modes(const char * prefix, const double freq, const double r, const gsl_
               double theta = M_PI / 2.0 - lat * M_PI / 180.0;
               complex double B[3];
 
-              magfield_eval_complex_B(r, theta, phi, B, w);
+              magfield_eval_complex_B(r * 1.0e3, theta, phi, B, w);
 
               fprintf(fp, "%8.4f %8.4f %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
                       lon,
@@ -240,15 +263,14 @@ print_B_modes(const char * prefix, const double freq, const double r, const gsl_
 int
 main(int argc, char *argv[])
 {
+  int status;
   char * prefix = "modes_Gary";
-  double freq = 1.0; /* desired frequency in cpd */
-  pca3d_fft_data data;
   struct timeval tv0, tv1;
   gsl_matrix_complex *U;
   magfield_params params;
   double alt = 110.0;
   int print_J = 1;   /* print J or B */
-  size_t ifreq;      /* index of desired frequency */
+  size_t iband = 11; /* desired frequency band */
   char buf[2048];
   
   while (1)
@@ -282,7 +304,7 @@ main(int argc, char *argv[])
             break;
 
           case 'f':
-            freq = atof(optarg);
+            iband = (size_t) atoi(optarg);
             break;
 
           case 'p':
@@ -290,20 +312,14 @@ main(int argc, char *argv[])
             break;
 
           default:
-            fprintf(stderr, "Usage: %s [-a altitude (km)] [-J (print J modes)] [-B (print B modes)] [-f freq (cpd)] [-p dir_prefix]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-a altitude (km)] [-J (print J modes)] [-B (print B modes)] [-f freq_band_idx] [-p dir_prefix]\n", argv[0]);
             exit(1);
             break;
         }
     }
 
-  fprintf(stderr, "main: frequency:  %g [cpd]\n", freq);
+  fprintf(stderr, "main: freq band:  %zu\n", iband);
   fprintf(stderr, "main: altitude: %g [km]\n", alt);
-
-  fprintf(stderr, "main: reading %s...", PCA3D_STAGE2B_FFT_DATA_LIGHT);
-  gettimeofday(&tv0, NULL);
-  data = pca3d_read_fft_data2(PCA3D_STAGE2B_FFT_DATA_LIGHT);
-  gettimeofday(&tv1, NULL);
-  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
   fprintf(stderr, "main: reading magfield parameters from %s...", PCA3D_STAGE1B_DATA);
   gettimeofday(&tv0, NULL);
@@ -311,8 +327,7 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
-  ifreq = (size_t) (freq * data.window_size);
-  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_U, ifreq);
+  sprintf(buf, "%s_%zu", PCA3D_STAGE3B_U, iband);
 
   fprintf(stderr, "main: reading U matrix from %s...", buf);
   gettimeofday(&tv0, NULL);
@@ -320,10 +335,19 @@ main(int argc, char *argv[])
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
+  fprintf(stderr, "main: creating output directory %s...", prefix);
+  status = mkdir(prefix, 0777);
+  if (status == -1 && errno != EEXIST)
+    {
+      fprintf(stderr, "error: unable to create %s: %s\n", prefix, strerror(errno));
+      exit(1);
+    }
+  fprintf(stderr, "done\n");
+
   if (print_J)
-    print_J_modes(prefix, freq, alt + R_EARTH_KM, U, &params);
+    print_J_modes(prefix, iband, alt + R_EARTH_KM, U, &params);
   else
-    print_B_modes(prefix, freq, alt + R_EARTH_KM, U, &params);
+    print_B_modes(prefix, iband, alt + R_EARTH_KM, U, &params);
 
   gsl_matrix_complex_free(U);
 

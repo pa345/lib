@@ -318,9 +318,6 @@ int
 invert_tmode_print(const char * dir_prefix, const invert_tmode_workspace * w)
 {
   int s = 0;
-  const double t0 = w->t[0] + 0.5*3.6e6;
-  const double t1 = w->t[w->N - 1];
-  const double dt = 1.0 * 3.6e6; /* time step in ms */
   char buf[2048];
   size_t f;
   
@@ -343,13 +340,14 @@ invert_tmode_print(const char * dir_prefix, const invert_tmode_workspace * w)
           fprintf(fp, "# Frequency:   %f [cpd]\n", w->freqs[f]);
           fprintf(fp, "# Mode number: %zu\n", mode);
           fprintf(fp, "# Field %zu: timestamp (UT seconds since 1970-01-01 00:00:00 UTC)\n", i++);
-          fprintf(fp, "# Field %zu: real part of temporal mode\n", i++);
-          fprintf(fp, "# Field %zu: imag part of temporal mode\n", i++);
+          fprintf(fp, "# Field %zu: Real part of temporal mode\n", i++);
+          fprintf(fp, "# Field %zu: Imag part of temporal mode\n", i++);
 
-          for (t = t0; t <= t1; t += dt)
+          for (i = 0; i < w->N; ++i)
             {
+              double t = w->t[i];
               gsl_complex z = invert_tmode_get(t, f, mode, w);
-              fprintf(fp, "%ld %.12e %.12e\n", epoch2timet(t), GSL_REAL(z), GSL_IMAG(z));
+              fprintf(fp, "%ld %20.12e %20.12e\n", epoch2timet(t), GSL_REAL(z), GSL_IMAG(z));
             }
 
           fclose(fp);

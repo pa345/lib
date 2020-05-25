@@ -34,7 +34,11 @@ int
 main(int argc, char *argv[])
 {
   const size_t nfreq_max = 20;
+#if 0
   const size_t N = 192672; /* length of time series for each mode */
+#else
+  const size_t N = 189888; /* length of time series for each mode */
+#endif
   size_t * nmodes;
   size_t nfreq;
   char *mode_dir = "/data/palken/Gary_Project/Temporal_Modes";

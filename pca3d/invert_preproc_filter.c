@@ -10,7 +10,7 @@ static size_t invert_flag_RC(const double RC_max, track_workspace *track_p, satd
 static size_t invert_flag_dRC(const double dRC_max, track_workspace *track_p, satdata_mag *data);
 static size_t invert_flag_LT(const size_t magdata_flags, const preprocess_parameters * params,
                              track_workspace *track_p, satdata_mag *data);
-static size_t invert_flag_zenith(const preprocess_parameters * params, track_workspace *track_p, satdata_mag *data);
+static size_t invert_flag_IMF(const preprocess_parameters * params, track_workspace *track_p, satdata_mag *data);
 static int invert_preprocess_filter(const size_t magdata_flags, const preprocess_parameters *params,
                                     track_workspace *track_p, satdata_mag *data);
 static int invert_calc_residual(const size_t idx, double B[4], satdata_mag * data);
@@ -229,9 +229,6 @@ Reject point if:
 mid-latitudes:
   ! LT_eq \in [min_LT,max_LT] and ! LT_eq \in [euler_min_LT,euler_max_LT]
 
-high-latitudes:
-  zenith < min_zenith
-
 Inputs: magdata_flags - MAGDATA_GLOBFLG_xxx
         params        - parameters
         track_p       - track workspace
@@ -241,7 +238,7 @@ Return: number of points flagged
 
 Notes:
 1) The purpose of this routine is to flag points which don't fit
-   our LT/zenith criteria so they won't be copied into the magdata
+   our LT criteria so they won't be copied into the magdata
    structure. However, once the magdata structure is built, we need
    to repeat this process in order to flag points for MF and/or Euler
    angle fitting.
@@ -285,79 +282,14 @@ invert_flag_LT(const size_t magdata_flags, const preprocess_parameters * params,
 }
 
 /*
-invert_flag_zenith()
-  Flag high-latitude points for zenith angle criteria.
-
-Reject point if:
-
-1. qdlat > qdlat_preproc_cutoff
-2. zenith < min_zenith
-
-Inputs: params        - parameters
-        track_p       - track workspace
-        data          - data
-
-Return: number of points flagged
-
-Notes:
-1) The purpose of this routine is to flag points which don't fit
-   our LT/zenith criteria so they won't be copied into the magdata
-   structure. However, once the magdata structure is built, we need
-   to repeat this process in order to flag points for MF and/or Euler
-   angle fitting.
-*/
-
-static size_t
-invert_flag_zenith(const preprocess_parameters * params, track_workspace *track_p, satdata_mag *data)
-{
-  size_t nflagged = 0; /* number of points flagged */
-  size_t i, j;
-
-  for (i = 0; i < track_p->n; ++i)
-    {
-      track_data *tptr = &(track_p->tracks[i]);
-      size_t start_idx = tptr->start_idx;
-      size_t end_idx = tptr->end_idx;
-
-      for (j = start_idx; j <= end_idx; ++j)
-        {
-          int flag_point = 0;
-
-          if (fabs(data->qdlat[j]) > params->qdlat_preproc_cutoff)
-            {
-              time_t unix_time = satdata_epoch2timet(data->t[j]);
-              double lat_rad = data->latitude[j] * M_PI / 180.0;
-              double phi = data->longitude[j] * M_PI / 180.0;
-              double zenith;
-
-              solarpos_calc_zenith(unix_time, lat_rad, phi, &zenith, solarpos_workspace_p);
-              zenith *= 180.0 / M_PI;
-              assert(zenith >= 0.0);
-
-              /* small zenith angle means sunlit */
-              if (zenith < params->min_zenith)
-                flag_point = 1;
-            }
-
-          if (flag_point)
-            {
-              data->flags[j] |= SATDATA_FLG_OUTLIER;
-              ++nflagged;
-            }
-        }
-    }
-
-  return nflagged;
-}
-
-/*
 invert_flag_IMF()
   Flag high-latitude points for IMF criteria
 
 Reject point if:
 
 1. qdlat > qdlat_preproc_cutoff
-2. IMF_Bz < 0
+2. ! IMF_Bz \in [min_IMF_Bz, max_IMF_Bz]
+3. ! IMF_By \in [min_IMF_By, max_IMF_By]
 
 Inputs: params        - parameters
         track_p       - track workspace
@@ -382,12 +314,12 @@ invert_flag_IMF(const preprocess_parameters * params, track_workspace *track_p, 
       time_t t1 = satdata_epoch2timet(data->t[start_idx]);
       time_t t2 = satdata_epoch2timet(tptr->t_eq);
       time_t t3 = satdata_epoch2timet(data->t[end_idx]);
-      double IMF_B1[3], IMF_B2[3], IMF_B3[3], SW_vel;
+      double IMF_B1[3], IMF_B2[3], IMF_B3[3];
       int flag_IMF = 0;
 
-      s = ace_get(t1, IMF_B1, &SW_vel, ace_p);
-      s += ace_get(t2, IMF_B2, &SW_vel, ace_p);
-      s += ace_get(t3, IMF_B3, &SW_vel, ace_p);
+      s = ace_get_IMF(t1, IMF_B1, ace_p);
+      s += ace_get_IMF(t2, IMF_B2, ace_p);
+      s += ace_get_IMF(t3, IMF_B3, ace_p);
       if (s)
         {
           /* missing data - flag track since we don't know what IMF is */
@@ -396,14 +328,25 @@ invert_flag_IMF(const preprocess_parameters * params, track_workspace *track_p, 
         }
       else
         {
-          /* flag if IMF_Bz is outside of [0,6] nT, or if IMF By is > 8 nT */
-          if ((IMF_B1[2] < 0.0) || (IMF_B1[2] > 6.0) ||
-              (IMF_B2[2] < 0.0) || (IMF_B2[2] > 6.0) ||
-              (IMF_B3[2] < 0.0) || (IMF_B3[2] > 6.0) ||
-              (IMF_B1[1] > 8.0) || (IMF_B2[1] > 8.0) || (IMF_B3[1] > 8.0))
-            {
-              flag_IMF = 1;
-            }
+          /* flag if IMF_Bz is outside of [min_IMF_Bz,max_IMF_Bz] nT */
+          if (IMF_B1[2] < params->min_IMF_Bz || IMF_B1[2] > params->max_IMF_Bz)
+            flag_IMF = 1;
+
+          if (IMF_B2[2] < params->min_IMF_Bz || IMF_B2[2] > params->max_IMF_Bz)
+            flag_IMF = 1;
+
+          if (IMF_B3[2] < params->min_IMF_Bz || IMF_B3[2] > params->max_IMF_Bz)
+            flag_IMF = 1;
+
+          /* flag if IMF_By is outside of [min_IMF_By,max_IMF_By] nT */
+          if (IMF_B1[1] < params->min_IMF_By || IMF_B1[1] > params->max_IMF_By)
+            flag_IMF = 1;
+
+          if (IMF_B2[1] < params->min_IMF_By || IMF_B2[1] > params->max_IMF_By)
+            flag_IMF = 1;
+
+          if (IMF_B3[1] < params->min_IMF_By || IMF_B3[1] > params->max_IMF_By)
+            flag_IMF = 1;
         }
 
       if (!flag_IMF)
@@ -440,8 +383,8 @@ invert_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
          nflagged_RC,
          nflagged_dRC,
          nflagged_LT,
-         nflagged_zenith,
          nflagged_IMF;
+  struct timeval tv0, tv1;
 
   fprintf(stderr, "\n");
 
@@ -461,15 +404,18 @@ invert_preprocess_filter(const size_t magdata_flags, const preprocess_parameters
   nflagged_LT = invert_flag_LT(magdata_flags, params, track_p, data);
   fprintf(stderr, "\t invert_preprocess_filter: flagged %zu/%zu (%.1f%%) mid-latitude points due to LT [cutoff: %.1f deg]\n",
           nflagged_LT, data->n, (double) nflagged_LT / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
-
-  nflagged_zenith = invert_flag_zenith(params, track_p, data);
-  fprintf(stderr, "\t invert_preprocess_filter: flagged %zu/%zu (%.1f%%) high-latitude points due to zenith angle [cutoff: %.1f deg]\n",
-          nflagged_zenith, data->n, (double) nflagged_zenith / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
+#endif
 
   nflagged_IMF = invert_flag_IMF(params, track_p, data);
   fprintf(stderr, "\t invert_preprocess_filter: flagged %zu/%zu (%.1f%%) high-latitude points due to IMF [cutoff: %.1f deg]\n",
           nflagged_IMF, data->n, (double) nflagged_IMF / (double) data->n * 100.0, params->qdlat_preproc_cutoff);
-#endif
+
+  /* compute MLT of remaining non-flagged data */
+  fprintf(stderr, "\t invert_preprocess_filter: computing MLT for dataset...");
+  gettimeofday(&tv0, NULL);
+  satdata_MLT(SATDATA_FLG_OUTLIER | SATDATA_FLG_DOWNSAMPLE, data);
+  gettimeofday(&tv1, NULL);
+  fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
 
   return s;
 }

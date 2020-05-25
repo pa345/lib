@@ -58,7 +58,10 @@ typedef struct
   double max_LT;          /* maximum local time for field modeling */
   double rms_thresh[4];   /* rms thresholds (X,Y,Z,F) (nT) */
   double qdlat_preproc_cutoff; /* QD latitude cutoff for high-latitudes */
-  double min_zenith;      /* minimum zenith angle for high-latitude data selection */
+  double min_IMF_Bz;      /* minimum IMF Bz (nT) */
+  double max_IMF_Bz;      /* maximum IMF Bz (nT) */
+  double min_IMF_By;      /* minimum IMF By (nT) */
+  double max_IMF_By;      /* maximum IMF By (nT) */
   size_t gradient_ns;     /* number of seconds between N/S gradient samples */
 
   double gradew_dphi_max; /* maximum longitude distance for east-west gradients (degrees) */
@@ -113,27 +116,9 @@ check_parameters(preprocess_parameters * params)
       ++s;
     }
 
-  if (params->min_LT < 0.0)
-    {
-      fprintf(stderr, "check_parameters: min_LT must be > 0\n");
-      ++s;
-    }
-
-  if (params->max_LT < 0.0)
-    {
-      fprintf(stderr, "check_parameters: max_LT must be > 0\n");
-      ++s;
-    }
-
   if (params->qdlat_preproc_cutoff < 0.0)
     {
       fprintf(stderr, "check_parameters: qdlat_preproc_cutoff must be > 0\n");
-      ++s;
-    }
-
-  if (params->min_zenith < 0.0)
-    {
-      fprintf(stderr, "check_parameters: min_zenith must be > 0\n");
       ++s;
     }
 
@@ -441,6 +426,9 @@ invert_check_LT(const double lt, const double lt_min, const double lt_max)
 {
   double a, b;
 
+  if (lt_min < 0.0 && lt_max < 0.0)
+    return 1; /* disable LT check */
+
   b = fmod(lt_max - lt_min, 24.0);
   if (b < 0.0)
     b += 24.0;
@@ -510,24 +498,6 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
             nrms, track_p->n, (double) nrms / (double) track_p->n * 100.0);
   }
 
-#if 1
-
-  /* select geomagnetically quiet data */
-  fprintf(stderr, "preprocess_data: selecting geomagnetically quiet data...");
-  invert_preprocess_filter(magdata_flags, params, track_p, data);
-  fprintf(stderr, "done\n");
-
-#else
-
-  /* flag according to WMM criteria */
-  satdata_filter_wmm(1, data);
-
-#endif
-
-#if 0
-  print_unflagged_data("data.dat.1", data);
-#endif
-
   /* downsample data */
   {
     size_t i;
@@ -542,6 +512,15 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
 
     fprintf(stderr, "done\n");
   }
+
+#if 0
+  print_unflagged_data("data.dat.1", data);
+#endif
+
+  /* select geomagnetically quiet data */
+  fprintf(stderr, "preprocess_data: selecting geomagnetically quiet data...");
+  invert_preprocess_filter(magdata_flags, params, track_p, data);
+  fprintf(stderr, "done\n");
 
 #if 0
   print_unflagged_data("data.dat.2", data);
@@ -797,8 +776,10 @@ parse_config_file(const char *filename, preprocess_parameters *params)
     params->max_LT = fval;
   if (config_lookup_float(&cfg, "qdlat_preproc_cutoff", &fval))
     params->qdlat_preproc_cutoff = fval;
-  if (config_lookup_float(&cfg, "min_zenith", &fval))
-    params->min_zenith = fval;
+  if (config_lookup_float(&cfg, "min_IMF_Bz", &fval))
+    params->min_IMF_Bz = fval;
+  if (config_lookup_float(&cfg, "min_IMF_By", &fval))
+    params->min_IMF_By = fval;
 
   if (config_lookup_int(&cfg, "downsample", &ival))
     params->downsample = (size_t) ival;
@@ -842,6 +823,8 @@ print_help(char *argv[])
   fprintf(stderr, "\t --swarm_file      | -s swarm_index_file       - Swarm index file\n");
   fprintf(stderr, "\t --swarm_file2     | -t swarm_index_file2      - Swarm index file 2 (for E/W gradients)\n");
   fprintf(stderr, "\t --swarm_asmv_file | -a swarm_asmv_index_file  - Swarm ASM-V index file\n");
+  fprintf(stderr, "\t --oersted_f_file  | -L oersted_f_index_file   - Oersted scalar (f) index file\n");
+  fprintf(stderr, "\t --oersted_l_file  | -L oersted_l_index_file   - Oersted vector (l) index file\n");
   fprintf(stderr, "\t --obs_data_file   | -O obs_data_file          - Observatory data file (BGS format)\n");
   fprintf(stderr, "\t --downsample      | -d downsample             - downsampling factor\n");
   fprintf(stderr, "\t --gradient_ns     | -g num_samples            - number of samples between N/S gradient points\n");
@@ -859,6 +842,7 @@ main(int argc, char *argv[])
   char *output_file = NULL;
   char *append_file = NULL;
   char *config_file = "INVERT_preproc.cfg";
+  char *name = NULL;
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
   obsdata *observatory_data = NULL;
@@ -872,6 +856,7 @@ main(int argc, char *argv[])
   size_t magdata_flags = 0;       /* MAGDATA_GLOBFLG_xxx */
   size_t magdata_flags2 = 0;
   int flag_vec_rms = 1;
+  size_t nflag;
 
   /* initialize parameters */
   params.downsample = 0;
@@ -880,7 +865,10 @@ main(int argc, char *argv[])
   params.min_LT = -1.0;
   params.max_LT = -1.0;
   params.qdlat_preproc_cutoff = -1.0;
-  params.min_zenith = -1.0;
+  params.min_IMF_Bz = -1.0e6;
+  params.max_IMF_Bz =  1.0e6;
+  params.min_IMF_By = -1.0e6;
+  params.max_IMF_By =  1.0e6;
   params.rms_thresh[0] = -1.0;
   params.rms_thresh[1] = -1.0;
   params.rms_thresh[2] = -1.0;
@@ -902,6 +890,8 @@ main(int argc, char *argv[])
           { "swarm_file", required_argument, NULL, 's' },
           { "swarm_file2", required_argument, NULL, 't' },
           { "swarm_asmv_file", required_argument, NULL, 'a' },
+          { "oersted_f_file", required_argument, NULL, 'F' },
+          { "oersted_l_file", required_argument, NULL, 'L' },
           { "champ_file", required_argument, NULL, 'c' },
           { "obs_file", required_argument, NULL, 'O' },
           { "downsample", required_argument, NULL, 'd' },
@@ -909,10 +899,11 @@ main(int argc, char *argv[])
           { "config_file", required_argument, NULL, 'C' },
           { "gradient_ns", required_argument, NULL, 'g' },
           { "append_file", required_argument, NULL, 'A' },
+          { "name", required_argument, NULL, 'N' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:A:c:C:d:D:g:o:O:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:A:c:C:d:D:F:g:L:N:o:O:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -942,6 +933,23 @@ main(int argc, char *argv[])
             data = read_champ(optarg);
             break;
 
+          case 'F':
+          case 'L':
+            magdata_flags = MAGDATA_GLOBFLG_OERSTED;
+            fprintf(stderr, "main: reading %s...", optarg);
+            gettimeofday(&tv0, NULL);
+            data = satdata_swarm_read_idx(optarg, 1);
+            gettimeofday(&tv1, NULL);
+            fprintf(stderr, "done (%zu data read, %g seconds)\n",
+                    data->n, time_diff(tv0, tv1));
+
+            fprintf(stderr, "main: filtering for instrument flags...");
+            nflag = satdata_oersted_filter_instrument(1, data);
+            fprintf(stderr, "done (%zu/%zu (%.1f%%) data flagged)\n",
+                    nflag, data->n, (double)nflag / (double)data->n * 100.0);
+
+            break;
+
           case 'C':
             config_file = optarg;
             break;
@@ -967,6 +975,10 @@ main(int argc, char *argv[])
 
           case 'A':
             append_file = optarg;
+            break;
+
+          case 'N':
+            name = optarg;
             break;
 
           default:
@@ -1047,6 +1059,10 @@ main(int argc, char *argv[])
   magdata_calc(mdata);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds)\n", time_diff(tv0, tv1));
+
+  /* set dataset name */
+  if (name != NULL)
+    strncpy(mdata->name, name, MAGDATA_NAME_LENGTH);
 
 #if 0
   fprintf(stderr, "main: writing data to %s...", data_file);

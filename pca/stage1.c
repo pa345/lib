@@ -62,7 +62,7 @@
 /* fine-tune which components of the surface B maps to fit */
 #define FIT_X                       1
 #define FIT_Y                       1
-#define FIT_Z                       0
+#define FIT_Z                       1
 
 /*
 print_residuals()

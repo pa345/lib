@@ -33,41 +33,16 @@
 
 #define INVERT_MAX_BUFFER          2048
 
-#define MFIELD_SYNTH_HIGH_LAT_ONLY 0
-
-/* fit external field model to data */
-#define MFIELD_FIT_EXTFIELD    0
-
 /*
  * approximate matrix size in bytes for precomputing J^T J; each
- * thread gets its own matrix (1 GB)
+ * thread gets its own matrix (200 MB)
  */
-#define INVERT_MATRIX_SIZE    (1e9)
+#define INVERT_MATRIX_SIZE    (2e8)
 
-/* define if fitting to the EMAG2 grid */
-#define MFIELD_EMAG2          0
-
-/* indices for each residual type */
-#define MFIELD_IDX_X              0
-#define MFIELD_IDX_Y              1
-#define MFIELD_IDX_Z              2
-#define MFIELD_IDX_F              3
-#define MFIELD_IDX_DX_NS          4
-#define MFIELD_IDX_DY_NS          5
-#define MFIELD_IDX_DZ_NS          6
-#define MFIELD_IDX_DF_NS          7
-#define MFIELD_IDX_DX_EW          8
-#define MFIELD_IDX_DY_EW          9
-#define MFIELD_IDX_DZ_EW          10
-#define MFIELD_IDX_DF_EW          11
-#define MFIELD_IDX_B_EULER        12
-#define MFIELD_IDX_END            13
-
-#define MFIELD_DEBUG              1
+#define INVERT_DEBUG              1
 
 typedef struct
 {
-  double epoch;                         /* model epoch (decimal year) */
   double R;                             /* reference radius (km) */
   size_t nmax;                          /* total nmax including core and crustal field */
   size_t nsat;                          /* number of satellites */
@@ -121,8 +96,7 @@ typedef struct
 
   size_t nobs_cnt;
 
-  double *t;        /* data timestamps minus epoch (t - t0) in units of years */
-  double epoch;     /* time epoch t0 (years) */
+  double *t;        /* data timestamps in units of years */
 
   double t0_data;   /* time of first data input (CDF_EPOCH) */
 
@@ -226,8 +200,9 @@ int invert_eval(const double t, const double r, const double theta, const double
                 double B[4], invert_workspace *w);
 int invert_write(const char *filename, invert_workspace *w);
 int invert_read(const char *filename, gsl_vector *c);
-int invert_write_ascii(const char *filename, const double epoch,
-                       const gsl_vector * c, invert_workspace *w);
+int invert_write_matrix(const char *filename, invert_workspace *w);
+int invert_write_rhs(const char *filename, invert_workspace *w);
+int invert_write_ascii(const char *filename, const gsl_vector * c, invert_workspace *w);
 size_t invert_coeff_idx(const size_t f, const size_t tmode, const size_t smode, const invert_workspace * w);
 int invert_debug(const char *format, ...);
 

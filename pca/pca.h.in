@@ -37,6 +37,9 @@
 #define PCA_STAGE2B_V_IND      "@abs_top_builddir@/pca/data/stage2b_V_ind"
 #define PCA_STAGE2B_MU_IND     "@abs_top_builddir@/pca/data/stage2b_mu_ind"
 
+/* Stage2 complex: complex knm time series, called qnm */
+#define PCA_STAGE2_COMPLEX_QNM "@abs_top_builddir@/pca/data/stage2_complex_qnm.dat"
+
 /* Stage3b: cumulative variance file prefix */
 #define PCA_STAGE3B_VAR        "@abs_top_builddir@/pca/data/stage3b_var"
 

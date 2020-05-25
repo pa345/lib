@@ -651,22 +651,19 @@ main(int argc, char *argv[])
   params.nr = data->nr;
   params.ntheta = data->nlat;
   params.nphi = data->nlon;
-  params.rmin = data->r[0] * 1.0e3;
-  params.rmax = data->r[data->nr - 1] * 1.0e3;
   params.R = R_EARTH_M;
   params.grid_type = MAGFIELD_GAUSS;
 
-  fprintf(stderr, "rmin = %.1f [m]\n", params.rmin);
-  fprintf(stderr, "rmax = %.1f [m]\n", params.rmax);
+  for (i = 0; i < data->nr; ++i)
+    params.r[i] = data->r[i];
+
+  fprintf(stderr, "rmin = %.1f [m]\n", params.r[0]);
+  fprintf(stderr, "rmax = %.1f [m]\n", params.r[data->nr - 1]);
 
   fprintf(stderr, "\t allocating magfield workspace...");
   magfield_p = magfield_alloc(&params);
   magfield_eval_p = magfield_eval_alloc(&params);
   fprintf(stderr, "done\n");
-
-  magfield_set_r(data->r, magfield_p);
-  for (i = 0; i < data->nr; ++i)
-    magfield_p->r[i] *= 1.0e3; /* convert to m */
 
   /* fill current grid */
   fprintf(stderr, "main: filling current grid...");

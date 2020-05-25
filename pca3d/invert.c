@@ -70,7 +70,6 @@ invert_alloc()
   Allocate a invert workspace
 
 Inputs: params - model parameters
-                 epoch   - model epoch t0 (years)
                  R       - reference radius (km)
                  nsat    - number of different satellites
                  flags   - flags
@@ -90,7 +89,6 @@ invert_alloc(const invert_parameters *params)
     return 0;
 
   w->nsat = params->nsat;
-  w->epoch = params->epoch;
   w->R = params->R;
   w->nfreq = params->nfreq;
   w->data_workspace_p = params->invert_data_p;
@@ -109,9 +107,16 @@ invert_alloc(const invert_parameters *params)
 
   /* use same number of spatial modes per bin as the temporal modes */
   nsmodes = malloc(w->nfreq * sizeof(size_t));
-#if 1 /*XXX*/
+#if 0 /*XXX*/
   for (i = 0; i < w->nfreq; ++i)
     nsmodes[i] = w->tmode_workspace_p->nmodes[i];
+#elif 1
+  for (i = 0; i < w->nfreq; ++i)
+    nsmodes[i] = 15;
+
+#if 0
+  nsmodes[10] = 20; /* 1 cpd */
+#endif
 #else
   for (i = 0; i < w->nfreq; ++i)
     nsmodes[i] = GSL_MIN(w->tmode_workspace_p->nmodes[i], 6);
@@ -325,7 +330,6 @@ invert_free(invert_workspace *w)
 int
 invert_init_params(invert_parameters * params)
 {
-  params->epoch = -1.0;
   params->R = -1.0;
   params->nsat = 0;
   params->max_iter = 0;
@@ -430,8 +434,8 @@ invert_init(invert_workspace *w)
 
       for (j = 0; j < mptr->n; ++j)
         {
-          const double u = satdata_epoch2year(mptr->t[j]) - w->epoch;
-          const double v = satdata_epoch2year(mptr->t_ns[j]) - w->epoch;
+          const double u = satdata_epoch2year(mptr->t[j]);
+          const double v = satdata_epoch2year(mptr->t_ns[j]);
 
           if (MAGDATA_Discarded(mptr->flags[j]))
             continue;
@@ -584,19 +588,64 @@ invert_read(const char *filename, gsl_vector *c)
   return 0;
 }
 
+int
+invert_write_matrix(const char *filename, invert_workspace *w)
+{
+  int s = 0;
+  const gsl_matrix * A = gsl_multilarge_linear_matrix_ptr(w->multilarge_linear_p);
+  FILE *fp;
+
+  fp = fopen(filename, "w");
+  if (!fp)
+    {
+      fprintf(stderr, "invert_write_matrix: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return GSL_FAILURE;
+    }
+
+  fwrite(&(A->size1), sizeof(size_t), 1, fp);
+  fwrite(&(A->size2), sizeof(size_t), 1, fp);
+  gsl_matrix_fwrite(fp, A);
+
+  fclose(fp);
+
+  return s;
+}
+
+int
+invert_write_rhs(const char *filename, invert_workspace *w)
+{
+  int s = 0;
+  const gsl_vector * rhs = gsl_multilarge_linear_rhs_ptr(w->multilarge_linear_p);
+  FILE *fp;
+
+  fp = fopen(filename, "w");
+  if (!fp)
+    {
+      fprintf(stderr, "invert_write_matrix: unable to open %s: %s\n",
+              filename, strerror(errno));
+      return GSL_FAILURE;
+    }
+
+  fwrite(&(rhs->size), sizeof(size_t), 1, fp);
+  gsl_vector_fwrite(fp, rhs);
+
+  fclose(fp);
+
+  return s;
+}
+
 /*
 invert_write_ascii()
   Write ascii coefficient file
 
 Inputs: filename - output file
-        epoch    - epoch to evaluate B-splines (decimal years)
         c        - coefficient vector, length at least p
         w        - workspace
 */
 
 int
-invert_write_ascii(const char *filename, const double epoch,
-                   const gsl_vector * c, invert_workspace *w)
+invert_write_ascii(const char *filename, const gsl_vector * c, invert_workspace *w)
 {
   int s = 0;
   const invert_parameters *params = &(w->params);
@@ -613,7 +662,6 @@ invert_write_ascii(const char *filename, const double epoch,
 
   /* print header information */
   fprintf(fp, "%% Magnetic field model coefficients\n");
-  fprintf(fp, "%% epoch: %.4f\n", epoch);
   fprintf(fp, "%% radius: %.1f\n", w->R);
 
   gsl_vector_fprintf(fp, w->c, "%.12e");
@@ -627,7 +675,7 @@ int
 invert_debug(const char *format, ...)
 {
   int s = 0;
-#if MFIELD_DEBUG
+#if INVERT_DEBUG
   va_list args;
 
   va_start(args, format);

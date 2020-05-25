@@ -32,6 +32,7 @@
 #define PCA3D_STAGE3B_SVAL_DAT         "@abs_top_builddir@/pca3d/data/stage3b/stage3b_sval"
 #define PCA3D_STAGE3B_U                "@abs_top_builddir@/pca3d/data/stage3b/stage3b_U"
 #define PCA3D_STAGE3B_V_TXT            "@abs_top_builddir@/pca3d/data/stage3b/V"
+#define PCA3D_STAGE3B_BANDS            "@abs_top_builddir@/pca3d/data/stage3b/bands.dat"
 
 /* stage1c: output files */
 #define PCA3D_STAGE1C_DATA             "@abs_top_builddir@/pca3d/data/stage1c/stage1c.dat"
