@@ -384,10 +384,8 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "main: number of total parameters:                %zu\n", invert_workspace_p->p);
 
-  coeffs = gsl_vector_alloc(invert_workspace_p->p);
-
   fprintf(stderr, "main: reading input coefficients...");
-  vecread(input_coef_file, coeffs);
+  coeffs = vecread(input_coef_file);
   fprintf(stderr, "done\n");
 
   print_spectrum("spectrum.txt", "spectrum_grid.txt", coeffs, invert_workspace_p);

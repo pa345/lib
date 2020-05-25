@@ -568,12 +568,10 @@ main(int argc, char *argv[])
       fprintf(stderr, "done\n");
     }
 
-  coeffs = gsl_vector_alloc(invert_workspace_p->p);
-
   if (input_coef_file)
     {
       fprintf(stderr, "main: reading input coefficients...");
-      vecread(input_coef_file, coeffs);
+      coeffs = vecread(input_coef_file);
       fprintf(stderr, "done\n");
 
       /*XXX*/
@@ -604,6 +602,8 @@ main(int argc, char *argv[])
     }
   else
     {
+      coeffs = gsl_vector_alloc(invert_workspace_p->p);
+
       fprintf(stderr, "main: constructing initial coefficient vector...");
       initial_guess(coeffs, invert_workspace_p);
       fprintf(stderr, "done\n");
