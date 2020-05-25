@@ -38,6 +38,7 @@
 #include <mainlib/ml_msynth.h>
 #include <mainlib/ml_track.h>
 #include <mainlib/ml_magdata.h>
+#include <mainlib/ml_matio.h>
 
 #include "invert.h"
 #include "invert_residual.h"
@@ -572,7 +573,7 @@ main(int argc, char *argv[])
   if (input_coef_file)
     {
       fprintf(stderr, "main: reading input coefficients...");
-      invert_read(input_coef_file, coeffs);
+      vecread(input_coef_file, coeffs);
       fprintf(stderr, "done\n");
 
       /*XXX*/
@@ -628,7 +629,7 @@ main(int argc, char *argv[])
 
       sprintf(buf, "%s/coef_iter%zu.dat", output_dir, iter);
       fprintf(stderr, "main: writing binary coefficients to %s...", buf);
-      invert_write(buf, invert_workspace_p);
+      vecwrite(buf, invert_workspace_p->c);
       fprintf(stderr, "done\n");
 
       sprintf(buf, "%s/coef_iter%zu.txt", output_dir, iter);
@@ -636,15 +637,20 @@ main(int argc, char *argv[])
       invert_write_ascii(buf, invert_workspace_p->c, invert_workspace_p);
       fprintf(stderr, "done\n");
 
-      sprintf(buf, "%s/matrix_iter%zu.dat", output_dir, iter);
-      fprintf(stderr, "main: writing LS matrix to %s...", buf);
-      invert_write_matrix(buf, invert_workspace_p);
-      fprintf(stderr, "done\n");
+      {
+        const gsl_matrix * R = gsl_multilarge_linear_matrix_ptr(invert_workspace_p->multilarge_linear_p);
+        const gsl_vector * QTb = gsl_multilarge_linear_rhs_ptr(invert_workspace_p->multilarge_linear_p);
 
-      sprintf(buf, "%s/rhs_iter%zu.dat", output_dir, iter);
-      fprintf(stderr, "main: writing LS rhs to %s...", buf);
-      invert_write_rhs(buf, invert_workspace_p);
-      fprintf(stderr, "done\n");
+        sprintf(buf, "%s/matrix_iter%zu.dat", output_dir, iter);
+        fprintf(stderr, "main: writing LS matrix to %s...", buf);
+        matwrite(buf, R);
+        fprintf(stderr, "done\n");
+
+        sprintf(buf, "%s/rhs_iter%zu.dat", output_dir, iter);
+        fprintf(stderr, "main: writing LS rhs to %s...", buf);
+        vecwrite(buf, QTb);
+        fprintf(stderr, "done\n");
+      }
 
       if (print_residuals)
         {
@@ -663,7 +669,7 @@ main(int argc, char *argv[])
 
   sprintf(buf, "%s/coef.dat", output_dir);
   fprintf(stderr, "main: writing binary coefficients to %s...", buf);
-  invert_write(buf, invert_workspace_p);
+  vecwrite(buf, invert_workspace_p->c);
   fprintf(stderr, "done\n");
 
 #if 0

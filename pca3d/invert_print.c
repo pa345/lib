@@ -36,6 +36,7 @@
 #include <mainlib/ml_msynth.h>
 #include <mainlib/ml_track.h>
 #include <mainlib/ml_magdata.h>
+#include <mainlib/ml_matio.h>
 
 #include "invert.h"
 #include "invert_residual.h"
@@ -386,7 +387,7 @@ main(int argc, char *argv[])
   coeffs = gsl_vector_alloc(invert_workspace_p->p);
 
   fprintf(stderr, "main: reading input coefficients...");
-  invert_read(input_coef_file, coeffs);
+  vecread(input_coef_file, coeffs);
   fprintf(stderr, "done\n");
 
   print_spectrum("spectrum.txt", "spectrum_grid.txt", coeffs, invert_workspace_p);

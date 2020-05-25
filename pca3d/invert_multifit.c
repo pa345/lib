@@ -195,7 +195,6 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
 {
   int s = GSL_SUCCESS;
   invert_workspace *w = (invert_workspace *) params;
-  const invert_parameters *mparams = &(w->params);
   size_t i, j;
   struct timeval tv0, tv1;
   double xnorm = gsl_blas_dnrm2(x);
@@ -313,15 +312,6 @@ invert_calc_f(const gsl_vector *x, void *params, gsl_vector *f)
             }
         } /* for (j = 0; j < mptr->n; ++j) */
     }
-
-#if 0/*XXX*/
-  if (mparams->regularize && !mparams->synth_data)
-    {
-      /* store L^T*x in bottom of f for regularization */
-      gsl_vector_view v = gsl_vector_subvector(f, w->nres, w->p);
-      gsl_spblas_dusmv(CblasTrans, 1.0, w->L, x, 0.0, &v.vector);
-    }
-#endif
 
   gettimeofday(&tv1, NULL);
   invert_debug("invert_calc_f: leaving function (%g seconds, ||f|| = %g)\n",
