@@ -825,6 +825,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --swarm_asmv_file | -a swarm_asmv_index_file  - Swarm ASM-V index file\n");
   fprintf(stderr, "\t --oersted_f_file  | -L oersted_f_index_file   - Oersted scalar (f) index file\n");
   fprintf(stderr, "\t --oersted_l_file  | -L oersted_l_index_file   - Oersted vector (l) index file\n");
+  fprintf(stderr, "\t --cryosat_file    | -r cryosat_index_file     - Cryosat index file\n");
   fprintf(stderr, "\t --obs_data_file   | -O obs_data_file          - Observatory data file (BGS format)\n");
   fprintf(stderr, "\t --downsample      | -d downsample             - downsampling factor\n");
   fprintf(stderr, "\t --gradient_ns     | -g num_samples            - number of samples between N/S gradient points\n");
@@ -893,6 +894,7 @@ main(int argc, char *argv[])
           { "oersted_f_file", required_argument, NULL, 'F' },
           { "oersted_l_file", required_argument, NULL, 'L' },
           { "champ_file", required_argument, NULL, 'c' },
+          { "cryosat_file", required_argument, NULL, 'r' },
           { "obs_file", required_argument, NULL, 'O' },
           { "downsample", required_argument, NULL, 'd' },
           { "output_file", required_argument, NULL, 'o' },
@@ -903,7 +905,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:A:c:C:d:D:F:g:L:N:o:O:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:A:c:C:d:D:F:g:L:N:o:O:r:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -931,6 +933,11 @@ main(int argc, char *argv[])
           case 'c':
             magdata_flags = MAGDATA_GLOBFLG_CHAMP;
             data = read_champ(optarg);
+            break;
+
+          case 'r':
+            magdata_flags = MAGDATA_GLOBFLG_CRYOSAT;
+            data = read_swarm(optarg, 0);
             break;
 
           case 'F':

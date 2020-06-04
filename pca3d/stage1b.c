@@ -40,7 +40,7 @@
 
 #define MAX_T        100000
 
-#define TAPER_COEFFS 1
+#define TAPER_COEFFS 0
 
 /*
 taper_magfield()
@@ -256,8 +256,7 @@ int
 main(int argc, char *argv[])
 {
   const size_t lmin = 1;
-  const size_t lmax = 60;
-  const size_t mmax = 30;
+  int lmax = -1, mmax = -1;
   const double R = R_EARTH_M;
   char *file_prefix = PCA3D_STAGE1B_SH_PREFIX;
   char *residual_file = NULL;
@@ -274,21 +273,31 @@ main(int argc, char *argv[])
       static struct option long_options[] =
         {
           { "residual_file", required_argument, NULL, 'r' },
+          { "lmax", required_argument, NULL, 'l' },
+          { "mmax", required_argument, NULL, 'm' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "r:", long_options, &option_index);
+      c = getopt_long(argc, argv, "l:m:r:", long_options, &option_index);
       if (c == -1)
         break;
 
       switch (c)
         {
+          case 'l':
+            lmax = atoi(optarg);
+            break;
+
+          case 'm':
+            mmax = atoi(optarg);
+            break;
+
           case 'r':
             residual_file = optarg;
             break;
 
           default:
-            fprintf(stderr, "Usage: %s [-r residual_file] file1.nc file2.nc ...\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-l lmax] [-m mmax] [-r residual_file] file1.nc file2.nc ...\n", argv[0]);
             break;
         }
     }
@@ -326,9 +335,17 @@ main(int argc, char *argv[])
           magfield_params params;
           size_t i;
 
+          if (lmax < 0)
+            lmax = data->nlat - 1;
+          if (mmax < 0)
+            mmax = data->nlon / 2 - 1;
+
+          lmax = GSL_MIN(lmax, data->nlat - 1);
+          mmax = GSL_MIN(mmax, data->nlon / 2 - 1);
+
           params.lmin = lmin;
-          params.lmax = lmax;
-          params.mmax = GSL_MIN(mmax, data->nlon / 2 - 1);
+          params.lmax = (size_t) lmax;
+          params.mmax = (size_t) mmax;
           params.nr = nr;
           params.ntheta = ntheta;
           params.nphi = nphi;

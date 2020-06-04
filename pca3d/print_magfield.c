@@ -46,12 +46,16 @@ int
 print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir, magfield_eval_workspace *w)
 {
   int s = 0;
+#if 0
   const double r_B = R_EARTH_KM + 80.0;
+#else
+  const double r_B = R_EARTH_KM;
+#endif
   size_t i;
   size_t ilat, ilon;
   FILE *fp;
 
-#if 0
+#if 1
 
   fp = fopen(filename, "w");
   if (!fp)
@@ -62,7 +66,7 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
 
   i = 1;
   fprintf(fp, "# Time: %ld (%.6f DOY)\n", data->t[time_idx], data->doy[time_idx] + data->ut[time_idx] / 24.0);
-  fprintf(fp, "# Radius J: %.2f (km) [%.2f km altitude]\n", data->r[ir], data->r[ir] - R_EARTH_KM);
+  fprintf(fp, "# Radius J: %.2f (km) [%.2f km altitude]\n", data->r[ir] * 1.0e-3, (data->r[ir] - R_EARTH_M) * 1.0e-3);
   fprintf(fp, "# Radius B: %.2f (km) [%.2f km altitude]\n", r_B, r_B - R_EARTH_KM);
   fprintf(fp, "# Field %zu: longitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
@@ -88,7 +92,7 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
           double B[4], J[4];
 
           magfield_eval_B(r_B * 1.0e3, theta, phi, B, w);
-          magfield_eval_J(data->r[ir] * 1.0e3, theta, phi, J, w);
+          magfield_eval_J(data->r[ir], theta, phi, J, w);
 
           fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glon[ilon],
@@ -112,7 +116,7 @@ print_data(const char *filename, const tiegcm3d_data *data, const int time_idx, 
 
 #endif
 
-#if 1
+#if 0
 
   {
     /* print out latitude profile at 80km and 280 deg longitude */
@@ -207,9 +211,12 @@ print_alt(const char *filename, const tiegcm3d_data *data, const int it, const i
   fprintf(fp, "# Longitude: %.2f (deg)\n", data->glon[ilon]);
   fprintf(fp, "# Field %zu: latitude (degrees)\n", i++);
   fprintf(fp, "# Field %zu: altitude (km)\n", i++);
-  fprintf(fp, "# Field %zu: J_r (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_t (A/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: J_p (A/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: data J_r (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: data J_t (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: data J_p (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: model J_r (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: model J_t (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: model J_p (nA/m^2)\n", i++);
   fprintf(fp, "# Field %zu: B_r (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_t (nT)\n", i++);
   fprintf(fp, "# Field %zu: B_p (nT)\n", i++);
@@ -222,16 +229,20 @@ print_alt(const char *filename, const tiegcm3d_data *data, const int it, const i
       for (ir = 0; ir < data->nr - 1; ++ir)
         {
           size_t idx = TIEGCM3D_IDX(it, ir, ilat, ilon, data);
-          double B[4];
+          double B[4], J[4];
 
-          magfield_eval_B(data->r[ir] * 1.0e3, theta, phi, B, w);
+          magfield_eval_B(data->r[ir], theta, phi, B, w);
+          magfield_eval_J(data->r[ir], theta, phi, J, w);
 
-          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
+          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glat[ilat],
-                  data->r[ir] - R_EARTH_KM,
-                  data->Jr[idx],
-                  data->Jt[idx],
-                  data->Jp[idx],
+                  (data->r[ir] - R_EARTH_M) * 1.0e-3,
+                  data->Jr[idx] * 1.0e9,
+                  data->Jt[idx] * 1.0e9,
+                  data->Jp[idx] * 1.0e9,
+                  J[0] * 1.0e9,
+                  J[1] * 1.0e9,
+                  J[2] * 1.0e9,
                   B[0] * 1.0e9,
                   B[1] * 1.0e9,
                   B[2] * 1.0e9,
@@ -565,8 +576,10 @@ main(int argc, char *argv[])
   char *outfile_map = "data_map.txt";
   char *outfile_alt = "data_alt.txt";
   int time_idx = 0;
-  size_t lmax = 60;
-  size_t mmax = 30;
+  int lmax = -1;
+  int mmax = -1;
+  size_t eval_lmax = 60;
+  size_t eval_mmax = 30;
   double lon = 150.0; /* desired longitude */
   int r_idx = 0;
   int lon_idx;
@@ -597,11 +610,11 @@ main(int argc, char *argv[])
             break;
 
           case 'l':
-            lmax = (size_t) atoi(optarg);
+            lmax = atoi(optarg);
             break;
 
           case 'm':
-            mmax = (size_t) atoi(optarg);
+            mmax = atoi(optarg);
             break;
 
           case 'r':
@@ -628,8 +641,6 @@ main(int argc, char *argv[])
     }
 
   fprintf(stderr, "input file = %s\n", infile);
-  fprintf(stderr, "lmax       = %zu\n", lmax);
-  fprintf(stderr, "mmax       = %zu\n", mmax);
 
   fprintf(stderr, "main: reading %s...", infile);
   gettimeofday(&tv0, NULL);
@@ -645,9 +656,20 @@ main(int argc, char *argv[])
   fprintf(stderr, "done (%zu records read, %g seconds)\n", data->nt,
           time_diff(tv0, tv1));
 
+  if (lmax < 0)
+    lmax = data->nlat - 1;
+  if (mmax < 0)
+    mmax = data->nlon / 2 - 1;
+
+  lmax = GSL_MIN(lmax, data->nlat - 1);
+  mmax = GSL_MIN(mmax, data->nlon / 2 - 1);
+
+  fprintf(stderr, "lmax       = %d\n", lmax);
+  fprintf(stderr, "mmax       = %d\n", mmax);
+
   params.lmin = 1;
-  params.lmax = lmax;
-  params.mmax = mmax;
+  params.lmax = (size_t) lmax;
+  params.mmax = (size_t) mmax;
   params.nr = data->nr;
   params.ntheta = data->nlat;
   params.nphi = data->nlon;
@@ -664,6 +686,8 @@ main(int argc, char *argv[])
   magfield_p = magfield_alloc(&params);
   magfield_eval_p = magfield_eval_alloc(&params);
   fprintf(stderr, "done\n");
+
+  magfield_eval_set(eval_lmax, eval_mmax, magfield_eval_p);
 
   /* fill current grid */
   fprintf(stderr, "main: filling current grid...");
@@ -707,7 +731,9 @@ main(int argc, char *argv[])
   fprintf(stderr, "done\n");
 #endif
 
+#if 0 /* EZIE calculation */
   docalc(magfield_p);
+#endif
 
   tiegcm3d_free(data);
   magfield_free(magfield_p);

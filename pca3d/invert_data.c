@@ -414,6 +414,7 @@ Inputs: wts         - (output) spatial weights
 int
 invert_data_weights(gsl_vector * wts, const double weightfac[], const invert_data_workspace * w)
 {
+  const double eqfac = 1.0e6;
   size_t idx = 0;
   size_t i, j;
 
@@ -449,6 +450,10 @@ invert_data_weights(gsl_vector * wts, const double weightfac[], const invert_dat
 
           /* satellite data */
           wt = sin(thetaq);
+
+          /* up-weight equatorial data */
+          if (fabs(qdlat) < w->params.qdlat_fit_cutoff)
+            wt *= eqfac;
 
           /* include global weight factor for this satellite / observatory */
           wt *= global_weight;

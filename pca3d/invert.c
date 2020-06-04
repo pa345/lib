@@ -112,10 +112,10 @@ invert_alloc(const invert_parameters *params)
     nsmodes[i] = w->tmode_workspace_p->nmodes[i];
 #elif 1
   for (i = 0; i < w->nfreq; ++i)
-    nsmodes[i] = 15;
+    nsmodes[i] = 25;
 
 #if 0
-  nsmodes[10] = 20; /* 1 cpd */
+  nsmodes[10] = 30; /* 1 cpd */
 #endif
 #else
   for (i = 0; i < w->nfreq; ++i)
