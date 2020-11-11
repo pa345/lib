@@ -4,11 +4,11 @@ libpca3d_la_SOURCES = io.c tiegcm3d_alloc.c tiegcm3d_print.c tiegcm3d_read.c win
 
 AM_CPPFLAGS = -I$(top_builddir)/poltor -I$(top_builddir)/magfit
 
-common_libs = -L/usr/lib64 -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf
+common_libs = -L/usr/lib64 -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf -lcsparse
 
-bin_PROGRAMS = invert invert_preproc invert_write_tmode print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH1b print_map1b print_ezie_grid print_magfield print_var3b invert_print invert_postproc
+bin_PROGRAMS = invert invert_preproc invert_write_tmode print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH1b print_map1b print_spectrum1b print_ezie_grid print_magfield print_var3b invert_print invert_postproc
 
-invert_SOURCES = invert_main.c invert.c invert_data.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
+invert_SOURCES = invert_main.c invert.c invert_data.c invert_regularize.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
 #invert_CFLAGS = -std=c11 -fopenmp -ffast-math
 invert_CFLAGS = -std=c11 -fopenmp
 invert_LDFLAGS = -fopenmp
@@ -19,12 +19,12 @@ invert_preproc_CFLAGS = -fopenmp
 invert_preproc_LDFLAGS = -fopenmp
 invert_preproc_LDADD = libpca3d.la -lmagfield -lbspline2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
-invert_print_SOURCES = invert_print.c invert.c invert_data.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
+invert_print_SOURCES = invert_print.c invert.c invert_data.c invert_regularize.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
 invert_print_CFLAGS = -std=c11 -fopenmp
 invert_print_LDFLAGS = -fopenmp
 invert_print_LDADD = libpca3d.la -lmagfield -lbspline2 -lgslspblas2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
-invert_postproc_SOURCES = invert_postproc.c invert.c invert_data.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
+invert_postproc_SOURCES = invert_postproc.c invert.c invert_data.c invert_regularize.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
 invert_postproc_CFLAGS = -std=c11 -fopenmp
 invert_postproc_LDFLAGS = -fopenmp
 invert_postproc_LDADD = libpca3d.la -lmagfield -lbspline2 -lgslspblas2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
@@ -121,3 +121,7 @@ print_map1b_CFLAGS = -fopenmp
 print_map1b_LDFLAGS = -fopenmp
 print_map1b_LDADD = libpca3d.la -lmagfield ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
+print_spectrum1b_SOURCES = print_spectrum1b.c
+print_spectrum1b_CFLAGS = -fopenmp
+print_spectrum1b_LDFLAGS = -fopenmp
+print_spectrum1b_LDADD = libpca3d.la -lmagfield ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp

@@ -30,6 +30,7 @@ typedef struct
   double lt_min;               /* minimum allowed local time */
   double lt_max;               /* maximum allowed local time */
   double max_lat_gap;          /* maximum allowed latitude gap (degrees) */
+  double max_time_gap;         /* maximum allowed time gap (minutes) */
   int dst_num_days;            /* number of days of Dst data for Est/Ist */
   double curr_altitude;        /* altitude of current shell (km) */
   int ncurr;                   /* number of line currents */

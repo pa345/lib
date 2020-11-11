@@ -87,6 +87,8 @@ typedef struct
   double lambda_1;                      /* 1st time derivative of main field damping factor */
   double lambda_2;                      /* 2nd time derivative of main field damping factor */
   double lambda_3;                      /* 3rd time derivative of main field damping factor */
+  double lambda_e;                      /* minimum energy damping factor */
+  double lambda_k;                      /* minimum Br curvature damping factor */
   double lambda_a;                      /* alignment regularization parameter */
   double lambda_s;                      /* fluxgate scale factor regularization parameter */
   double lambda_o;                      /* fluxgate offset regularization parameter */
@@ -218,6 +220,8 @@ typedef struct
   double lambda_1;         /* 1st time derivative of main field damping */
   double lambda_2;         /* 2nd time derivative of main field damping */
   double lambda_3;         /* 3rd time derivative of main field damping */
+  double lambda_e;         /* minimum energy damping */
+  double lambda_k;         /* minimum Br curvature damping */
   double lambda_a;         /* alignment regularization parameter */
   double lambda_s;         /* fluxgate scale factor regularization parameter */
   double lambda_o;         /* fluxgate offset regularization parameter */

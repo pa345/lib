@@ -568,6 +568,16 @@ main(int argc, char *argv[])
       fprintf(stderr, "done\n");
     }
 
+  sprintf(buf, "%s/Ldiag.dat", output_dir);
+  fprintf(stderr, "main: writing regularization matrix (binary) to %s...", buf);
+  vecwrite(buf, invert_workspace_p->Ldiag);
+  fprintf(stderr, "done\n");
+
+  sprintf(buf, "%s/Ldiag", output_dir);
+  fprintf(stderr, "main: writing regularization matrix (ascii) to %s...", buf);
+  printv_octave(invert_workspace_p->Ldiag, buf);
+  fprintf(stderr, "done\n");
+
   if (input_coef_file)
     {
       fprintf(stderr, "main: reading input coefficients...");

@@ -18,8 +18,10 @@
 #include <gsl/gsl_test.h>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
+#include <gsl/gsl_statistics.h>
 
 #include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
 #include <mainlib/ml_interp.h>
 #include <mainlib/ml_coord.h>
 
@@ -200,7 +202,7 @@ mag_sqfilt_scalar(mag_workspace *mag_p, mag_sqfilt_scalar_workspace *w)
   gsl_vector_view bv;
   gsl_matrix_view Xv;
   double lambda; /* final damping parameter */
-  double smax;
+  double smax, tss;
 
   s = sqfilt_linear_init(mag_p, w);
   if (s)
@@ -245,9 +247,14 @@ mag_sqfilt_scalar(mag_workspace *mag_p, mag_sqfilt_scalar_workspace *w)
   /* convert back to general form */
   s = gsl_multifit_linear_genform1(w->L, w->c, w->c, w->multifit_workspace_p);
 
+  tss = gsl_stats_tss(w->rhs->data, w->rhs->stride, w->n);
+  w->Rsq = 1.0 - (w->rnorm * w->rnorm) / tss;
+
   fprintf(stderr, "mag_sqfilt_scalar: final regularization factor = %g (smax = %g)\n", lambda, smax);
   fprintf(stderr, "mag_sqfilt_scalar: multifit residual norm = %.6e\n", w->rnorm);
   fprintf(stderr, "mag_sqfilt_scalar: multifit solution norm = %.6e\n", w->snorm);
+  fprintf(stderr, "mag_sqfilt_scalar: multifit TSS           = %.6e\n", tss);
+  fprintf(stderr, "mag_sqfilt_scalar: multifit Rsq           = %.4f\n", w->Rsq);
 
   /* calculate F^(2) residuals (eq 9 of paper) */
   sqfilt_calc_F2(w->c, mag_p);
@@ -289,7 +296,7 @@ sqfilt_linear_init(mag_workspace *mag_p, mag_sqfilt_scalar_workspace *w)
   mag_track *track = &(mag_p->track);
   size_t i;
   size_t ndata = 0;
-  double qd_min, qd_max, F1_min, F1_max;
+  double qd_min = -90.0, qd_max = 90.0, F1_min = 0.0, F1_max = 0.0;
   int found_lower = 0, found_upper = 0;
 
   for (i = 1; i < ntot; ++i)
@@ -387,7 +394,6 @@ sqfilt_linear_matrix_row(const double r, const double thetaq,
                          gsl_vector *v, mag_workspace *w)
 {
   int s = 0;
-  const double R = 6371.2;
   mag_sqfilt_scalar_workspace *sqfilt_p = w->sqfilt_scalar_workspace_p;
   double phi_sm, theta_sm, lat_sm;
   double lat = M_PI / 2.0 - thetaq;

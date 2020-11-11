@@ -451,6 +451,7 @@ static const magfit_type rc_type =
   rc_eval_B,
   rc_eval_J,
   rc_eval_chi,
+  NULL,
   rc_free
 };
 

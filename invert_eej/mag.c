@@ -73,16 +73,31 @@ mag_alloc(mag_params *params)
     w->dZ_ext = malloc(nnm * sizeof(double));
   }
 
-  /* allocate magfit workspace for Sq model */
+  /* allocate magfit workspace for Sq and EEJ fitting */
   {
+    const magfit_type * magfit_eej_T = params->use_vector ? magfit_secs1d : magfit_lcs;
+
     magfit_parameters magfit_params = magfit_default_parameters();
 
     magfit_params.nmax_int = params->sq_nmax_int;
     magfit_params.mmax_int = params->sq_mmax_int;
     magfit_params.nmax_ext = params->sq_nmax_ext;
     magfit_params.mmax_ext = params->sq_mmax_ext;
+    magfit_params.lc_ncurr = params->ncurr;
+    magfit_params.lc_qdmax = params->qdlat_max;
+    magfit_params.lc_year = params->year;
+    magfit_params.lat_min = -40.0;
+    magfit_params.lat_max = 40.0;
+    magfit_params.lat_spacing1d = 0.5;
+#if 0
+    magfit_params.flags = MAGFIT_FLG_FIT_Z;
+#else
+    magfit_params.flags = MAGFIT_FLG_FIT_X | MAGFIT_FLG_FIT_Z;
+#endif
+    magfit_params.flags |= MAGFIT_FLG_SECS_FIT_DF;
 
     w->magfit_workspace_p = magfit_alloc(magfit_gauss, &magfit_params);
+    w->magfit_eej_workspace_p = magfit_alloc(magfit_eej_T, &magfit_params);
   }
 
   w->sqfilt_scalar_workspace_p = mag_sqfilt_scalar_alloc(params->sq_nmax_int, params->sq_mmax_int,
@@ -229,6 +244,10 @@ mag_free(mag_workspace *w)
   if (w->magfit_workspace_p)
     magfit_free(w->magfit_workspace_p);
 
+  if (w->magfit_eej_workspace_p)
+    magfit_free(w->magfit_eej_workspace_p);
+
+  if (w->sqfilt_scalar_workspace_p)
   if (w->sqfilt_scalar_workspace_p)
     mag_sqfilt_scalar_free(w->sqfilt_scalar_workspace_p);
 
@@ -463,6 +482,7 @@ mag_proc(const mag_params *params, track_workspace *track_p,
   size_t nrejgap = 0,    /* number of rejections due to data gap */
          nrejlat = 0,    /* number of rejections due to latitude */
          nrejflag = 0;   /* number of rejections due to various flags */
+  char tz_str[] = "TZ-GMT";
 
   if (data->n < 1000)
     {
@@ -476,6 +496,8 @@ mag_proc(const mag_params *params, track_workspace *track_p,
 
   /* preprocess tracks using given parameters */
   mag_preproc(params, track_p, data, w);
+
+  putenv(tz_str);
 
   for (i = 0; i < track_p->n; ++i)
     {
@@ -556,10 +578,21 @@ mag_proc(const mag_params *params, track_workspace *track_p,
         }
 
       /* invert for EEJ height-integrated current density */
+#if 0
       if (params->use_vector)
         s = mag_eej_vector_proc(&(w->track), w->EEJ, w->eej_workspace_p);
       else
         s = mag_eej_proc(&(w->track), w->EEJ, w->eej_workspace_p);
+#else
+      {
+        gsl_vector_view v_EEJ = gsl_vector_view_array(w->EEJ, w->ncurr);
+
+        if (params->use_vector)
+          s = mag_eej_proc_vector(&(w->track), &v_EEJ.vector, w->magfit_eej_workspace_p);
+        else
+          s = mag_eej_proc_scalar(&(w->track), &v_EEJ.vector, w->magfit_eej_workspace_p);
+      }
+#endif
 
       if (s)
         return s;

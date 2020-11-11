@@ -40,7 +40,7 @@
 
 #define MAX_T        100000
 
-#define TAPER_COEFFS 0
+#define TAPER_COEFFS 1
 
 /*
 taper_magfield()
@@ -123,7 +123,7 @@ Inputs: data - tiegcm data
 
 int
 print_residual(const char *filename, const tiegcm3d_data *data, const int time_idx, const int ir,
-               magfield_workspace * w, magfield_eval_workspace *eval_p)
+               magfield_workspace * w, magfield_eval_workspace *eval_p, magfield_eval_workspace * eval_trunc_p)
 {
   int s = 0;
   size_t i;
@@ -145,9 +145,12 @@ print_residual(const char *filename, const tiegcm3d_data *data, const int time_i
   fprintf(fp, "# Field %zu: TIEGCM J_r (nA/m^2)\n", i++);
   fprintf(fp, "# Field %zu: TIEGCM J_t (nA/m^2)\n", i++);
   fprintf(fp, "# Field %zu: TIEGCM J_p (nA/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: magfield J_r (nA/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: magfield J_t (nA/m^2)\n", i++);
-  fprintf(fp, "# Field %zu: magfield J_p (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: full magfield J_r (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: full magfield J_t (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: full magfield J_p (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: truncated magfield J_r (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: truncated magfield J_t (nA/m^2)\n", i++);
+  fprintf(fp, "# Field %zu: truncated magfield J_p (nA/m^2)\n", i++);
 
   for (ilon = 0; ilon < data->nlon; ++ilon)
     {
@@ -157,11 +160,12 @@ print_residual(const char *filename, const tiegcm3d_data *data, const int time_i
         {
           size_t idx = TIEGCM3D_IDX(time_idx, ir, ilat, ilon, data);
           double theta = w->theta[ilat];
-          double J[4];
+          double J[4], J_trunc[4];
 
           magfield_eval_J(data->r[ir], theta, phi, J, eval_p);
+          magfield_eval_J(data->r[ir], theta, phi, J_trunc, eval_trunc_p);
 
-          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
+          fprintf(fp, "%8.4f %8.4f %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e %16.4e\n",
                   data->glon[ilon],
                   data->glat[ilat],
                   data->Jr[idx] * 1.0e9,
@@ -169,7 +173,10 @@ print_residual(const char *filename, const tiegcm3d_data *data, const int time_i
                   data->Jp[idx] * 1.0e9,
                   J[0] * 1.0e9,
                   J[1] * 1.0e9,
-                  J[2] * 1.0e9);
+                  J[2] * 1.0e9,
+                  J_trunc[0] * 1.0e9,
+                  J_trunc[1] * 1.0e9,
+                  J_trunc[2] * 1.0e9);
         }
 
       fprintf(fp, "\n");
@@ -178,6 +185,51 @@ print_residual(const char *filename, const tiegcm3d_data *data, const int time_i
   fclose(fp);
 
   return s;
+}
+
+/* copy poloidal/toroidal coefficients from src to dest, truncating if needed */
+int
+copy_coeffs(magfield_workspace * dest, const magfield_workspace * src)
+{
+  const size_t dest_lmax = dest->lmax;
+  const size_t dest_mmax = dest->mmax;
+  size_t i, l;
+
+  assert(dest_lmax <= src->lmax);
+  assert(dest_mmax <= src->mmax);
+  assert(dest->nr == src->nr);
+
+  for (l = dest->lmin; l <= dest_lmax; ++l)
+    {
+      int M = (int) GSL_MIN(l, dest_mmax);
+      int m;
+
+      for (m = 0; m <= M; ++m)
+        {
+          size_t dest_lmidx = magfield_lmidx(l, m, dest_mmax);
+          size_t src_lmidx = magfield_lmidx(l, m, src->mmax);
+          gsl_complex * dest_pabove = gsl_vector_complex_ptr(dest->pabove, dest_lmidx);
+          gsl_complex * dest_pbelow = gsl_vector_complex_ptr(dest->pbelow, dest_lmidx);
+
+          *dest_pabove = gsl_vector_complex_get(src->pabove, src_lmidx);
+          *dest_pbelow = gsl_vector_complex_get(src->pbelow, src_lmidx);
+
+          for (i = 0; i < src->nr; ++i)
+            {
+              size_t dest_idx = MAG_COEFIDX(i, dest_lmidx, dest);
+              size_t src_idx = MAG_COEFIDX(i, src_lmidx, src);
+              gsl_complex * dest_plmr = gsl_vector_complex_ptr(dest->pcoeff, dest_idx);
+              gsl_complex * dest_qlmr = gsl_vector_complex_ptr(dest->qcoeff, dest_idx);
+              gsl_complex * dest_qtlmr = gsl_vector_complex_ptr(dest->qtcoeff, dest_idx);
+
+              *dest_plmr = gsl_vector_complex_get(src->pcoeff, src_idx);
+              *dest_qlmr = gsl_vector_complex_get(src->qcoeff, src_idx);
+              *dest_qtlmr = gsl_vector_complex_get(src->qtcoeff, src_idx);
+            }
+        }
+    }
+
+  return 0;
 }
 
 /*
@@ -193,17 +245,20 @@ Inputs: prefix        - output file prefix
         residual_file - (optional) write file of residuals between TIEGCM/magfield for first timestep
         w             - magfield workspace
         eval_p        - magfield eval workspace
+        w_trunc       - magfield workspace with truncated SH degree/order
+        eval_trunc_p  - magfield eval workspace for truncated SH degree/order
 
 Return: success/error
 */
 
 int
 main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_data * data, const char * residual_file,
-          magfield_workspace * w, magfield_eval_workspace * eval_p)
+          magfield_workspace * w, magfield_eval_workspace * eval_p, magfield_workspace * w_trunc,
+          magfield_eval_workspace * eval_trunc_p)
 {
   int s = 0;
   const size_t ttot = *tidx + data->nt;
-  const double residual_alt = 310.0;
+  const double residual_alt = 110.0;
   int residual_ir = (int) bsearch_double(data->r, R_EARTH_M + residual_alt * 1.0e3, 0, data->nr - 1);
   char buf[2048];
   size_t i;
@@ -226,14 +281,17 @@ main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_da
       /* compute SH decomposition */
       magfield_decomp(w);
 
+      /* copy coefficients into w_trunc, truncating if needed */
+      copy_coeffs(w_trunc, w);
+
 #if TAPER_COEFFS
-      taper_magfield(30, w);
+      taper_magfield(w_trunc->lmax - 30, w_trunc);
 #endif
 
       /* write output file */
-      sprintf(buf, "%s_%03zu.dat", prefix, *tidx + 1);
+      sprintf(buf, "%s_%04zu.dat", prefix, *tidx + 1);
       fprintf(stderr, "main_proc: writing %s...", buf);
-      magfield_write_SH(buf, w);
+      magfield_write_SH(buf, w_trunc);
       fprintf(stderr, "done\n");
 
       tsteps[*tidx] = data->t[i];
@@ -242,9 +300,10 @@ main_proc(const char * prefix, size_t * tidx, time_t * tsteps, const tiegcm3d_da
       if (i == 0 && residual_file != NULL)
         {
           magfield_eval_init(w->qtcoeff, w->qcoeff, w->pcoeff, eval_p);
+          magfield_eval_init(w_trunc->qtcoeff, w_trunc->qcoeff, w_trunc->pcoeff, eval_trunc_p);
 
           fprintf(stderr, "main_proc: writing residual for time index %zu to %s...", i, residual_file);
-          print_residual(residual_file, data, i, residual_ir, w, eval_p);
+          print_residual(residual_file, data, i, residual_ir, w, eval_p, eval_trunc_p);
           fprintf(stderr, "done\n");
         }
     }
@@ -256,13 +315,16 @@ int
 main(int argc, char *argv[])
 {
   const size_t lmin = 1;
-  int lmax = -1, mmax = -1;
   const double R = R_EARTH_M;
+  size_t eval_lmax = 90;
+  size_t eval_mmax = 30;
   char *file_prefix = PCA3D_STAGE1B_SH_PREFIX;
   char *residual_file = NULL;
   struct timeval tv0, tv1;
   magfield_workspace *w = NULL;
+  magfield_workspace *w_trunc = NULL;
   magfield_eval_workspace * magfield_eval_p = NULL;
+  magfield_eval_workspace * magfield_eval_trunc_p = NULL;
   size_t tidx = 0;
   time_t * tsteps = malloc(MAX_T * sizeof(time_t));
 
@@ -285,11 +347,11 @@ main(int argc, char *argv[])
       switch (c)
         {
           case 'l':
-            lmax = atoi(optarg);
+            eval_lmax = (size_t) atoi(optarg);
             break;
 
           case 'm':
-            mmax = atoi(optarg);
+            eval_mmax = (size_t) atoi(optarg);
             break;
 
           case 'r':
@@ -297,15 +359,14 @@ main(int argc, char *argv[])
             break;
 
           default:
-            fprintf(stderr, "Usage: %s [-l lmax] [-m mmax] [-r residual_file] file1.nc file2.nc ...\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-l eval_lmax] [-m eval_mmax] [-r residual_file] file1.nc file2.nc ...\n", argv[0]);
             break;
         }
     }
 
   if (optind >= argc)
     {
-      fprintf(stderr, "Usage: %s [-r residual_file] file1.nc file2.nc ...\n",
-              argv[0]);
+      fprintf(stderr, "Usage: %s [-l eval_lmax] [-m eval_mmax] [-r residual_file] file1.nc file2.nc ...\n", argv[0]);
       exit(1);
     }
 
@@ -329,23 +390,22 @@ main(int argc, char *argv[])
 
       if (w == NULL)
         {
+          const size_t full_lmax = data->nlat - 1;
+          const size_t full_mmax = data->nlon / 2 - 1;
           const size_t nr = data->nr;
           const size_t ntheta = data->nlat;
           const size_t nphi = data->nlon;
           magfield_params params;
           size_t i;
 
-          if (lmax < 0)
-            lmax = data->nlat - 1;
-          if (mmax < 0)
-            mmax = data->nlon / 2 - 1;
-
-          lmax = GSL_MIN(lmax, data->nlat - 1);
-          mmax = GSL_MIN(mmax, data->nlon / 2 - 1);
+          if (eval_lmax == 0)
+            eval_lmax = full_lmax;
+          if (eval_mmax == 0)
+            eval_mmax = full_mmax;
 
           params.lmin = lmin;
-          params.lmax = (size_t) lmax;
-          params.mmax = (size_t) mmax;
+          params.lmax = full_lmax;
+          params.mmax = full_mmax;
           params.nr = nr;
           params.ntheta = ntheta;
           params.nphi = nphi;
@@ -360,15 +420,26 @@ main(int argc, char *argv[])
           magfield_eval_p = magfield_eval_alloc(&params);
           fprintf(stderr, "done\n");
 
-          fprintf(stderr, "main: lmax       = %zu\n", params.lmax);
-          fprintf(stderr, "main: mmax       = %zu\n", params.mmax);
+          params.lmax = eval_lmax;
+          params.mmax = eval_mmax;
+          fprintf(stderr, "main: allocating truncated magfield workspace...");
+          w_trunc = magfield_alloc(&params);
+          magfield_eval_trunc_p = magfield_eval_alloc(&params);
+          fprintf(stderr, "done\n");
+
+          fprintf(stderr, "main: full lmax   = %zu\n", full_lmax);
+          fprintf(stderr, "main: full mmax   = %zu\n", full_mmax);
+          fprintf(stderr, "main: full nlm    = %zu\n", w->nlm);
+          fprintf(stderr, "main: eval lmax   = %zu\n", eval_lmax);
+          fprintf(stderr, "main: eval mmax   = %zu\n", eval_mmax);
+          fprintf(stderr, "main: eval nlm    = %zu\n", w_trunc->nlm);
         }
 
       fprintf(stderr, "main: nr         = %zu\n", data->nr);
       fprintf(stderr, "main: nlat       = %zu\n", data->nlat);
       fprintf(stderr, "main: nlon       = %zu\n", data->nlon);
 
-      main_proc(file_prefix, &tidx, tsteps, data, residual_file, w, magfield_eval_p);
+      main_proc(file_prefix, &tidx, tsteps, data, residual_file, w, magfield_eval_p, w_trunc, magfield_eval_trunc_p);
 
       tiegcm3d_free(data);
 
@@ -381,7 +452,7 @@ main(int argc, char *argv[])
 
     d.nt = tidx;
     d.t = tsteps;
-    d.w = w;
+    d.w = w_trunc;
 
     fprintf(stderr, "main: writing meta-data file %s...", PCA3D_STAGE1B_DATA);
     pca3d_write_data(PCA3D_STAGE1B_DATA, &d);
@@ -392,6 +463,9 @@ main(int argc, char *argv[])
   
   if (w)
     magfield_free(w);
+
+  if (w_trunc)
+    magfield_free(w_trunc);
 
   free(tsteps);
 

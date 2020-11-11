@@ -16,6 +16,7 @@
 
 #include "mag.h"
 #include "pde.h"
+#include "magfit.h"
 
 #include "pde_common.c"
 
@@ -41,6 +42,7 @@ mag_log_profile(const int header, const size_t ntrack,
   double lt = get_localtime(t, track->phi_eq);
   double doy = get_season(t);
   double F2_peak;
+  magfit_postproc_params postproc;
 
   if (header)
     {
@@ -55,12 +57,15 @@ mag_log_profile(const int header, const size_t ntrack,
       log_proc(w->log_profile, "# Field %zu: peak height-integrated current density (mA/m)\n", i++);
       log_proc(w->log_profile, "# Field %zu: kp\n", i++);
       log_proc(w->log_profile, "# Field %zu: satellite direction (+1 north, -1 south)\n", i++);
+      log_proc(w->log_profile, "# Field %zu: Sq fit R^2\n", i++);
+      log_proc(w->log_profile, "# Field %zu: current fit R^2\n", i++);
       return s;
     }
 
+  magfit_postproc(&postproc, w->magfit_eej_workspace_p);
   F2_peak = interp_xy(track->qdlat, track->F2, track->n, 0.0);
 
-  log_proc(w->log_profile, "%5zu %ld %9.4f %6.3f %7.3f %6.2f %8.3f %3.1f %2d\n",
+  log_proc(w->log_profile, "%5zu %ld %9.4f %6.3f %7.3f %6.2f %8.3f %3.1f %2d %.4f %.4f\n",
            ntrack,
            t,
            track->phi_eq * 180.0 / M_PI,
@@ -69,7 +74,9 @@ mag_log_profile(const int header, const size_t ntrack,
            F2_peak,
            w->EEJ[w->ncurr / 2] * 1000.0,
            kp,
-           dir);
+           dir,
+           w->sqfilt_scalar_workspace_p->Rsq,
+           postproc.Rsq);
 
   return s;
 } /* mag_log_profile() */
@@ -112,6 +119,7 @@ mag_log_F2(const int header, const mag_workspace *w)
       log_proc(w->log_F2, "# Field %zu: external Sq model (nT)\n", i++);
       log_proc(w->log_F2, "# Field %zu: F^(2) = F^(1) - Sq_model (nT)\n", i++);
       log_proc(w->log_F2, "# Field %zu: F^(2) fit from EEJ model (nT)\n", i++);
+      log_proc(w->log_F2, "# Field %zu: current model fit to F^(2) (A/km)\n", i++);
       return s;
     }
 
@@ -120,7 +128,7 @@ mag_log_F2(const int header, const mag_workspace *w)
       time_t unix_time = satdata_epoch2timet(track->t[i]);
       double lt = get_localtime(unix_time, track->phi[i]);
 
-      log_proc(w->log_F2, "%ld %6.3f %6.2f %9.4f %9.4f %8.4f %8.4f %8.2f %8.2f %6.2f %7.4f %5.2f %5.2f %7.4f %5.2f\n",
+      log_proc(w->log_F2, "%ld %6.3f %6.2f %9.4f %9.4f %8.4f %8.4f %8.2f %8.2f %6.2f %7.4f %5.2f %5.2f %7.4f %5.2f %8.4e\n",
                unix_time,
                lt,
                get_season(unix_time),
@@ -135,7 +143,8 @@ mag_log_F2(const int header, const mag_workspace *w)
                track->Sq_int[i],
                track->Sq_ext[i],
                track->F2[i],
-               track->F2_fit[i]);
+               track->F2_fit[i],
+               track->J_fit[i]);
     }
 
   log_proc(w->log_F2, "\n\n");
@@ -426,6 +435,7 @@ mag_log_EEJ_Lcurve(const int header, const mag_workspace *w)
   int s = 0;
   const size_t downsample = 1;
   size_t i;
+  magfit_postproc_params postproc;
   mag_eej_workspace *eej_p = w->eej_workspace_p;
 
   if (header)
@@ -438,12 +448,14 @@ mag_log_EEJ_Lcurve(const int header, const mag_workspace *w)
       return s;
     }
 
+  magfit_postproc(&postproc, w->magfit_eej_workspace_p);
+
   for (i = 0; i < eej_p->nreg; i += downsample)
     {
       log_proc(w->log_EEJ_Lcurve, "%.6e %.12e %.12e\n",
-               gsl_vector_get(eej_p->reg_param, i),
-               gsl_vector_get(eej_p->rho, i),
-               gsl_vector_get(eej_p->eta, i));
+               gsl_vector_get(postproc.reg_param, i),
+               gsl_vector_get(postproc.rho, i),
+               gsl_vector_get(postproc.eta, i));
     }
 
   log_proc(w->log_EEJ_Lcurve, "\n\n");
@@ -464,7 +476,7 @@ mag_log_EEJ_Lcorner(const int header, const mag_workspace *w)
 {
   int s = 0;
   size_t i;
-  mag_eej_workspace *eej_p = w->eej_workspace_p;
+  magfit_postproc_params postproc;
 
   if (header)
     {
@@ -476,10 +488,12 @@ mag_log_EEJ_Lcorner(const int header, const mag_workspace *w)
       return s;
     }
 
+  magfit_postproc(&postproc, w->magfit_eej_workspace_p);
+
   log_proc(w->log_EEJ_Lcorner, "%.6e %.12e %.12e\n",
-           gsl_vector_get(eej_p->reg_param, eej_p->reg_idx),
-           gsl_vector_get(eej_p->rho, eej_p->reg_idx),
-           gsl_vector_get(eej_p->eta, eej_p->reg_idx));
+           gsl_vector_get(postproc.reg_param, postproc.reg_idx),
+           gsl_vector_get(postproc.rho, postproc.reg_idx),
+           gsl_vector_get(postproc.eta, postproc.reg_idx));
 
   log_proc(w->log_EEJ_Lcorner, "\n\n");
 

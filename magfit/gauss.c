@@ -71,7 +71,7 @@ static void gauss_free(void * vstate);
 static int gauss_reset(void * vstate);
 static size_t gauss_ncoeff(void * vstate);
 static int gauss_add_datum(const double t, const double r, const double theta, const double phi,
-                           const double qdlat, const double B[3], void * vstate);
+                           const double qdlat, const double B[4], void * vstate);
 static int gauss_fit(double * rnorm, double * snorm, void * vstate);
 static int gauss_eval_B(const double t, const double r, const double theta, const double phi,
                         double B[3], void * vstate);
@@ -218,7 +218,7 @@ Notes:
 
 static int
 gauss_add_datum(const double t, const double r, const double theta, const double phi,
-                   const double qdlat, const double B[3], void * vstate)
+                   const double qdlat, const double B[4], void * vstate)
 {
   gauss_state_t *state = (gauss_state_t *) vstate;
   size_t rowidx = state->n;
@@ -495,6 +495,7 @@ static const magfit_type gauss_type =
   gauss_eval_B,
   gauss_eval_J,
   gauss_eval_chi,
+  NULL,
   gauss_free
 };
 

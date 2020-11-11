@@ -19,6 +19,7 @@
 
 #include <mainlib/ml_coord.h>
 #include <mainlib/ml_common.h>
+#include <mainlib/ml_bsearch.h>
 #include <mainlib/ml_interp.h>
 
 #include "mag.h"

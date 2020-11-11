@@ -37,6 +37,7 @@ static cfg_struct cfg_dirs[] = {
   { "min_local_time", &(cfg_params.lt_min), CFG_DOUBLE|CFG_OPTIONAL },
   { "max_local_time", &(cfg_params.lt_max), CFG_DOUBLE|CFG_OPTIONAL },
   { "max_latitude_gap", &(cfg_params.max_lat_gap), CFG_DOUBLE|CFG_OPTIONAL },
+  { "max_time_gap", &(cfg_params.max_time_gap), CFG_DOUBLE|CFG_OPTIONAL },
   { "dst_num_days", &(cfg_params.dst_num_days), CFG_INT|CFG_OPTIONAL },
   { "current_shell_altitude", &(cfg_params.curr_altitude), CFG_DOUBLE|CFG_OPTIONAL },
   { "ncurr", &(cfg_params.ncurr), CFG_INT|CFG_OPTIONAL },

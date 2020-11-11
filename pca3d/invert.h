@@ -133,6 +133,7 @@ typedef struct
   /* regularization parameters */
   gsl_spmatrix *L;         /* regularization matrix Cholesky factor, p-by-p */
   gsl_spmatrix *Lambda;    /* regularization matrix (L * L'), p-by-p */
+  gsl_vector *Ldiag;       /* regularization matrix of singular values */
   int old_fdf;             /* use multifit instead of multilarge */
 
   /*
@@ -201,5 +202,9 @@ int invert_eval(const double t, const double r, const double theta, const double
 int invert_write_ascii(const char *filename, const gsl_vector * c, invert_workspace *w);
 size_t invert_coeff_idx(const size_t f, const size_t tmode, const size_t smode, const invert_workspace * w);
 int invert_debug(const char *format, ...);
+
+/* invert_regularize.c */
+
+int invert_regularize(gsl_vector * L, invert_workspace * w);
 
 #endif /* INCLUDED_invert_h */

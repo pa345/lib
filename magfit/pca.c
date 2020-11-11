@@ -77,7 +77,7 @@ static void pcafit_free(void * vstate);
 static int pcafit_reset(void * vstate);
 static size_t pcafit_ncoeff(void * vstate);
 static int pcafit_add_datum(const double t, const double r, const double theta, const double phi,
-                            const double qdlat, const double B[3], void * vstate);
+                            const double qdlat, const double B[4], void * vstate);
 static int pcafit_fit(double * rnorm, double * snorm, void * vstate);
 static int pcafit_eval_B(const double t, const double r, const double theta, const double phi,
                          double B[3], void * vstate);
@@ -241,7 +241,7 @@ Notes:
 
 static int
 pcafit_add_datum(const double t, const double r, const double theta, const double phi,
-                 const double qdlat, const double B[3], void * vstate)
+                 const double qdlat, const double B[4], void * vstate)
 {
   pca_state_t *state = (pca_state_t *) vstate;
   size_t rowidx = state->n;
@@ -591,6 +591,7 @@ static const magfit_type pca_type =
   pcafit_eval_B,
   pcafit_eval_J,
   pcafit_eval_chi,
+  NULL,
   pcafit_free
 };
 

@@ -3,8 +3,9 @@
 # Make index files for Swarm, using the latest baseline
 # version available for each day
 
-# Use track-filtered data
-datadir="/data/SWARM/MAG/Stage1"
+datadir="$DATAHOME/SWARM/MAG/Stage1"
+
+current_year=$(date +"%Y")
 
 function dosat
 {
@@ -16,7 +17,7 @@ function dosat
   echo "sat = ${sat_name}"
 
   # loop over years
-  for year in $(seq 2013 2019); do
+  for year in $(seq 2013 ${current_year}); do
     echo "year = ${year}"
 
     # loop over months
@@ -26,8 +27,9 @@ function dosat
       for day in $(seq -w 01 31); do
 
         # check for duplicate files for the same date, and choose
-        # the latest one (ie with the highest version number)
-        vermax="0000"
+        # the latest one (ie with the highest version number);
+        # also require a minimum baseline of 03
+        vermax="0300"
         filemax=""
         for file in $(find ${datadir} -name "SW*MAG${sat_name}_LR_1B_${year}${month}${day}*.cdf"); do
           version=$(basename ${file} | awk -F'_' '{print $8}')

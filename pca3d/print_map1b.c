@@ -227,6 +227,8 @@ main(int argc, char *argv[])
   struct timeval tv0, tv1;
   magfield_eval_workspace * magfield_eval_p = NULL;
   size_t tidx = 0;
+  size_t eval_lmax = 0;
+  size_t eval_mmax = 0;
   tiegcm3d_data *data = NULL;
   pca3d_data pdata;
 
@@ -240,7 +242,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "r:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "l:m:r:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -254,16 +256,24 @@ main(int argc, char *argv[])
             tidx = (size_t) atoi(optarg);
             break;
 
+          case 'l':
+            eval_lmax = (size_t) atoi(optarg);
+            break;
+
+          case 'm':
+            eval_mmax = (size_t) atoi(optarg);
+            break;
+
           default:
-            fprintf(stderr, "Usage: %s [-r residual_file] [-t tidx] file1.nc file2.nc ...\n", argv[0]);
+            fprintf(stderr, "Usage: %s [-l eval_lmax] [-m eval_mmax] [-r residual_file] [-t tidx] file1.nc file2.nc ...\n", argv[0]);
+            exit(1);
             break;
         }
     }
 
   if (optind >= argc)
     {
-      fprintf(stderr, "Usage: %s [-r residual_file] [-t tidx] file1.nc file2.nc ...\n",
-              argv[0]);
+      fprintf(stderr, "Usage: %s [-l eval_lmax] [-m eval_mmax] [-r residual_file] [-t tidx] file1.nc file2.nc ...\n", argv[0]);
       exit(1);
     }
 
@@ -293,6 +303,12 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: allocating magfield eval workspace...");
   magfield_eval_p = magfield_eval_alloc(&(pdata.w->params));
   fprintf(stderr, "done\n");
+
+  if (eval_lmax > 0 && eval_mmax > 0)
+    magfield_eval_set(eval_lmax, eval_mmax, magfield_eval_p);
+
+  fprintf(stderr, "main: eval_lmax = %zu\n", magfield_eval_p->eval_lmax);
+  fprintf(stderr, "main: eval_mmax = %zu\n", magfield_eval_p->eval_mmax);
 
   main_proc(tidx, &pdata, data, magfield_eval_p);
 

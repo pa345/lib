@@ -469,6 +469,8 @@ mfield_alloc(const mfield_parameters *params)
   w->lambda_1 = params->lambda_1;
   w->lambda_2 = params->lambda_2;
   w->lambda_3 = params->lambda_3;
+  w->lambda_e = params->lambda_e;
+  w->lambda_k = params->lambda_k;
   w->lambda_a = params->lambda_a;
   w->lambda_s = params->lambda_s;
   w->lambda_o = params->lambda_o;
@@ -768,6 +770,8 @@ mfield_init_params(mfield_parameters * params)
   params->lambda_1 = 0.0;
   params->lambda_2 = 0.0;
   params->lambda_3 = 0.0;
+  params->lambda_e = 0.0;
+  params->lambda_k = 0.0;
   params->lambda_a = 0.0;
   params->lambda_s = 0.0;
   params->lambda_o = 0.0;
@@ -1403,6 +1407,8 @@ mfield_write_ascii(const char *filename, const double epoch,
   fprintf(fp, "%% lambda_1: %.4f\n", params->lambda_1);
   fprintf(fp, "%% lambda_2: %.4f\n", params->lambda_2);
   fprintf(fp, "%% lambda_3: %.4f\n", params->lambda_3);
+  fprintf(fp, "%% lambda_e: %.4f\n", params->lambda_e);
+  fprintf(fp, "%% lambda_k: %.4f\n", params->lambda_k);
   fprintf(fp, "%% lambda_a: %.4f\n", params->lambda_a);
   fprintf(fp, "%% lambda_s: %.4f\n", params->lambda_s);
   fprintf(fp, "%% lambda_o: %.4f\n", params->lambda_o);
@@ -1522,6 +1528,8 @@ mfield_write_shc(const char *filename, const gsl_vector * c, mfield_workspace *w
     fprintf(fp, "%% lambda_1: %.2f\n", params->lambda_1);
     fprintf(fp, "%% lambda_2: %.2f\n", params->lambda_2);
     fprintf(fp, "%% lambda_3: %.2f\n", params->lambda_3);
+    fprintf(fp, "%% lambda_e: %.2f\n", params->lambda_e);
+    fprintf(fp, "%% lambda_k: %.2f\n", params->lambda_k);
     fprintf(fp, "%% lambda_s: %.2f\n", params->lambda_s);
     fprintf(fp, "%% lambda_o: %.2f\n", params->lambda_o);
     fprintf(fp, "%% lambda_u: %.2f\n", params->lambda_u);

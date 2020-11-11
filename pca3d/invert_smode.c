@@ -509,7 +509,7 @@ invert_smode_print(const char * dir_prefix, invert_smode_workspace * w)
 {
   int s = 0;
   int thread_id = omp_get_thread_num();
-  const double r = R_EARTH_KM + 150.0;
+  const double r = R_EARTH_KM + 350.0;
   char buf[2048];
   size_t f;
 

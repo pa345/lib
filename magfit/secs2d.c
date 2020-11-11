@@ -71,7 +71,7 @@ static void secs2d_free(void * vstate);
 static int secs2d_reset(void * vstate);
 static size_t secs2d_ncoeff(void * vstate);
 static int secs2d_add_datum(const double t, const double r, const double theta, const double phi,
-                            const double qdlat, const double B[3], void * vstate);
+                            const double qdlat, const double B[4], void * vstate);
 static int secs2d_fit(double * rnorm, double * snorm, void * vstate);
 static int secs2d_eval_B(const double t, const double r, const double theta, const double phi,
                          double B[3], void * vstate);
@@ -273,7 +273,7 @@ Notes:
 
 static int
 secs2d_add_datum(const double t, const double r, const double theta, const double phi,
-                 const double qdlat, const double B[3], void * vstate)
+                 const double qdlat, const double B[4], void * vstate)
 {
   secs2d_state_t *state = (secs2d_state_t *) vstate;
   size_t rowidx = state->n;
@@ -953,6 +953,7 @@ static const magfit_type secs2d_type =
   secs2d_fit,
   secs2d_eval_B,
   secs2d_eval_J,
+  NULL,
   NULL,
   secs2d_free
 };

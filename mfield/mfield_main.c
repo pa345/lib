@@ -402,6 +402,10 @@ parse_config_file(const char *filename, mfield_parameters *mfield_params,
     mfield_params->lambda_2 = fval;
   if (config_lookup_float(&cfg, "lambda_3", &fval))
     mfield_params->lambda_3 = fval;
+  if (config_lookup_float(&cfg, "lambda_e", &fval))
+    mfield_params->lambda_e = fval;
+  if (config_lookup_float(&cfg, "lambda_k", &fval))
+    mfield_params->lambda_k = fval;
   if (config_lookup_float(&cfg, "lambda_a", &fval))
     mfield_params->lambda_a = fval;
   if (config_lookup_float(&cfg, "lambda_s", &fval))
@@ -514,6 +518,8 @@ print_help(char *argv[])
   fprintf(stderr, "\t --lambda_1 | -K lambda_1         - 1st time derivative of main field damping parameter\n");
   fprintf(stderr, "\t --lambda_2 | -L lambda_2         - 2nd time derivative of main field damping parameter\n");
   fprintf(stderr, "\t --lambda_3 | -M lambda_3         - 3rd time derivative of main field damping parameter\n");
+  fprintf(stderr, "\t --lambda_e | -M lambda_e         - minimum energy damping parameter\n");
+  fprintf(stderr, "\t --lambda_k | -M lambda_k         - minimum Br curvature damping parameter\n");
   fprintf(stderr, "\t --lambda_s | -N lambda_s         - scale factor damping parameter\n");
   fprintf(stderr, "\t --lambda_o | -O lambda_o         - offset factor damping parameter\n");
   fprintf(stderr, "\t --lambda_u | -P lambda_u         - non-orthogonality factor damping parameter\n");
@@ -552,6 +558,8 @@ main(int argc, char *argv[])
   double lambda_1 = -1.0;     /* 1st time derivative of MF damping parameter */
   double lambda_2 = -1.0;     /* 2nd time derivative of MF damping parameter */
   double lambda_3 = -1.0;     /* 3rd time derivative of MF damping parameter */
+  double lambda_e = -1.0;     /* minimum energy damping parameter */
+  double lambda_k = -1.0;     /* minimum Br curvature damping parameter */
   double lambda_a = -1.0;     /* alignment damping parameter */
   double lambda_s = -1.0;     /* scale factor damping parameter */
   double lambda_o = -1.0;     /* offset factor damping parameter */
@@ -584,6 +592,8 @@ main(int argc, char *argv[])
           { "lambda_1", required_argument, NULL, 'K' },
           { "lambda_2", required_argument, NULL, 'L' },
           { "lambda_3", required_argument, NULL, 'M' },
+          { "lambda_e", required_argument, NULL, 'R' },
+          { "lambda_k", required_argument, NULL, 'S' },
           { "lambda_a", required_argument, NULL, 'Q' },
           { "lambda_s", required_argument, NULL, 'N' },
           { "lambda_o", required_argument, NULL, 'O' },
@@ -593,7 +603,7 @@ main(int argc, char *argv[])
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:Q:n:o:p:rx:y:", long_options, &option_index);
+      c = getopt_long(argc, argv, "b:c:C:de:l:mJ:K:L:M:N:O:P:Q:R:S:n:o:p:rx:y:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -629,6 +639,14 @@ main(int argc, char *argv[])
 
           case 'P':
             lambda_u = atof(optarg);
+            break;
+
+          case 'R':
+            lambda_e = atof(optarg);
+            break;
+
+          case 'S':
+            lambda_k = atof(optarg);
             break;
 
           case 'b':
@@ -719,6 +737,10 @@ main(int argc, char *argv[])
     mfield_params.lambda_2 = lambda_2;
   if (lambda_3 >= 0.0)
     mfield_params.lambda_3 = lambda_3;
+  if (lambda_e >= 0.0)
+    mfield_params.lambda_e = lambda_e;
+  if (lambda_k >= 0.0)
+    mfield_params.lambda_k = lambda_k;
   if (lambda_a >= 0.0)
     mfield_params.lambda_a = lambda_a;
   if (lambda_s >= 0.0)
@@ -760,6 +782,8 @@ main(int argc, char *argv[])
       fprintf(stderr, "main: MF damping (1st time derivative) = %g\n", mfield_params.lambda_1);
       fprintf(stderr, "main: MF damping (2nd time derivative) = %g\n", mfield_params.lambda_2);
       fprintf(stderr, "main: MF damping (3rd time derivative) = %g\n", mfield_params.lambda_3);
+      fprintf(stderr, "main: MF damping (minimum energy)      = %g\n", mfield_params.lambda_e);
+      fprintf(stderr, "main: MF damping (minimum curvature)   = %g\n", mfield_params.lambda_k);
     }
 
   if (mfield_params.fit_sv)

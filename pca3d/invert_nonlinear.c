@@ -282,7 +282,11 @@ invert_init_nonlinear(invert_workspace *w)
 
 #elif FDF_SOLVER == 1 /* GSL multilarge */
 
+#if 1
   w->multilarge_linear_p = gsl_multilarge_linear_alloc(gsl_multilarge_linear_tsqr, p);
+#else
+  w->multilarge_linear_p = gsl_multilarge_linear_alloc(gsl_multilarge_linear_normal, p);
+#endif
 
 #endif
 

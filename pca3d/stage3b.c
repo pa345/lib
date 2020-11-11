@@ -173,7 +173,7 @@ proc_svd(const size_t iband, const size_t idx_start, const size_t idx_end,
 
       /* build Q[ifreq] and store in X */
       fprintf(stderr, "proc_svd: building matrix X (%zu-by-%zu) for frequency %.3f [cpd] (index = %zu)...",
-              N, T, freq, ifreq);
+              3 * N, T, freq, ifreq);
       gettimeofday(&tv0, NULL);
       build_X(ifreq, data, &Xv.matrix);
       gettimeofday(&tv1, NULL);
@@ -184,7 +184,8 @@ proc_svd(const size_t iband, const size_t idx_start, const size_t idx_end,
 
   *nominalFreq /= (double) nfreq;
 
-  fprintf(stderr, "proc_svd: performing SVD of X for nominal frequency %g [cpd]...", *nominalFreq);
+  fprintf(stderr, "proc_svd: performing SVD of X (%zu-by-%zu) for nominal frequency %g [cpd]...",
+          X->size1, X->size2, *nominalFreq);
   gettimeofday(&tv0, NULL);
   status = lapack_complex_svd_thin(X, S, U, V);
   gettimeofday(&tv1, NULL);

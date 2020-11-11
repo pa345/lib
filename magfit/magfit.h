@@ -28,6 +28,11 @@ typedef struct
   size_t nmax_ext;       /* spherical harmonic degree for external field */
   size_t mmax_ext;       /* spherical harmonic order for external field */
 
+  /* line current parameters */
+  size_t lc_ncurr;       /* number of line currents */
+  double lc_qdmax;       /* maximum QD latitude of line currents */
+  int lc_year;           /* year of data (for apex transforms) */
+
   /* sheet */
   double b;              /* shell radius (km) */
 
@@ -53,7 +58,17 @@ typedef struct
   int rc_fit_Y;          /* fit Y component for RC model? */
 
   double qdmax;          /* latitude range for fitting data: [-qdmax,qdmax] */
+  size_t n_lcurve;       /* number of points on L-curve */
 } magfit_parameters;
+
+typedef struct
+{
+  gsl_vector * reg_param; /* regularization parameter vector, length n_lcurve */
+  gsl_vector * rho;       /* vector of residual norms, length n_lcurve */
+  gsl_vector * eta;       /* vector of solution norms, length n_lcurve */
+  size_t reg_idx;         /* index of chosen regularization parameter */
+  double Rsq;             /* coefficient of determination from fit */
+} magfit_postproc_params;
 
 typedef struct
 {
@@ -62,11 +77,12 @@ typedef struct
   int (*reset) (void * state);
   size_t (*ncoeff) (void * state);
   int (*add_datum) (const double t, const double r, const double theta, const double phi,
-                    const double qdlat, const double B[3], void * state);
+                    const double qdlat, const double B[4], void * state);
   int (*fit) (double * rnorm, double * snorm, void * state);
-  int (*eval_B) (const double t, const double r, const double theta, const double phi, double B[3], void * state);
+  int (*eval_B) (const double t, const double r, const double theta, const double phi, double B[4], void * state);
   int (*eval_J) (const double r, const double theta, const double phi, double J[3], void * state);
   double (*eval_chi) (const double theta, const double phi, void * state);
+  int (*postproc) (magfit_postproc_params * postproc, void * state);
   void (*free) (void * state);
 } magfit_type;
 
@@ -79,6 +95,7 @@ typedef struct
 
 const magfit_type * magfit_secs1d;
 const magfit_type * magfit_secs2d;
+const magfit_type * magfit_lcs;
 const magfit_type * magfit_pca;
 const magfit_type * magfit_gaussint;
 const magfit_type * magfit_gauss;
@@ -94,12 +111,13 @@ void magfit_free(magfit_workspace *w);
 magfit_parameters magfit_default_parameters(void);
 int magfit_reset(magfit_workspace *w);
 int magfit_add_datum(const double t, const double r, const double theta, const double phi,
-                     const double qdlat, double B[3], magfit_workspace *w);
+                     const double qdlat, double B[4], magfit_workspace *w);
 size_t magfit_add_track(track_data *tptr, const satdata_mag *data, magfit_workspace *w);
 int magfit_fit(double * rnorm, double * snorm, magfit_workspace *w);
 int magfit_apply_track(track_data *tptr, satdata_mag *data, magfit_workspace *w);
-int magfit_eval_B(const double t, const double r, const double theta, const double phi, double B[3], magfit_workspace *w);
+int magfit_eval_B(const double t, const double r, const double theta, const double phi, double B[4], magfit_workspace *w);
 int magfit_eval_J(const double r, const double theta, const double phi, double J[3], magfit_workspace *w);
+int magfit_postproc(magfit_postproc_params * postproc, magfit_workspace *w);
 int magfit_print_track(const int header, FILE *fp, const track_data *tptr, const satdata_mag *data,
                        magfit_workspace *w);
 int magfit_print_rms(const int header, FILE *fp, const double lon0, const track_data *tptr,

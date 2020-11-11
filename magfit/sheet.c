@@ -65,7 +65,7 @@ static void sheet_free(void * vstate);
 static int sheet_reset(void * vstate);
 static size_t sheet_ncoeff(void * vstate);
 static int sheet_add_datum(const double t, const double r, const double theta, const double phi,
-                           const double qdlat, const double B[3], void * vstate);
+                           const double qdlat, const double B[4], void * vstate);
 static int sheet_fit(double * rnorm, double * snorm, void * vstate);
 static int sheet_eval_B(const double t, const double r, const double theta, const double phi,
                         double B[3], void * vstate);
@@ -193,7 +193,7 @@ Notes:
 
 static int
 sheet_add_datum(const double t, const double r, const double theta, const double phi,
-                   const double qdlat, const double B[3], void * vstate)
+                   const double qdlat, const double B[4], void * vstate)
 {
   sheet_state_t *state = (sheet_state_t *) vstate;
   size_t rowidx = state->n;
@@ -443,6 +443,7 @@ static const magfit_type sheet_type =
   sheet_eval_B,
   sheet_eval_J,
   sheet_eval_chi,
+  NULL,
   sheet_free
 };
 

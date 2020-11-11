@@ -26,7 +26,7 @@
 #include "pde.h"
 
 /* maximum data in one track */
-#define MAG_MAX_TRACK          4000
+#define MAG_MAX_TRACK          10000
 
 typedef struct
 {
@@ -53,6 +53,7 @@ typedef struct
   size_t ncurr;                   /* number of line currents */
   double qdlat_max;               /* maximum QD latitude for line currents (deg) */
   double dlat_max;                /* maximum latitude data gap allowed (deg) */
+  double dtime_max;               /* maximum time data gap allowed (minutes) */
   int profiles_only;              /* compute profiles only (no EEF) */
   int use_vector;                 /* use vector data instead of scalar */
   double r_earth;                 /* Earth radius (km) */
@@ -136,6 +137,7 @@ typedef struct
   double X2_fit[MAG_MAX_TRACK];   /* fit to X^(2) from current model (nT) */
   double Y2_fit[MAG_MAX_TRACK];   /* fit to Y^(2) from current model (nT) */
   double Z2_fit[MAG_MAX_TRACK];   /* fit to Z^(2) from current model (nT) */
+  double J_fit[MAG_MAX_TRACK];    /* current model fit to F^(2) data (A/km) */
   double phi_eq;                  /* longitude of equator crossing (rad) */
   double theta_eq;                /* geocentric colatitude of equator crossing (rad) */
   double t_eq;                    /* time of equator crossing (CDF_EPOCH) */
@@ -223,6 +225,7 @@ typedef struct
   gsl_vector *eta;   /* vector of solution norms */
   gsl_vector *reg_param; /* vector of regularization parameters */
   size_t reg_idx;    /* index of optimal regularization parameter */
+  double Rsq;        /* coefficient of determination of fit */
 
   gsl_multifit_linear_workspace *multifit_workspace_p;
 } mag_sqfilt_scalar_workspace;
@@ -281,6 +284,7 @@ typedef struct
   msynth_workspace *core_workspace_p;
   msynth_workspace *lith_workspace_p;
   magfit_workspace *magfit_workspace_p;
+  magfit_workspace *magfit_eej_workspace_p;
 } mag_workspace;
 
 /*
@@ -332,7 +336,8 @@ mag_eej_workspace *mag_eej_alloc(const int year, const size_t ncurr,
                                  const double altitude,
                                  const double qdlat_max);
 void mag_eej_free(mag_eej_workspace *w);
-int mag_eej_proc(mag_track *track, double *J, mag_eej_workspace *w);
+int mag_eej_proc_scalar(mag_track *track, gsl_vector *J, magfit_workspace *w);
+int mag_eej_proc_vector(mag_track *track, gsl_vector *J, magfit_workspace *w);
 int mag_eej_vector_proc(mag_track *track, double *J, mag_eej_workspace *w);
 
 #endif /* INCLUDED_mag_h */

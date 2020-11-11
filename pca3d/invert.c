@@ -197,6 +197,7 @@ invert_alloc(const invert_parameters *params)
 
   w->L = gsl_spmatrix_alloc(w->p, w->p);
   w->Lambda = gsl_spmatrix_alloc(w->p, w->p);
+  w->Ldiag = gsl_vector_alloc(w->p);
 
   {
     /*
@@ -250,6 +251,9 @@ invert_free(invert_workspace *w)
 
   if (w->Lambda)
     gsl_spmatrix_free(w->Lambda);
+
+  if (w->Ldiag)
+    gsl_vector_free(w->Ldiag);
 
   if (w->wts_spatial)
     gsl_vector_free(w->wts_spatial);
@@ -508,6 +512,10 @@ invert_init(invert_workspace *w)
   spatwt_print("spatwtSV.txt", w->spatwtSV_workspace_p);
 
   invert_init_nonlinear(w);
+
+  fprintf(stderr, "invert_init: initializing regularization matrix...");
+  invert_regularize(w->Ldiag, w);
+  fprintf(stderr, "done\n");
 
   return s;
 } /* invert_init() */

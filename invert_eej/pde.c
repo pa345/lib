@@ -2079,6 +2079,9 @@ pde_magfield(pde_workspace *w)
   const size_t nr = w->nr;
   const size_t ntheta = 2 * w->ntheta;
   const size_t nphi = 72;
+  const double rmin = w->rmin - 0.001;
+  const double rmax = w->rmax + 0.001;
+  const double dr = (rmax - rmin) / (nr - 1.0);
   magfield_workspace *magfield_p;
   magfield_params params;
   size_t i, j, k;
@@ -2089,10 +2092,11 @@ pde_magfield(pde_workspace *w)
   params.nr = nr;
   params.ntheta = ntheta;
   params.nphi = nphi;
-  params.rmin = w->rmin - 0.001;
-  params.rmax = w->rmax + 0.001;
   params.R = R_EARTH_KM * 1.0e3;
   params.grid_type = MAGFIELD_GAUSS;
+
+  for (i = 0; i < nr; ++i)
+    params.r[i] = rmin + i * dr;
 
   fprintf(stderr, "\t allocating magfield workspace...");
   magfield_p = magfield_alloc(&params);

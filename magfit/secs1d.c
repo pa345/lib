@@ -20,6 +20,7 @@
 #include <gsl/gsl_blas.h>
 
 #include <mainlib/ml_satdata.h>
+#include <mainlib/ml_bsearch.h>
 #include <mainlib/ml_indices.h>
 #include <mainlib/ml_common.h>
 #include <mainlib/ml_interp.h>
@@ -68,6 +69,11 @@ typedef struct
    */
   gsl_vector *c;    /* solution vector */
 
+  gsl_vector *reg_param; /* vector of regularization parameters, length n_lcurve */
+  gsl_vector *rho;       /* vector of residual norms, length n_lcurve */
+  gsl_vector *eta;       /* vector of solution norms, length n_lcurve */
+  size_t reg_idx;        /* index of chosen regularization parameter */
+
   gsl_multifit_linear_workspace *multifit_p;
 } secs1d_state_t;
 
@@ -76,14 +82,15 @@ static void secs1d_free(void * vstate);
 static int secs1d_reset(void * vstate);
 static size_t secs1d_ncoeff(void * vstate);
 static int secs1d_add_datum(const double t, const double r, const double theta, const double phi,
-                            const double qdlat, const double B[3], void * vstate);
+                            const double qdlat, const double B[4], void * vstate);
 static int secs1d_fit(double * rnorm, double * snorm, void * vstate);
 static int secs1d_dofit(double * rnorm, double * snorm, void * vstate);
 static int secs1d_eval_B(const double t, const double r, const double theta, const double phi,
-                         double B[3], void * vstate);
+                         double B[4], void * vstate);
 static int secs1d_eval_J(const double r, const double theta, const double phi,
                          double J[3], void * vstate);
 static double secs1d_eval_chi(const double theta, const double phi, void * vstate);
+static int secs1d_postproc(magfit_postproc_params * postproc, void * vstate);
 
 static int build_matrix_row_df(const double r, const double theta,
                                gsl_vector *X, gsl_vector *Z, secs1d_state_t *state);
@@ -206,6 +213,10 @@ secs1d_alloc(const void * params)
       gsl_sf_legendre_Pl_array(state->lmax, cos(state->theta0[i]), v.vector.data);
     }
 
+  state->reg_param = gsl_vector_alloc(mparams->n_lcurve);
+  state->rho = gsl_vector_alloc(mparams->n_lcurve);
+  state->eta = gsl_vector_alloc(mparams->n_lcurve);
+
   fprintf(stderr, "secs1d_alloc: npoles = %zu\n", state->npoles);
   fprintf(stderr, "secs1d_alloc: ncoeff = %zu\n", state->p);
 
@@ -262,6 +273,15 @@ secs1d_free(void * vstate)
   if (state->Pl1theta)
     free(state->Pl1theta);
 
+  if (state->reg_param)
+    gsl_vector_free(state->reg_param);
+
+  if (state->rho)
+    gsl_vector_free(state->rho);
+
+  if (state->eta)
+    gsl_vector_free(state->eta);
+
   if (state->multifit_p)
     gsl_multifit_linear_free(state->multifit_p);
 
@@ -304,7 +324,7 @@ Notes:
 
 static int
 secs1d_add_datum(const double t, const double r, const double theta, const double phi,
-                 const double qdlat, const double B[3], void * vstate)
+                 const double qdlat, const double B[4], void * vstate)
 {
   secs1d_state_t *state = (secs1d_state_t *) vstate;
   size_t rowidx = state->n;
@@ -427,11 +447,8 @@ static int
 secs1d_dofit(double * rnorm, double * snorm, void * vstate)
 {
   secs1d_state_t *state = (secs1d_state_t *) vstate;
-  const size_t npts = 200;
+  const size_t npts = state->reg_param->size;
   const double tol = 1.0e-6;
-  gsl_vector *reg_param = gsl_vector_alloc(npts);
-  gsl_vector *rho = gsl_vector_alloc(npts);
-  gsl_vector *eta = gsl_vector_alloc(npts);
   gsl_vector *G = gsl_vector_alloc(npts);
   gsl_matrix_const_view A = gsl_matrix_const_submatrix(state->X, 0, 0, state->n, state->p);
   gsl_vector_const_view b = gsl_vector_const_subvector(state->rhs, 0, state->n);
@@ -443,8 +460,6 @@ secs1d_dofit(double * rnorm, double * snorm, void * vstate)
   gsl_matrix_view As = gsl_matrix_submatrix(state->Xs, 0, 0, state->n - state->p + m, m);
   gsl_vector_view bs = gsl_vector_subvector(state->bs, 0, state->n - state->p + m);
   gsl_vector_view cs = gsl_vector_subvector(state->cs, 0, m);
-  const char *lambda_file = "lambda.dat";
-  FILE *fp = fopen(lambda_file, "a");
   double s0; /* largest singular value */
 
   if (state->n < state->p)
@@ -475,19 +490,20 @@ secs1d_dofit(double * rnorm, double * snorm, void * vstate)
   s0 = gsl_vector_get(state->multifit_p->S, 0);
 
   /* compute L-curve */
-  gsl_multifit_linear_lcurve(&bs.vector, reg_param, rho, eta, state->multifit_p);
-  gsl_multifit_linear_lcorner(rho, eta, &i);
-  lambda_l = gsl_vector_get(reg_param, i);
+  gsl_multifit_linear_lcurve(&bs.vector, state->reg_param, state->rho, state->eta, state->multifit_p);
+  gsl_multifit_linear_lcorner(state->rho, state->eta, &i);
+
+  lambda_l = gsl_vector_get(state->reg_param, i);
+  /*lambda = GSL_MAX(lambda_l, 1.0e-5 * s0);*/
+  lambda = lambda_l;
+  lambda = 1.0e-3 * s0;
+
+  i = bsearch_double(state->reg_param->data, lambda, 0, npts - 1);
+  lambda = gsl_vector_get(state->reg_param, i);
+  state->reg_idx = i;
 
   /* compute GCV curve */
-  gsl_multifit_linear_gcv(&bs.vector, reg_param, G, &lambda_gcv, &G_gcv, state->multifit_p);
-
-  /* the L-curve method often overdamps the system, not sure why */
-  lambda_l = GSL_MAX(lambda_l, 1.0e-5 * s0);
-  lambda_l = 1.0e-3*s0;
-
-  lambda = lambda_l;
-  lambda = 5.0e-3*s0; /*XXX*/
+  gsl_multifit_linear_gcv(&bs.vector, state->reg_param, G, &lambda_gcv, &G_gcv, state->multifit_p);
 
   /* solve regularized system with lambda */
   gsl_multifit_linear_solve(lambda, &As.matrix, &bs.vector, &cs.vector, rnorm, snorm, state->multifit_p);
@@ -504,29 +520,9 @@ secs1d_dofit(double * rnorm, double * snorm, void * vstate)
   fprintf(stderr, "snorm = %.12e\n", *snorm);
   fprintf(stderr, "cond(X) = %.12e\n", 1.0 / gsl_multifit_linear_rcond(state->multifit_p));
 
-  fprintf(stderr, "secs1d_fit: writing %s...", lambda_file);
-
-  for (i = 0; i < npts; ++i)
-    {
-      fprintf(fp, "%e %e %e %e\n",
-              gsl_vector_get(reg_param, i),
-              gsl_vector_get(rho, i),
-              gsl_vector_get(eta, i),
-              gsl_vector_get(G, i));
-    }
-
-  fprintf(fp, "\n\n");
-
-  fprintf(stderr, "done\n");
-
 #endif
 
-  gsl_vector_free(reg_param);
-  gsl_vector_free(rho);
-  gsl_vector_free(eta);
   gsl_vector_free(G);
-
-  fclose(fp);
 
   return 0;
 }
@@ -549,7 +545,7 @@ Notes:
 
 static int
 secs1d_eval_B(const double t, const double r, const double theta, const double phi,
-              double B[3], void * vstate)
+              double B[4], void * vstate)
 {
   secs1d_state_t *state = (secs1d_state_t *) vstate;
   gsl_vector_view vx = gsl_matrix_row(state->X, 0);
@@ -655,6 +651,19 @@ secs1d_eval_chi(const double theta, const double phi, void * vstate)
 {
   secs1d_state_t *state = (secs1d_state_t *) vstate;
   return 0.0;
+}
+
+static int
+secs1d_postproc(magfit_postproc_params * postproc, void * vstate)
+{
+  secs1d_state_t *state = (secs1d_state_t *) vstate;
+
+  postproc->reg_param = state->reg_param;
+  postproc->rho = state->rho;
+  postproc->eta = state->eta;
+  postproc->reg_idx = state->reg_idx;
+
+  return GSL_SUCCESS;
 }
 
 int
@@ -1049,6 +1058,7 @@ static const magfit_type secs1d_type =
 #else
   NULL,
 #endif
+  secs1d_postproc,
   secs1d_free
 };
 

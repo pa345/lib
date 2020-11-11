@@ -45,6 +45,9 @@
 #include "io.h"
 #include "pca3d.h"
 
+#include "invert_postproc_tsqr.c"
+#include "invert_postproc_normal.c"
+
 static int
 parse_config_file(const char *filename, invert_parameters *invert_params)
 {
@@ -110,6 +113,14 @@ parse_config_file(const char *filename, invert_parameters *invert_params)
   return 0;
 }
 
+/*
+build_regularization()
+  Build regularization matrix
+
+Inputs: reg - (output) diagonal regularization matrix
+        w   - workspace
+*/
+
 int
 build_regularization(gsl_vector * reg, invert_workspace * w)
 {
@@ -144,69 +155,18 @@ build_regularization(gsl_vector * reg, invert_workspace * w)
   return 0;
 }
 
-/*
-solve:
-
-min_x || [ QTb ] - [    R     ] x ||^2
-      || [  0  ]   [ lambda L ]   ||
-*/
-
-int
-compute_reg_solution(const double lambda, const gsl_vector * L, const gsl_matrix * R, const gsl_vector * QTb,
-                     gsl_vector * x, double * rnorm, double * snorm)
-{
-  const size_t p = R->size2;
-  gsl_matrix * A = gsl_matrix_calloc(2 * p, p);
-  gsl_vector * b = gsl_vector_calloc(2 * p);
-  gsl_matrix * T = gsl_matrix_alloc(p, p);
-  gsl_vector * sol = gsl_vector_alloc(2 * p);
-  gsl_vector * work = gsl_vector_alloc(p);
-  gsl_matrix_view m;
-  gsl_vector_view v;
-
-  /* A = [ R ; 0 ] */
-  m = gsl_matrix_submatrix(A, 0, 0, p, p);
-  gsl_matrix_tricpy(CblasUpper, CblasNonUnit, &m.matrix, R);
-
-  /* A = [ R; lambda*L ] */
-  m = gsl_matrix_submatrix(A, p, 0, p, p);
-  v = gsl_matrix_diagonal(&m.matrix);
-  gsl_vector_axpby(lambda, L, 0.0, &v.vector);
-
-  /* b = [ QTb ; 0 ] */
-  v = gsl_vector_subvector(b, 0, p);
-  gsl_vector_memcpy(&v.vector, QTb);
-
-  /* solve least squares problem */
-  gsl_linalg_QR_decomp_r(A, T);
-  gsl_linalg_QR_lssolve_r(A, T, b, sol, work);
-
-  v = gsl_vector_subvector(sol, 0, p);
-  gsl_vector_memcpy(x, &v.vector);
-  *snorm = gsl_blas_dnrm2(x);
-
-  v = gsl_vector_subvector(sol, p, p);
-  *rnorm = gsl_blas_dnrm2(&v.vector);
-
-  gsl_matrix_free(A);
-  gsl_matrix_free(T);
-  gsl_vector_free(b);
-  gsl_vector_free(sol);
-  gsl_vector_free(work);
-
-  return 0;
-}
-
-int
-compute_Lcurve(const char * filename, const gsl_vector * L, const gsl_matrix * R, const gsl_vector * QTb)
+static int
+compute_Lcurve(const char * filename, const int normal, const gsl_vector * L,
+               const gsl_matrix * A, const gsl_vector * rhs)
 {
   FILE *fp;
-  const size_t N = 100; /* number of points on L-curve */
-  double lambda_min = 1.0e-1;
-  double lambda_max = 1.0e2;
-  double lambda = lambda_min;
+  const size_t N = 50; /* number of points on L-curve */
+  double lambda_min = 1.0e-2;
+  double lambda_max = 1.0e3;
+  double lambda = 0.0;
   double ratio, rnorm, snorm;
-  gsl_vector * x = gsl_vector_alloc(QTb->size);
+  gsl_vector * x = gsl_vector_alloc(rhs->size);
+  struct timeval tv0, tv1;
   size_t i;
 
   fp = fopen(filename, "w");
@@ -226,10 +186,23 @@ compute_Lcurve(const char * filename, const gsl_vector * L, const gsl_matrix * R
 
   for (i = 0; i < N; ++i)
     {
-      compute_reg_solution(lambda, L, R, QTb, x, &rnorm, &snorm);
-      lambda *= ratio;
+      gettimeofday(&tv0, NULL);
+
+      if (normal)
+        normal_reg_solution(lambda, L, A, rhs, 0.0, x, &rnorm, &snorm);
+      else
+        tsqr_reg_solution(lambda, L, A, rhs, x, &rnorm, &snorm);
+
+      gettimeofday(&tv1, NULL);
+      fprintf(stderr, "\t lambda = %g (%g seconds)\n", lambda, time_diff(tv0, tv1));
 
       fprintf(fp, "%.12e %.12e %.12e\n", lambda, snorm, rnorm);
+      fflush(fp);
+
+      if (lambda == 0.0)
+        lambda = lambda_min;
+      else
+        lambda *= ratio;
     }
 
   gsl_vector_free(x);
@@ -245,9 +218,9 @@ print_help(char *argv[])
   fprintf(stderr, "Usage: %s [options]\n", argv[0]);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "\t --config_file | -C file         - configuration file\n");
+  fprintf(stderr, "\t --input_dir | -I dir            - model output directory\n");
   fprintf(stderr, "\t --output_coef_file | -o file    - output coefficient file (binary)\n");
-  fprintf(stderr, "\t --matrix | -R file              - R factor file\n");
-  fprintf(stderr, "\t --rhs | -b file                 - Q^T b file\n");
+  fprintf(stderr, "\t --normal                        - use normal equations method\n");
 }
 
 int
@@ -256,13 +229,16 @@ main(int argc, char *argv[])
   char *config_file = "INVERT.cfg"; /* default config file */
   char *output_coef_file = "coef_reg.txt";
   char *Lcurve_file = "Lcurve.txt";
+  char *input_dir = NULL;
   invert_workspace *invert_workspace_p;
   invert_parameters invert_params;
-  gsl_vector *reg;    /* regularization matrix */
+  gsl_vector *Ldiag;  /* regularization matrix */
   gsl_vector *coeffs; /* model coefficients */
-  gsl_matrix *R = NULL;   /* R factor */
-  gsl_vector *QTb = NULL; /* QTb */
+  gsl_matrix *R = NULL;   /* R or ATA */
+  gsl_vector *rhs = NULL; /* QTb or ATb */
+  char buf[1024];
   struct timeval tv0, tv1;
+  int normal = 0;
   size_t p;
 
   invert_init_params(&invert_params);
@@ -274,13 +250,13 @@ main(int argc, char *argv[])
       static struct option long_options[] =
         {
           { "config_file", required_argument, NULL, 'C' },
+          { "input_dir", required_argument, NULL, 'I' },
           { "output_coef_file", required_argument, NULL, 'o' },
-          { "matrix", required_argument, NULL, 'R' },
-          { "rhs", required_argument, NULL, 'b' },
+          { "normal", no_argument, NULL, 'n' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "b:C:o:R:", long_options, &option_index);
+      c = getopt_long(argc, argv, "C:I:no:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -290,24 +266,16 @@ main(int argc, char *argv[])
             config_file = optarg;
             break;
 
-          case 'i':
-            output_coef_file = optarg;
-            break;
-
-          case 'b':
-            fprintf(stderr, "main: reading %s...", optarg);
-            QTb = vecread(optarg);
-            fprintf(stderr, "done (vector is length %zu)\n", QTb->size);
-            break;
-
-          case 'R':
-            fprintf(stderr, "main: reading %s...", optarg);
-            R = matread(optarg);
-            fprintf(stderr, "done (matrix is %zu-by-%zu)\n", R->size1, R->size2);
+          case 'I':
+            input_dir = optarg;
             break;
 
           case 'o':
             output_coef_file = optarg;
+            break;
+
+          case 'n':
+            normal = 1;
             break;
 
           default:
@@ -317,24 +285,66 @@ main(int argc, char *argv[])
         }
     }
 
-  if (output_coef_file == NULL || R == NULL || QTb == NULL)
+  if (input_dir == NULL)
     {
       print_help(argv);
       exit(1);
     }
 
+  sprintf(buf, "%s/matrix_iter1.dat", input_dir);
+  fprintf(stderr, "main: reading %s...", buf);
+  R = matread(buf);
+  fprintf(stderr, "done (matrix is %zu-by-%zu)\n", R->size1, R->size2);
+
+  sprintf(buf, "%s/rhs_iter1.dat", input_dir);
+  fprintf(stderr, "main: reading %s...", buf);
+  rhs = vecread(buf);
+  fprintf(stderr, "done (vector is length %zu)\n", rhs->size);
+
+  if (output_coef_file == NULL || R == NULL || rhs == NULL)
+    {
+      print_help(argv);
+      exit(1);
+    }
+
+  p = R->size1; /* number of model coefficients */
+
+  sprintf(buf, "%s/Ldiag.dat", input_dir);
+  fprintf(stderr, "main: reading regularization matrix %s...", buf);
+  Ldiag = vecread(buf);
+  fprintf(stderr, "done (size %zu)\n", Ldiag->size);
+
+  if (Ldiag == NULL)
+    {
+      fprintf(stderr, "main: error reading regularization matrix %s\n", buf);
+      exit(1);
+    }
+
+  if (Ldiag->size != p)
+    {
+      fprintf(stderr, "main: regularization matrix does not match workspace\n");
+      exit(1);
+    }
+
+  printv_octave(Ldiag, "Ldiag");
+
 #if 0
   /*XXX*/
-  {
-    p = R->size1;
-    coeffs = gsl_vector_alloc(p);
-    gsl_vector_memcpy(coeffs, QTb);
-    gsl_blas_dtrsv(CblasUpper, CblasNoTrans, CblasNonUnit, R, coeffs);
-    printv_octave(coeffs, "c1");
-    printv_octave(QTb, "QTb");
-    printtri_octave(R, "R");
-    exit(1);
-  }
+  if (normal)
+    {
+      printsym_octave(R, "ATA");
+    }
+  else
+    {
+      p = R->size1;
+      coeffs = gsl_vector_alloc(p);
+      gsl_vector_memcpy(coeffs, rhs);
+      gsl_blas_dtrsv(CblasUpper, CblasNoTrans, CblasNonUnit, R, coeffs);
+      printv_octave(coeffs, "c1");
+      printv_octave(rhs, "rhs");
+      printtri_octave(R, "R");
+      exit(1);
+    }
 #endif
 
   /* parse configuration file */
@@ -360,23 +370,24 @@ main(int argc, char *argv[])
   fprintf(stderr, "main: number of total parameters:                %zu\n", p);
 
   coeffs = gsl_vector_alloc(p);
-  reg = gsl_vector_alloc(p);
+  Ldiag = gsl_vector_alloc(p);
 
   fprintf(stderr, "main: building regularization matrix...");
-  build_regularization(reg, invert_workspace_p);
+  build_regularization(Ldiag, invert_workspace_p);
   fprintf(stderr, "done\n");
 
-  printv_octave(reg, "reg");
+  printv_octave(Ldiag, "reg");
+  exit(1);
 
   fprintf(stderr, "main: computing L-curve...");
   gettimeofday(&tv0, NULL);
-  compute_Lcurve(Lcurve_file, reg, R, QTb);
+  compute_Lcurve(Lcurve_file, normal, Ldiag, R, rhs);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, output = %s)\n", time_diff(tv0, tv1), Lcurve_file);
 
   invert_free(invert_workspace_p);
   gsl_vector_free(coeffs);
-  gsl_vector_free(reg);
+  gsl_vector_free(Ldiag);
 
   return 0;
 }

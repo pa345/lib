@@ -45,6 +45,8 @@ fill_parameters(mag_params *params)
     params->lt_max = cfg_params.lt_max;
   if (cfg_params.max_lat_gap >= 0.0)
     params->dlat_max = cfg_params.max_lat_gap;
+  if (cfg_params.max_time_gap >= 0.0)
+    params->dtime_max = cfg_params.max_time_gap;
   if (cfg_params.r_earth >= 0.0)
     params->r_earth = cfg_params.r_earth;
   if (cfg_params.curr_altitude >= 0.0)
@@ -167,6 +169,7 @@ main(int argc, char *argv[])
   params.profiles_only = 0;
   params.use_vector = 0;
   params.dlat_max = 2.0;
+  params.dtime_max = 5.0;
   params.r_earth = 6371.2;
 
   /* spherical harmonic degrees for Sq filter */

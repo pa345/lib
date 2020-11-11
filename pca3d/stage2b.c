@@ -171,6 +171,8 @@ do_transforms(const pca3d_data * data, const double fs, const double window_size
   fprintf(stderr, "do_transforms: window segments (T)  = %zu\n", T);
   fprintf(stderr, "do_transforms: real nlm coeffs      = %zu\n", fft_data.nlm);
   fprintf(stderr, "do_transforms: complex nlm coeffs   = %zu\n", fft_data.nlm_complex);
+  fprintf(stderr, "do_transforms: lmax                 = %zu\n", fft_data.lmax);
+  fprintf(stderr, "do_transforms: mmax                 = %zu\n", fft_data.mmax);
 
   /* compute window function */
   /*apply_ps1(NULL, window);*/
@@ -338,7 +340,7 @@ main_proc(const pca3d_data * data, const char * prefix, const double fs, const d
 
   for (i = 0; i < nt; ++i)
     {
-      sprintf(buf, "%s_%03zu.dat", prefix, i + 1);
+      sprintf(buf, "%s_%04zu.dat", prefix, i + 1);
       fprintf(stderr, "main_proc: reading %s...", buf);
       gettimeofday(&tv0, NULL);
 

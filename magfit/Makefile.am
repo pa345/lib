@@ -1,6 +1,6 @@
 lib_LTLIBRARIES = libmagfit.la
 
-libmagfit_la_SOURCES = gauss.c gaussint.c magfit.c secs1d.c secs2d.c pca.c rc.c sheet.c
+libmagfit_la_SOURCES = gauss.c gaussint.c magfit.c lc_scalar.c secs1d.c secs2d.c pca.c rc.c sheet.c
 
 AM_CPPFLAGS = -I$(top_builddir)/grobs -I$(top_builddir)/pca
 

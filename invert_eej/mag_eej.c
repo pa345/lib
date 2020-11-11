@@ -26,6 +26,7 @@
 #include <mainlib/ml_bsearch.h>
 #include <mainlib/ml_coord.h>
 #include <mainlib/ml_common.h>
+#include <mainlib/ml_interp.h>
 #include <mainlib/ml_geo.h>
 #include <mainlib/ml_apex.h>
 #include <mainlib/ml_mageq.h>
@@ -305,27 +306,24 @@ mag_eej_free(mag_eej_workspace *w)
 }
 
 /*
-mag_eej_proc()
-  Invert F^(2) residual for EEJ current density
+mag_eej_proc_scalar()
+  Fit current model to scalar F^(2) data
 
-Inputs: track - satellite track
-        J     - (output) where to store EEJ height integrated
-                current density in A/m (array of size ncurr)
-        w     - workspace
-
-Notes:
-1) On output, track->F2_fit is updated to contain the fit from the line
-current model
+Inputs: track - track data
+        J     - (output) height-integrated eastward current (A/m), length ncurr
+        w     - magfit workspace
 */
 
 int
-mag_eej_proc(mag_track *track, double *J, mag_eej_workspace *w)
+mag_eej_proc_scalar(mag_track *track, gsl_vector *J, magfit_workspace *w)
 {
   int s = 0;
+  const magfit_parameters * params = &(w->params);
+  const double dqdlat = (2.0 * params->lc_qdmax) / (params->lc_ncurr - 1.0);
   size_t i;
-  size_t ndata = 0;
-  gsl_matrix_view Xv;
-  gsl_vector_view v;
+  double rnorm, snorm;
+
+  magfit_reset(w);
 
   /* build LS matrix and rhs vector */
   for (i = 0; i < track->n; ++i)
@@ -333,67 +331,155 @@ mag_eej_proc(mag_track *track, double *J, mag_eej_workspace *w)
       double r = track->r[i];
       double theta = track->theta[i];
       double phi = track->phi[i];
-      gsl_vector_view v;
-      double bi[3]; /* unit field vector in NEC */
-
-      /* ignore data outside [-qd_max,qd_max] */
-      if (fabs(track->qdlat[i]) > w->qdlat_max)
-        continue;
+      double B[4];
 
       /* compute unit magnetic field vector at this point */
-      bi[0] = track->Bx_int[i] / track->F_int[i];
-      bi[1] = track->By_int[i] / track->F_int[i];
-      bi[2] = track->Bz_int[i] / track->F_int[i];
+      B[0] = track->Bx_int[i] / track->F_int[i];
+      B[1] = track->By_int[i] / track->F_int[i];
+      B[2] = track->Bz_int[i] / track->F_int[i];
 
-      /* add F^(2) to rhs vector */
-      gsl_vector_set(w->rhs, ndata, track->F2[i]);
+      /* store F2 measurement */
+      B[3] = track->F2[i];
 
-      /* construct this row of LS matrix */
-      v = gsl_matrix_row(w->X, ndata);
-      mag_eej_matrix_row(r, theta, phi, bi, &v.vector, w);
-
-      ++ndata;
+      magfit_add_datum(track->t[i], r, theta, phi, track->qdlat[i], B, w);
     }
 
   /* perform least squares fit */
-  Xv = gsl_matrix_submatrix(w->X, 0, 0, ndata, w->p);
-  v = gsl_vector_subvector(w->rhs, 0, ndata);
-  s = eej_ls(&Xv.matrix, &v.vector, w->S, w->cov, w);
+  s = magfit_fit(&rnorm, &snorm, w);
   if (s)
     return s;
 
-  fprintf(stderr, "mag_eej_proc: final regularization factor = %g\n",
-          gsl_vector_get(w->reg_param, w->reg_idx));
-  fprintf(stderr, "mag_eej_proc: residual norm = %e\n", w->rnorm);
-  fprintf(stderr, "mag_eej_proc: solution norm = %e\n", w->snorm);
-
-  /* compute output current density */
-  v = gsl_vector_view_array(J, w->p);
-  gsl_vector_memcpy(&v.vector, w->S);
-  gsl_vector_scale(&v.vector, 1.0 / w->curr_dist_km);
-
   /* compute and store F^(2) fit */
+  for (i = 0; i < track->n; ++i)
+    {
+      double t = track->t[i];
+      double r = track->r[i];
+      double theta = track->theta[i];
+      double phi = track->phi[i];
+      double B[4], J[3];
+
+      /* compute unit magnetic field vector at this point */
+      B[0] = track->Bx_int[i] / track->F_int[i];
+      B[1] = track->By_int[i] / track->F_int[i];
+      B[2] = track->Bz_int[i] / track->F_int[i];
+
+      magfit_eval_B(t, r, theta, phi, B, w);
+      track->F2_fit[i] = B[3];
+
+      magfit_eval_J(r, theta, phi, J, w);
+      track->J_fit[i] = J[2];
+    }
+
+  /* compute output current array */
+  for (i = 0; i < params->lc_ncurr; ++i)
+    {
+      double qdlat = -params->lc_qdmax + i * dqdlat;
+      size_t idx = bsearch_double(track->qdlat, qdlat, 0, track->n - 1);
+      double Ji;
+
+      Ji = interp1d(track->qdlat[idx], track->qdlat[idx+1],
+                    track->J_fit[idx], track->J_fit[idx+1], qdlat);
+
+      /* convert to A/m */
+      Ji *= 1.0e-3;
+
+      gsl_vector_set(J, i, Ji);
+    }
+
+  return s;
+}
+
+/*
+mag_eej_proc_vector()
+  Fit current model to vector B^(2) data
+
+Inputs: track - track data
+        J     - (output) height-integrated eastward current (A/m), length ncurr
+        w     - magfit workspace
+*/
+
+int
+mag_eej_proc_vector(mag_track *track, gsl_vector *J, magfit_workspace *w)
+{
+  int s = 0;
+  const magfit_parameters * params = &(w->params);
+  const double qdlat_max = params->lc_qdmax;
+  const double dqdlat = (2.0 * qdlat_max) / (params->lc_ncurr - 1.0);
+  size_t i;
+  double rnorm, snorm;
+
+  magfit_reset(w);
+
+  /* build LS matrix and rhs vector */
   for (i = 0; i < track->n; ++i)
     {
       double r = track->r[i];
       double theta = track->theta[i];
       double phi = track->phi[i];
-      double bi[3]; /* unit field vector in NEC */
+      double lat = 90.0 - theta * 180.0 / M_PI;
+      double B[4];
+
+      /* ignore data outside [-lat_min,lat_max] */
+      /*if (fabs(track->qdlat[i]) > qdlat_max)
+        continue;*/
+      if (lat < params->lat_min || lat > params->lat_max)
+        continue;
+
+      B[0] = track->X2[i];
+      B[1] = track->Y2[i];
+      B[2] = track->Z2[i];
+      B[3] = 0.0; /* not used */
+
+      magfit_add_datum(track->t[i], track->r[i], track->theta[i], track->phi[i],
+                       track->qdlat[i], B, w);
+    }
+
+  /* perform least squares fit */
+  s = magfit_fit(&rnorm, &snorm, w);
+  if (s)
+    return s;
+
+  /* compute and store B^(2) fit */
+  for (i = 0; i < track->n; ++i)
+    {
+      double t = track->t[i];
+      double r = track->r[i];
+      double theta = track->theta[i];
+      double phi = track->phi[i];
+      double B[4], J[3];
 
       /* compute unit magnetic field vector at this point */
-      bi[0] = track->Bx_int[i] / track->F_int[i];
-      bi[1] = track->By_int[i] / track->F_int[i];
-      bi[2] = track->Bz_int[i] / track->F_int[i];
+      B[0] = track->Bx_int[i] / track->F_int[i];
+      B[1] = track->By_int[i] / track->F_int[i];
+      B[2] = track->Bz_int[i] / track->F_int[i];
 
-      /* construct this row of LS matrix */
-      v = gsl_matrix_row(w->X, 0);
-      mag_eej_matrix_row(r, theta, phi, bi, &v.vector, w);
+      magfit_eval_B(t, r, theta, phi, B, w);
+      track->X2_fit[i] = B[0];
+      track->Y2_fit[i] = B[1];
+      track->Z2_fit[i] = B[2];
 
-      gsl_blas_ddot(&v.vector, w->S, &(track->F2_fit[i]));
+      magfit_eval_J(r, theta, phi, J, w);
+      track->J_fit[i] = J[1];
+    }
+
+  /* compute output current array */
+  for (i = 0; i < params->lc_ncurr; ++i)
+    {
+      double qdlat = -params->lc_qdmax + i * dqdlat;
+      size_t idx = bsearch_double(track->qdlat, qdlat, 0, track->n - 1);
+      double Ji;
+
+      Ji = interp1d(track->qdlat[idx], track->qdlat[idx+1],
+                    track->J_fit[idx], track->J_fit[idx+1], qdlat);
+
+      /* convert to A/m */
+      Ji *= 1.0e-3;
+
+      gsl_vector_set(J, i, Ji);
     }
 
   return s;
-} /* mag_eej() */
+}
 
 /*
 mag_eej_vector_proc()

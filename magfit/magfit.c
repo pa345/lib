@@ -91,6 +91,10 @@ magfit_default_parameters(void)
   params.nmax_ext = 1;
   params.mmax_ext = 0;
 
+  params.lc_ncurr = 81;
+  params.lc_qdmax = 20.0;
+  params.lc_year = 2000;
+
   params.lat_spacing1d = 0.5;
   params.lat_spacing2d = 2.0;
   params.lat_min = -60.0;
@@ -110,6 +114,8 @@ magfit_default_parameters(void)
   params.rc_p = 2;
   params.rc_fit_Y = 1;
   params.rc_subtract_crust = 0;
+
+  params.n_lcurve = 200;
 
   return params;
 }
@@ -131,12 +137,16 @@ Inputs: t     - timestamp (CDF_EPOCH)
         phi   - colatitude (radians)
         qdlat - QD latitude (degrees)
         B     - magnetic field NEC vector (nT)
+                B = [ X ]
+                    [ Y ]
+                    [ Z ]
+                    [ F ]
         w     - workspace
 */
 
 int
 magfit_add_datum(const double t, const double r, const double theta, const double phi,
-                 const double qdlat, double B[3], magfit_workspace *w)
+                 const double qdlat, double B[4], magfit_workspace *w)
 {
   int s;
 
@@ -321,13 +331,17 @@ Inputs: t     - timestamp (CDF_EPOCH)
         r     - radius (km)
         theta - colatitude (radians)
         phi   - longitude (radians)
-        B     - (output) magnetic field vector (nT)
+        B     - (output) magnetic field vector in NEC (nT)
+                B = [ X ]
+                    [ Y ]
+                    [ Z ]
+                    [ F ]
         w     - workspace
 */
 
 int
 magfit_eval_B(const double t, const double r, const double theta, const double phi,
-              double B[3], magfit_workspace *w)
+              double B[4], magfit_workspace *w)
 {
   int status = (w->type->eval_B)(t, r, theta, phi, B, w->state);
   return status;
@@ -341,7 +355,7 @@ previously computed coefficients
 Inputs: r     - radius (km)
         theta - colatitude (radians)
         phi   - longitude (radians)
-        J     - (output) current density vector [A/km]
+        J     - (output) current density vector in NEC [A/km]
         w     - workspace
 */
 
@@ -350,6 +364,21 @@ magfit_eval_J(const double r, const double theta, const double phi,
               double J[3], magfit_workspace *w)
 {
   int status = (w->type->eval_J)(r, theta, phi, J, w->state);
+  return status;
+}
+
+/*
+magfit_postproc()
+  Return postprocessing parameters, such as L-curve information
+
+Inputs: postproc - (output) postprocessing parameters
+        w        - workspace
+*/
+
+int
+magfit_postproc(magfit_postproc_params * postproc, magfit_workspace *w)
+{
+  int status = (w->type->postproc)(postproc, w->state);
   return status;
 }
 

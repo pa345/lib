@@ -56,13 +56,15 @@ typedef struct
   size_t downsample;      /* downsampling factor */
   double min_LT;          /* minimum local time for field modeling */
   double max_LT;          /* maximum local time for field modeling */
-  double rms_thresh[4];   /* rms thresholds (X,Y,Z,F) (nT) */
   double qdlat_preproc_cutoff; /* QD latitude cutoff for high-latitudes */
   double min_IMF_Bz;      /* minimum IMF Bz (nT) */
   double max_IMF_Bz;      /* maximum IMF Bz (nT) */
   double min_IMF_By;      /* minimum IMF By (nT) */
   double max_IMF_By;      /* maximum IMF By (nT) */
   size_t gradient_ns;     /* number of seconds between N/S gradient samples */
+
+  char * rms_file;        /* along-track rms output file */
+  double rms_thresh[4];   /* rms thresholds (X,Y,Z,F) (nT) */
 
   double gradew_dphi_max; /* maximum longitude distance for east-west gradients (degrees) */
   double gradew_dlat_max; /* maximum latitude distance for east-west gradients (degrees) */
@@ -490,10 +492,9 @@ preprocess_data(const preprocess_parameters *params, const size_t magdata_flags,
 
   /* detect bad tracks with rms test */
   {
-    const char *rmsfile = "satrms.dat";
     size_t nrms;
 
-    nrms = track_flag_rms(rmsfile, params->rms_thresh, NULL, data, track_p);
+    nrms = track_flag_rms(params->rms_file, params->rms_thresh, NULL, data, track_p);
     fprintf(stderr, "preprocess_data: flagged (%zu/%zu) (%.1f%%) tracks due to high rms\n",
             nrms, track_p->n, (double) nrms / (double) track_p->n * 100.0);
   }
@@ -832,6 +833,7 @@ print_help(char *argv[])
   fprintf(stderr, "\t --output_file     | -o output_file            - binary output data file (magdata format)\n");
   fprintf(stderr, "\t --config_file     | -C config_file            - configuration file\n");
   fprintf(stderr, "\t --append_file     | -A append_file            - new data will be appended to this dataset in magdata binary format\n");
+  fprintf(stderr, "\t --rms_file        | -R rms_file               - output along-track rms file\n");
 }
 
 int
@@ -843,6 +845,7 @@ main(int argc, char *argv[])
   char *output_file = NULL;
   char *append_file = NULL;
   char *config_file = "INVERT_preproc.cfg";
+  char *rms_file = "satrms.txt";
   char *name = NULL;
   satdata_mag *data = NULL;
   satdata_mag *data2 = NULL;
@@ -881,6 +884,7 @@ main(int argc, char *argv[])
   params.subtract_B_main = -1;
   params.subtract_B_crust = -1;
   params.subtract_B_ext = -1;
+  params.rms_file = rms_file;
 
   while (1)
     {
@@ -902,10 +906,11 @@ main(int argc, char *argv[])
           { "gradient_ns", required_argument, NULL, 'g' },
           { "append_file", required_argument, NULL, 'A' },
           { "name", required_argument, NULL, 'N' },
+          { "rms_file", required_argument, NULL, 'R' },
           { 0, 0, 0, 0 }
         };
 
-      c = getopt_long(argc, argv, "a:A:c:C:d:D:F:g:L:N:o:O:r:s:t:", long_options, &option_index);
+      c = getopt_long(argc, argv, "a:A:c:C:d:D:F:g:L:N:o:O:r:R:s:t:", long_options, &option_index);
       if (c == -1)
         break;
 
@@ -986,6 +991,10 @@ main(int argc, char *argv[])
 
           case 'N':
             name = optarg;
+            break;
+
+          case 'R':
+            params.rms_file = optarg;
             break;
 
           default:
