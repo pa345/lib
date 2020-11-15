@@ -18,3 +18,4 @@ spectrogram2b    - print spectrogram of stage2b windowed FFT data
 print_modes3b    - print 3D spatial modes to files suitable for plotting
 
 invert           - model fitting and inversion program
+invert_postproc_lcurve - use output of 'invert' to generate L-curve for regularization
