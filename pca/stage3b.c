@@ -226,9 +226,9 @@ print_pc_maps(const char *filename, const gsl_matrix * U,
           double B_pc1[3], B_pc2[3], B_pc3[3];
           double chi1, chi2, chi3;
 
-          chi1 = green_eval_chi_ext(b, theta, phi, &pc1.vector, green_p);
-          chi2 = green_eval_chi_ext(b, theta, phi, &pc2.vector, green_p);
-          chi3 = green_eval_chi_ext(b, theta, phi, &pc3.vector, green_p);
+          green_ext_chi(b, theta, phi, &pc1.vector, &chi1, green_p);
+          green_ext_chi(b, theta, phi, &pc2.vector, &chi2, green_p);
+          green_ext_chi(b, theta, phi, &pc3.vector, &chi3, green_p);
 
           /*
            * If r < b, the current shell is an external source so
@@ -241,7 +241,7 @@ print_pc_maps(const char *filename, const gsl_matrix * U,
            */
           if (r <= b)
             {
-              green_calc_ext(r, theta, phi, X, Y, Z, green_p);
+              green_ext(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, green_p);
 
               gsl_blas_ddot(&pc1.vector, &Xv.vector, &B_pc1[0]);
               gsl_blas_ddot(&pc1.vector, &Yv.vector, &B_pc1[1]);
@@ -257,7 +257,7 @@ print_pc_maps(const char *filename, const gsl_matrix * U,
             }
           else
             {
-              green_calc_int(r, theta, phi, X, Y, Z, green_p);
+              green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, green_p);
 
               gsl_blas_ddot(gnm1, &Xv.vector, &B_pc1[0]);
               gsl_blas_ddot(gnm1, &Yv.vector, &B_pc1[1]);

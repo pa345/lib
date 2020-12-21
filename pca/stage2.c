@@ -218,7 +218,7 @@ print_potential(const char * filename, const gsl_vector_complex * u, green_works
           double theta = M_PI / 2.0 - lat * M_PI / 180.0;
           gsl_complex z;
 
-          green_potential_calc_ext(r, theta, phi, &dV_re.vector, green_p);
+          green_ext_potential(r, theta, phi, &dV_re.vector, green_p);
 
           gsl_blas_zdotu(dV, u, &z);
 

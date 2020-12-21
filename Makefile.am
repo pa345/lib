@@ -19,7 +19,6 @@ SUBDIRS =         \
   poltor          \
   invert_eej      \
   pca             \
-  pca3d           \
   pej             \
   swarm           \
   gd              \

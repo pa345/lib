@@ -4,7 +4,7 @@ libpca_la_SOURCES = io.c pca.c tiegcm_alloc.c tiegcm_read.c window.c
 
 AM_CPPFLAGS = -I$(top_builddir)/poltor
 
-common_libs = -L/usr/lib64 -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread -lnetcdf
+common_libs = -L/usr/lib64 -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lz -lconfig /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread -lnetcdf -lcsparse -lshtns -lfftw3 -lfftw3_omp
 
 bin_PROGRAMS = plot_maps print print2 plot_chi_complex stage1 stage2 stage2_complex stage2b stage3 stage3b stage1_ind stage2b_ind
 

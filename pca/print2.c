@@ -78,9 +78,9 @@ print_data(const char *filename, const gsl_vector *kg, const char type)
           double B[3];
 
           if (type == 'k')
-            green_calc_ext(R_EARTH_KM, theta, phi, X->data, Y->data, Z->data, green_p);
+            green_ext(R_EARTH_KM, theta, phi, X, Y, Z, green_p);
           else
-            green_calc_int(R_EARTH_KM, theta, phi, X->data, Y->data, Z->data, green_p);
+            green_int(R_EARTH_KM, theta, phi, X, Y, Z, green_p);
 
           gsl_blas_ddot(kg, X, &B[0]);
           gsl_blas_ddot(kg, Y, &B[1]);

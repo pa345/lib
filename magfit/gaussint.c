@@ -362,7 +362,7 @@ gaussint_eval_chi(const double theta, const double phi, void * vstate)
   gaussint_state_t *state = (gaussint_state_t *) vstate;
   double chi;
 
-  chi = green_eval_chi_int(R_EARTH_KM + 110.0, theta, phi, state->c, state->green_workspace_p);
+  green_int_chi(R_EARTH_KM + 110.0, theta, phi, state->c, &chi, state->green_workspace_p);
 
   return chi;
 }
@@ -372,7 +372,7 @@ build_matrix_row(const double r, const double theta, const double phi,
                  gsl_vector *X, gsl_vector *Y, gsl_vector *Z,
                  gaussint_state_t *state)
 {
-  int s = green_calc_int2(r, theta, phi, X, Y, Z, state->green_workspace_p);
+  int s = green_int(r, theta, phi, X, Y, Z, state->green_workspace_p);
   return s;
 }
 

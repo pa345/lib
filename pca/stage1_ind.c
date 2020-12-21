@@ -77,13 +77,13 @@ Inputs: filename - where to store residuals
         A        - model matrix
         c        - model coefficients
         data     - TIEGCM data
-        green_ext - green workspace for external source
+        green_ext_p - green workspace for external source
 */
 
 double
 print_residuals(const char *filename, const size_t tidx,
                 const gsl_matrix *A, const gsl_vector *c,
-                const tiegcm_data *data, green_workspace *green_ext)
+                const tiegcm_data *data, green_workspace *green_ext_p)
 {
   FILE *fp;
   gsl_vector *b = gsl_vector_alloc(A->size1); /* model prediction */
@@ -151,7 +151,7 @@ print_residuals(const char *filename, const size_t tidx,
           rnorm = gsl_hypot(rnorm, B_data[2] - B_model[2]);
 #endif
 
-          chi = green_eval_chi_ext(green_ext->R + 110.0, theta, phi, c, green_ext);
+          green_ext_chi(green_ext_p->R + 110.0, theta, phi, c, &chi, green_ext_p);
 
           fprintf(fp, "%8.4f %8.4f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f\n",
 #if 0
@@ -186,21 +186,21 @@ Inputs: outdir   - where to store output
         tidx     - time index
         c        - model coefficients (knm)
         data     - TIEGCM data
-        green_ext - green workspace for external source
+        green_ext_p - green workspace for external source
 */
 
 int
 print_matlab(const char *outdir, const size_t tidx,
-             const gsl_vector *c, green_workspace *green_ext)
+             const gsl_vector *c, green_workspace *green_ext_p)
 {
   char buf[2048];
   const int max_threads = omp_get_max_threads();
   const size_t nphi = 360;
   const size_t ntheta = 180;
-  const double b = green_ext->R + 110.0;
-  const double nnm = green_ext->nnm;
-  const double nmax = green_ext->nmax;
-  const double mmax = green_ext->mmax;
+  const double b = green_ext_p->R + 110.0;
+  const double nnm = green_ext_p->nnm;
+  const double nmax = green_ext_p->nmax;
+  const double mmax = green_ext_p->mmax;
   gsl_matrix *Jt = gsl_matrix_alloc(nphi, ntheta);
   gsl_matrix *Jp = gsl_matrix_alloc(nphi, ntheta);
   gsl_matrix *chi = gsl_matrix_alloc(nphi, ntheta);
@@ -215,10 +215,10 @@ print_matlab(const char *outdir, const size_t tidx,
   size_t i;
 
   for (i = 0; i < max_threads; ++i)
-    green_p[i] = green_alloc(nmax, mmax, green_ext->R);
+    green_p[i] = green_alloc(nmax, mmax, green_ext_p->R);
 
   /* convert knm to gnm */
-  green_k2g(green_ext->R + 110.0, c, g, green_ext);
+  green_k2g(green_ext_p->R + 110.0, c, g, green_ext_p);
 
 #pragma omp parallel for private(i)
   for (i = 0; i < nphi; ++i)
@@ -233,14 +233,14 @@ print_matlab(const char *outdir, const size_t tidx,
           double K[3], B[3], chi1;
 
 #if 1
-          green_eval_sheet_int(b, theta, phi, g, K, green_p[thread_id]);
+          green_int_sheet(b, theta, phi, g, K, green_p[thread_id]);
           gsl_matrix_set(Jt, i, j, -K[0]);
           gsl_matrix_set(Jp, i, j, K[1]);
 #else
-          chi1 = green_eval_chi_ext(b, theta, phi, c, green_p[thread_id]);
+          green_ext_chi(b, theta, phi, c, &chi1, green_p[thread_id]);
           gsl_matrix_set(chi, i, j, chi1);
 
-          green_calc_ext(R_EARTH_KM, theta, phi, X->data, Y->data, Z->data, green_p[thread_id]);
+          green_ext(R_EARTH_KM, theta, phi, X, Y, Z, green_p[thread_id]);
           gsl_blas_ddot(X, c, &B[0]);
           gsl_blas_ddot(Y, c, &B[1]);
           gsl_blas_ddot(Z, c, &B[2]);
@@ -357,11 +357,11 @@ tiegcm_magdata(const size_t tidx, tiegcm_data *data)
 }
 
 size_t
-main_build_matrix(const magdata *mdata, green_workspace *green_ext,
-                  green_workspace *green_int, gsl_matrix *A)
+main_build_matrix(const magdata *mdata, green_workspace *green_ext_p,
+                  green_workspace *green_int_p, gsl_matrix *A)
 {
-  const size_t p_ext = green_ext->nnm;
-  const size_t p_int = green_int->nnm;
+  const size_t p_ext = green_ext_p->nnm;
+  const size_t p_int = green_int_p->nnm;
   const double eps = 1.0e-4;
   gsl_vector *X_ext, *Y_ext, *Z_ext;
   gsl_vector *X_int, *Y_int, *Z_int;
@@ -397,11 +397,11 @@ main_build_matrix(const magdata *mdata, green_workspace *green_ext,
 
       /* compute external Green's functions */
       if (p_ext > 0)
-        green_calc_ext(r, theta, phi, X_ext->data, Y_ext->data, Z_ext->data, green_ext);
+        green_ext(r, theta, phi, X_ext, Y_ext, Z_ext, green_ext_p);
 
       /* compute internal Green's functions */
       if (p_int > 0)
-        green_calc_int(r, theta, phi, X_int->data, Y_int->data, Z_int->data, green_int);
+        green_int(r, theta, phi, X_int, Y_int, Z_int, green_int_p);
 
 #if FIT_X
       if (p_ext > 0)
@@ -558,7 +558,7 @@ subtract_B_ext(tiegcm_data *data)
 {
   const double R = R_EARTH_KM;
   const int max_threads = omp_get_max_threads();
-  green_workspace **green_ext = malloc(max_threads * sizeof(green_workspace *));
+  green_workspace **green_ext_p = malloc(max_threads * sizeof(green_workspace *));
   gsl_vector **X = malloc(max_threads * sizeof(gsl_vector *));
   gsl_vector **Y = malloc(max_threads * sizeof(gsl_vector *));
   gsl_vector **Z = malloc(max_threads * sizeof(gsl_vector *));
@@ -572,10 +572,10 @@ subtract_B_ext(tiegcm_data *data)
     {
       size_t nnm;
 
-      green_ext[k] = green_alloc(60, 30, R);
+      green_ext_p[k] = green_alloc(60, 30, R);
       counter[k] = 0.0;
 
-      nnm = green_ext[k]->nnm;
+      nnm = green_ext_p[k]->nnm;
       X[k] = gsl_vector_alloc(nnm);
       Y[k] = gsl_vector_alloc(nnm);
       Z[k] = gsl_vector_alloc(nnm);
@@ -600,7 +600,7 @@ subtract_B_ext(tiegcm_data *data)
               double theta = M_PI / 2.0 - data->glat[ilat] * M_PI / 180.0;
               double B_ext[3];
 
-              green_calc_ext(R, theta, phi, X[thread_id]->data, Y[thread_id]->data, Z[thread_id]->data, green_ext[thread_id]);
+              green_ext(R, theta, phi, X[thread_id], Y[thread_id], Z[thread_id], green_ext_p[thread_id]);
 
               gsl_blas_ddot(X[thread_id], &knm.vector, &B_ext[0]);
               gsl_blas_ddot(Y[thread_id], &knm.vector, &B_ext[1]);
@@ -629,13 +629,13 @@ subtract_B_ext(tiegcm_data *data)
 
   for (k = 0; k < max_threads; ++k)
     {
-      green_free(green_ext[k]);
+      green_free(green_ext_p[k]);
       gsl_vector_free(X[k]);
       gsl_vector_free(Y[k]);
       gsl_vector_free(Z[k]);
     }
 
-  free(green_ext);
+  free(green_ext_p);
   free(X);
   free(Y);
   free(Z);
@@ -658,11 +658,11 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
   const size_t nmax_int = NMAX_INT;
   const size_t mmax_int = GSL_MIN(nmax_int, MMAX_INT);
   const double R = R_EARTH_KM;
-  green_workspace *green_ext = green_alloc(nmax_ext, mmax_ext, R);
-  green_workspace *green_int = green_alloc(nmax_int, mmax_int, R);
+  green_workspace *green_ext_p = green_alloc(nmax_ext, mmax_ext, R);
+  green_workspace *green_int_p = green_alloc(nmax_int, mmax_int, R);
   const size_t n = 3 * data->nlon * data->nlat; /* number of total residuals */
-  const size_t p_ext = green_ext->nnm;          /* number of external coefficients */
-  const size_t p_int = green_int->nnm;          /* number of internal coefficients */
+  const size_t p_ext = green_ext_p->nnm;          /* number of external coefficients */
+  const size_t p_int = green_int_p->nnm;          /* number of internal coefficients */
   const size_t p = p_ext + p_int;               /* number of total coefficients */
   const size_t nrhs = data->nt;                 /* number of right hand sides */
   gsl_matrix *A = gsl_matrix_alloc(n, p);       /* least squares matrix */
@@ -699,7 +699,7 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
   /* construct least squares matrix (common for all timestamps) */
   fprintf(stderr, "main_proc: building least squares matrix A...");
   gettimeofday(&tv0, NULL);
-  ndata = main_build_matrix(mdata, green_ext, green_int, A);
+  ndata = main_build_matrix(mdata, green_ext_p, green_int_p, A);
   gettimeofday(&tv1, NULL);
   fprintf(stderr, "done (%g seconds, %zu total data)\n", time_diff(tv0, tv1), ndata);
 
@@ -771,16 +771,16 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
     printv_octave(&x.vector, "c");
 
     fprintf(stderr, "main_proc: writing spectrum at t0 to %s...", spectrum_file);
-    green_print_spectrum(spectrum_file, &x.vector, green_ext);
+    green_print_spectrum(spectrum_file, &x.vector, green_ext_p);
     fprintf(stderr, "done\n");
 
     fprintf(stderr, "main_proc: writing azimuth spectrum at t0 to %s...", spectrum_azim_file);
-    green_print_spectrum_azim(spectrum_azim_file, &x.vector, green_ext);
+    green_print_spectrum_azim(spectrum_azim_file, &x.vector, green_ext_p);
     fprintf(stderr, "done\n");
 
     x = gsl_matrix_column(X_taper, k);
     fprintf(stderr, "main_proc: writing tapered spectrum at t0 to %s...", spectrum_taper_file);
-    green_print_spectrum(spectrum_taper_file, &x.vector, green_ext);
+    green_print_spectrum(spectrum_taper_file, &x.vector, green_ext_p);
     fprintf(stderr, "done\n");
   }
 
@@ -802,7 +802,7 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
     double rnorm;
 
     fprintf(stderr, "main_proc: writing residuals for timestamp %ld to %s...", data->t[k], res_file);
-    rnorm = print_residuals(res_file, k, &AA.matrix, &x.vector, data, green_int);
+    rnorm = print_residuals(res_file, k, &AA.matrix, &x.vector, data, green_int_p);
     fprintf(stderr, "done (|| b - A x || = %.12e)\n", rnorm);
   }
 
@@ -827,7 +827,7 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
 
           for (m = 0; m <= M; ++m)
             {
-              size_t cidx = green_nmidx(N, m, green_int);
+              size_t cidx = green_nmidx(N, m, green_int_p);
               double knm = gsl_matrix_get(X, cidx, k);
 
               fprintf(fp, "%f ", knm);
@@ -860,7 +860,7 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
           gsl_vector_view x = gsl_matrix_column(X_taper, k);
 
           fprintf(stderr, "main_proc: writing matlab output %zu/%zu...", k, data->nt);
-          print_matlab(outdir_mat, k, &x.vector, green_int);
+          print_matlab(outdir_mat, k, &x.vector, green_int_p);
           fprintf(stderr, "done\n");
 
           fprintf(fp, "%ld\n", data->t[k]);
@@ -869,8 +869,8 @@ main_proc(const char *filename, const char *outfile_mat, const char *outdir_mat,
       fclose(fp);
     }
 
-  green_free(green_ext);
-  green_free(green_int);
+  green_free(green_ext_p);
+  green_free(green_int_p);
   gsl_matrix_free(A);
   gsl_matrix_free(B);
   gsl_matrix_free(X);

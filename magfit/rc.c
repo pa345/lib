@@ -376,7 +376,7 @@ rc_eval_chi(const double theta, const double phi, void * vstate)
   rc_state_t *state = (rc_state_t *) vstate;
   double chi;
 
-  chi = green_eval_chi_int(R_EARTH_KM + 110.0, theta, phi, state->c, state->green_workspace_p);
+  green_int_chi(R_EARTH_KM + 110.0, theta, phi, state->c, &chi, state->green_workspace_p);
 
   return chi;
 }

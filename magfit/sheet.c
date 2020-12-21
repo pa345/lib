@@ -328,7 +328,7 @@ sheet_eval_B(const double t, const double r, const double theta, const double ph
 
   if (r >= state->b)
     {
-      green_calc_int2(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, state->green_p);
+      green_int(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, state->green_p);
 
       gsl_blas_ddot(&vx.vector, state->c, &B[0]);
       gsl_blas_ddot(&vy.vector, state->c, &B[1]);
@@ -336,7 +336,7 @@ sheet_eval_B(const double t, const double r, const double theta, const double ph
     }
   else
     {
-      green_calc_ext(r, theta, phi, vx.vector.data, vy.vector.data, vz.vector.data, state->green_p);
+      green_ext(r, theta, phi, &vx.vector, &vy.vector, &vz.vector, state->green_p);
 
       gsl_blas_ddot(&vx.vector, state->k, &B[0]);
       gsl_blas_ddot(&vy.vector, state->k, &B[1]);
@@ -397,7 +397,7 @@ sheet_eval_chi(const double theta, const double phi, void * vstate)
   sheet_state_t *state = (sheet_state_t *) vstate;
   double chi;
 
-  chi = green_eval_chi_int(R_EARTH_KM + 110.0, theta, phi, state->c, state->green_p);
+  green_int_chi(R_EARTH_KM + 110.0, theta, phi, state->c, &chi, state->green_p);
 
   return chi;
 }
@@ -424,7 +424,7 @@ build_matrix_row(const double r, const double theta, const double phi,
       if (Z->data)
         zv = gsl_vector_subvector(Z, 0, state->p_int);
 
-      s = green_calc_int2(r, theta, phi, &xv.vector, &yv.vector, &zv.vector, state->green_p);
+      s = green_int(r, theta, phi, &xv.vector, &yv.vector, &zv.vector, state->green_p);
       if (s)
         return s;
     }

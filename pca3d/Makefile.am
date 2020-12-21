@@ -6,7 +6,7 @@ AM_CPPFLAGS = -I$(top_builddir)/poltor -I$(top_builddir)/magfit
 
 common_libs = -L/usr/lib64 -lmainlib -lbspline2 -lsofa_c -lcspice -lmwmclmcrrt -lmlchaos ~/usr/lib/libgsl.a -lm -lcdf -lgfortran -lfftw3 -lz -lconfig /home/palken/usr/lib/liblapacke.a /home/palken/usr/lib/liblapack.a -lptf77blas -lptcblas -latlas -lpthread /usr/lib64/libfftw3.so.3 -lgfortran -lnetcdf -lcdf -lcsparse
 
-bin_PROGRAMS = invert invert_preproc invert_write_tmode print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH1b print_map1b print_spectrum1b print_ezie_grid print_magfield print_var3b invert_print invert_postproc_lcurve
+bin_PROGRAMS = invert invert_preproc invert_write_tmode print_modes print_modes3b print print_B print_fft print_fft2b spectrogram spectrogram2b stage2a stage3a stage1b stage2b stage3b print_SH1b print_map1b print_spectrum1b print_ezie_grid print_magfield print_var3b invert_print invert_postproc_lcurve invert_postproc_print
 
 invert_SOURCES = invert_main.c invert.c invert_data.c invert_regularize.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
 #invert_CFLAGS = -std=c11 -fopenmp -ffast-math
@@ -28,6 +28,11 @@ invert_postproc_lcurve_SOURCES = invert_postproc_lcurve.c invert.c invert_data.c
 invert_postproc_lcurve_CFLAGS = -std=c11 -fopenmp
 invert_postproc_lcurve_LDFLAGS = -fopenmp
 invert_postproc_lcurve_LDADD = libpca3d.la -lmagfield -lbspline2 -lgslspblas2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
+
+invert_postproc_print_SOURCES = invert_postproc_print.c invert.c invert_data.c invert_regularize.c invert_residual.c invert_tmode.c invert_smode.c invert_synth.c
+invert_postproc_print_CFLAGS = -std=c11 -fopenmp
+invert_postproc_print_LDFLAGS = -fopenmp
+invert_postproc_print_LDADD = libpca3d.la -lmagfield -lbspline2 -lgslspblas2 ${common_libs} -lshtns_omp -lfftw3 -lfftw3_omp
 
 invert_write_tmode_SOURCES = invert_write_tmode.c invert_tmode.c
 invert_write_tmode_LDADD = ${common_libs}

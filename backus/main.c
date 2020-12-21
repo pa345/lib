@@ -71,7 +71,7 @@ build_matrix(const size_t npts, gsl_matrix * A, green_workspace *green_p, gsl_rn
       double theta = gsl_rng_uniform(rng_p) * M_PI;
       double phi = gsl_rng_uniform(rng_p) * 2.0 * M_PI;
 
-      green_calc_int(r, theta, phi, X.vector.data, Y.vector.data, Z.vector.data, green_p);
+      green_int(r, theta, phi, &X.vector, &Y.vector, &Z.vector, green_p);
     }
 
   return 0;

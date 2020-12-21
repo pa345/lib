@@ -36,6 +36,9 @@
 #include "pca.h"
 #include "window.h"
 
+/* define to use new Green's functions with (-1)^m factor */
+#define NEWGREEN          1
+
 #define MAX_FREQ          200
 
 typedef struct
@@ -59,6 +62,12 @@ convert_qnm(const gsl_matrix * K, gsl_matrix_complex * Q, green_complex_workspac
 
   for (j = 0; j < T; ++j)
     {
+#if NEWGREEN
+      gsl_vector_const_view Kj = gsl_matrix_const_column(K, j);
+      gsl_vector_complex_view Qj = gsl_matrix_complex_column(Q, j);
+      
+      green_complex_coef_r2c(nmax, mmax, &Kj.vector, &Qj.vector);
+#else
       size_t n;
 
       for (n = 1; n <= nmax; ++n)
@@ -97,6 +106,7 @@ convert_qnm(const gsl_matrix * K, gsl_matrix_complex * Q, green_complex_workspac
                 }
             }
         }
+#endif
     }
 
   return 0;
@@ -270,7 +280,7 @@ print_potential(const char * filename, const gsl_vector_complex * u, green_compl
           double theta = M_PI / 2.0 - lat * M_PI / 180.0;
           gsl_complex z;
 
-          green_complex_potential_calc_ext(r, theta, phi, dV, green_p);
+          green_complex_ext_potential(r, theta, phi, dV, green_p);
 
           gsl_blas_zdotu(dV, u, &z);
 
@@ -290,67 +300,6 @@ print_potential(const char * filename, const gsl_vector_complex * u, green_compl
 
   fclose(fp);
 }
-
-#if 0
-void
-print_chi(const gsl_matrix_complex * U, green_complex_workspace *green_p)
-{
-  const size_t nnm = U->size1;
-  const size_t nmax = green_p->nmax;
-  const size_t mmax = green_p->mmax;
-  const double b = R_EARTH_KM + 110.0;
-  const double ratio = b / R_EARTH_KM;
-  gsl_vector_complex_const_view U1 = gsl_matrix_complex_const_column(U, 0);
-  gsl_vector_complex_const_view U2 = gsl_matrix_complex_const_column(U, 1);
-  gsl_vector_complex_const_view U3 = gsl_matrix_complex_const_column(U, 2);
-  double *Ynm = malloc(nnm * sizeof(double));
-  gsl_vector_complex *Ynmz = gsl_vector_complex_calloc(nnm);
-  double lat, lon;
-  size_t n;
-
-  for (lon = -180.0; lon <= 180.0; lon += 1.0)
-    {
-      double phi = lon * M_PI / 180.0;
-      for (lat = -89.0; lat <= 89.0; lat += 0.5)
-        {
-          double theta = M_PI / 2.0 - lat * M_PI / 180.0;
-          gsl_complex z1, z2, z3;
-
-          green_Y_calc(theta, phi, Ynm, green_p);
-
-          for (n = 1; n <= nmax; ++n)
-            {
-              int M = (int) GSL_MIN(mmax, n);
-              int m;
-              double term1 = pow(ratio, (double)n - 2.0);
-              double term2 = (2.0*n + 1.0) / (n + 1.0);
-        
-              for (m = -M; m <= M; ++m)
-                {
-                  size_t cidx = green_nmidx(n, m, green_p);
-                  gsl_complex z = gsl_complex_rect(term1 * term2 * Ynm[cidx], 0.0);
-                  gsl_vector_complex_set(Ynmz, cidx, z);
-                }
-            }
-
-          gsl_blas_zdotu(Ynmz, &U1.vector, &z1);
-          gsl_blas_zdotu(Ynmz, &U2.vector, &z2);
-          gsl_blas_zdotu(Ynmz, &U3.vector, &z3);
-
-          printf("%f %f %f %f %f\n",
-                 lon,
-                 lat,
-                 GSL_REAL(z1),
-                 GSL_REAL(z2),
-                 GSL_REAL(z3));
-        }
-      printf("\n");
-    }
-
-  free(Ynm);
-  gsl_vector_complex_free(Ynmz);
-}
-#endif
 
 /*
 output_modes()
@@ -447,7 +396,7 @@ main(int argc, char *argv[])
 {
   const double R = R_EARTH_KM;
   const double fs = 24.0;         /* sample frequency in 1/days */
-  char *output_dir = "modes";
+  char *output_dir = "modes_complex";
   size_t nmax, mmax;
   green_complex_workspace *green_p;
   char *infile = PCA_STAGE1_KNM;

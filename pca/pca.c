@@ -517,7 +517,7 @@ pca_pc_B(const size_t pcidx, const double r, const double theta, const double ph
         {
           gsl_vector_const_view pc_knm = gsl_matrix_const_column(w->U[w->ut], pcidx);
 
-          green_calc_ext(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_ext(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
 
           gsl_blas_ddot(&pc_knm.vector, &Xv.vector, &B[0]);
           gsl_blas_ddot(&pc_knm.vector, &Yv.vector, &B[1]);
@@ -527,7 +527,7 @@ pca_pc_B(const size_t pcidx, const double r, const double theta, const double ph
         {
           gsl_vector_const_view pc_gnm = gsl_matrix_const_column(w->G[w->ut], pcidx);
 
-          green_calc_int(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
 
           gsl_blas_ddot(&pc_gnm.vector, &Xv.vector, &B[0]);
           gsl_blas_ddot(&pc_gnm.vector, &Yv.vector, &B[1]);
@@ -545,7 +545,7 @@ pca_pc_B(const size_t pcidx, const double r, const double theta, const double ph
         {
           gsl_vector_const_view pc_gnm = gsl_matrix_const_column(w->U[w->ut], pcidx);
 
-          green_calc_int(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
 
           gsl_blas_ddot(&pc_gnm.vector, &Xv.vector, &B[0]);
           gsl_blas_ddot(&pc_gnm.vector, &Yv.vector, &B[1]);
@@ -600,20 +600,20 @@ pca_B(const gsl_vector *alpha, const double r, const double theta, const double 
         {
           /* external current source, use U matrix and external Green's functions */
           U = w->U[w->ut];
-          green_calc_ext(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_ext(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
         }
       else
         {
           /* internal current source, use G matrix and internal Green's functions */
           U = w->G[w->ut];
-          green_calc_int(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
         }
     }
   else if (w->source_type == PCA_SRC_INDUCED)
     {
       /* induced source, use U matrix and internal Green's functions */
       U = w->U[w->ut];
-      green_calc_int(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+      green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
 
       /* sanity check */
       if (r < w->b)
@@ -677,18 +677,18 @@ pca_mean_B(const double r, const double theta, const double phi,
       if (r <= w->b)
         {
           mu = w->mu[w->ut];
-          green_calc_ext(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_ext(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
         }
       else
         {
           mu = w->mu_gnm[w->ut];
-          green_calc_int(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+          green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
         }
     }
   else if (w->source_type == PCA_SRC_INDUCED)
     {
       mu = w->mu[w->ut];
-      green_calc_int(r, theta, phi, w->X, w->Y, w->Z, w->green_workspace_p);
+      green_int(r, theta, phi, &Xv.vector, &Yv.vector, &Zv.vector, w->green_workspace_p);
 
       /* sanity check */
       if (r < w->b)
@@ -747,7 +747,7 @@ pca_K(const gsl_vector *alpha, const double theta, const double phi, double K[3]
       gsl_blas_daxpy(ai, &Gi.vector, w->work);
     }
 
-  status = green_eval_sheet_int(w->b, theta, phi, w->work, K, w->green_workspace_p);
+  status = green_int_sheet(w->b, theta, phi, w->work, K, w->green_workspace_p);
 
   return status;
 }
@@ -779,7 +779,7 @@ pca_mean_K(const double theta, const double phi, double K[3], pca_workspace *w)
       mu = w->mu[w->ut];
     }
 
-  status = green_eval_sheet_int(w->b, theta, phi, mu, K, w->green_workspace_p);
+  status = green_int_sheet(w->b, theta, phi, mu, K, w->green_workspace_p);
 
   return status;
 }

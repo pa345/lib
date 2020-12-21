@@ -34,12 +34,9 @@ print_chi(const char * filename, const double b, const gsl_vector_complex * u, g
   FILE *fp;
   double lat, lon;
   size_t n;
-  complex double *X = malloc(green_p->nnm * sizeof(complex double));
-  complex double *Y = malloc(green_p->nnm * sizeof(complex double));
-  complex double *Z = malloc(green_p->nnm * sizeof(complex double));
-  gsl_vector_complex_view Xv = gsl_vector_complex_view_array((double *) X, green_p->nnm);
-  gsl_vector_complex_view Yv = gsl_vector_complex_view_array((double *) Y, green_p->nnm);
-  gsl_vector_complex_view Zv = gsl_vector_complex_view_array((double *) Z, green_p->nnm);
+  gsl_vector_complex * X = gsl_vector_complex_alloc(green_p->nnm);
+  gsl_vector_complex * Y = gsl_vector_complex_alloc(green_p->nnm);
+  gsl_vector_complex * Z = gsl_vector_complex_alloc(green_p->nnm);
 
   fp = fopen(filename, "w");
 
@@ -68,12 +65,12 @@ print_chi(const char * filename, const double b, const gsl_vector_complex * u, g
           complex double chi;
           gsl_complex B_model[3];
 
-          chi = green_complex_eval_chi_ext(b, theta, phi, u, green_p);
+          green_complex_ext_chi(b, theta, phi, u, &chi, green_p);
 
           green_complex_ext(R_EARTH_KM, theta, phi, X, Y, Z, green_p);
-          gsl_blas_zdotu(u, &Xv.vector, &B_model[0]);
-          gsl_blas_zdotu(u, &Yv.vector, &B_model[1]);
-          gsl_blas_zdotu(u, &Zv.vector, &B_model[2]);
+          gsl_blas_zdotu(u, X, &B_model[0]);
+          gsl_blas_zdotu(u, Y, &B_model[1]);
+          gsl_blas_zdotu(u, Z, &B_model[2]);
 
           fprintf(fp, "%f %f %f %f %f %f %f %f %f %f\n",
                   lon,
@@ -95,9 +92,9 @@ print_chi(const char * filename, const double b, const gsl_vector_complex * u, g
 
   fclose(fp);
 
-  free(X);
-  free(Y);
-  free(Z);
+  gsl_vector_complex_free(X);
+  gsl_vector_complex_free(Y);
+  gsl_vector_complex_free(Z);
 }
 
 int

@@ -429,7 +429,7 @@ gauss_eval_chi(const double theta, const double phi, void * vstate)
   gauss_state_t *state = (gauss_state_t *) vstate;
   double chi;
 
-  chi = green_eval_chi_int(R_EARTH_KM + 110.0, theta, phi, state->c, state->green_int_p);
+  green_int_chi(R_EARTH_KM + 110.0, theta, phi, state->c, &chi, state->green_int_p);
 
   return chi;
 }
@@ -456,7 +456,7 @@ build_matrix_row(const double r, const double theta, const double phi,
       if (Z->data)
         zv = gsl_vector_subvector(Z, 0, state->p_int);
 
-      s = green_calc_int2(r, theta, phi, &xv.vector, &yv.vector, &zv.vector, state->green_int_p);
+      s = green_int(r, theta, phi, &xv.vector, &yv.vector, &zv.vector, state->green_int_p);
       if (s)
         return s;
     }
@@ -476,7 +476,7 @@ build_matrix_row(const double r, const double theta, const double phi,
       if (Z->data)
         zv = gsl_vector_subvector(Z, state->ext_offset, state->p_ext);
 
-      s = green_calc_ext(r, theta, phi, xv.vector.data, yv.vector.data, zv.vector.data, state->green_ext_p);
+      s = green_ext(r, theta, phi, &xv.vector, &yv.vector, &zv.vector, state->green_ext_p);
       if (s)
         return s;
     }
